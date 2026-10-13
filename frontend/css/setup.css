@@ -1,0 +1,86 @@
+/* Farm setup (admin) page; builds on batch-360, traceability and orders CSS. */
+
+.setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 1.1rem;
+}
+
+.setup-layout > * {
+  min-width: 0;
+}
+
+.setup-full {
+  grid-column: 1 / -1;
+}
+
+.setup-tree ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  list-style: none;
+  border-left: 2px solid var(--line);
+}
+
+.setup-tree > ul {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.setup-node {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  padding: 0.35rem 0;
+}
+
+.setup-node small {
+  color: var(--muted);
+}
+
+.setup-node.is-inactive > strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.setup-node button {
+  padding: 0.2rem 0.55rem;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: #eef2ef;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.setup-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.setup-form .b360-subtitle {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.setup-form input,
+.setup-form select,
+.inline-form select {
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cad8ce;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+@media (max-width: 900px) {
+  .setup-layout {
+    grid-template-columns: 1fr;
+  }
+}

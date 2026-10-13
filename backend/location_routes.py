@@ -209,6 +209,28 @@ def create_facility():
         return jsonify({"success": False, "message": "Facility code already exists in this site"}), 409
 
 
+@locations.route("/api/locations/<string:scope>/<int:scope_id>/status", methods=["POST"])
+@login_required
+@_admin_required
+def set_location_status(scope, scope_id):
+    """Activate or deactivate a location; records are never hard-deleted."""
+    if scope not in _SCOPE_TABLES:
+        return jsonify({"success": False, "message": "scope must be organization, farm, site, or facility"}), 400
+    try:
+        status = _status(request.get_json() or {})
+    except ValueError as exc:
+        return jsonify({"success": False, "message": str(exc)}), 400
+    table = _SCOPE_TABLES[scope][0]
+    row = db.execute_returning(
+        f"UPDATE {table} SET status = %s, updated_at = CURRENT_TIMESTAMP "
+        "WHERE id = %s RETURNING id, status",
+        (status, scope_id),
+    )
+    if not row:
+        return jsonify({"success": False, "message": f"{scope.title()} not found"}), 404
+    return jsonify({"success": True, "data": row})
+
+
 @locations.route("/api/locations/access", methods=["POST", "DELETE"])
 @login_required
 @_admin_required
@@ -304,7 +326,10 @@ def check_access():
 
 @locations.route("/api/locations/record-links", methods=["POST"])
 @login_required
+@_admin_required
 def link_record():
+    # Legacy records carry no proven owner, so assigning (or moving) their
+    # location is an administrator's mapping decision, never a user claim.
     data = request.get_json() or {}
     entity_table = str(data.get("entity_table", "") or "").strip()
     if entity_table not in _LINKABLE_TABLES:
@@ -334,25 +359,6 @@ def link_record():
     )
     if not location:
         return jsonify({"success": False, "message": "Facility not found"}), 404
-    if current_user.role != "super_admin":
-        access = db.fetch_one(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM user_facility_access WHERE user_id = %s AND facility_id = %s
-            ) OR EXISTS (
-                SELECT 1 FROM user_site_access WHERE user_id = %s AND site_id = %s
-            ) OR EXISTS (
-                SELECT 1 FROM user_farm_access WHERE user_id = %s AND farm_id = %s
-            ) OR EXISTS (
-                SELECT 1 FROM user_organization_access WHERE user_id = %s AND organization_id = %s
-            ) AS allowed
-            """,
-            (current_user.id, location["facility_id"], current_user.id, location["site_id"],
-             current_user.id, location["farm_id"], current_user.id, location["organization_id"]),
-        )
-        if not access["allowed"]:
-            return jsonify({"success": False, "message": "You are not authorized for this facility"}), 403
-
     row = db.execute_returning(
         """
         INSERT INTO operational_location_links

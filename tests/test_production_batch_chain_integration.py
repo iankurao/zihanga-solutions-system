@@ -2543,6 +2543,126 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertGreaterEqual(stats["sent"], 1)
         self.assertIn(farm_user.username, [r.split("@")[0] for r, _s, _b in channel.sent])
 
+    # ---- Setup and gap fixes -----------------------------------------------------
+
+    def _admin(self):
+        admin = self._create_db_user()
+        admin.role = "super_admin"
+        return admin
+
+    def _second_facility(self, kind="drying"):
+        return db.execute_returning(
+            """
+            INSERT INTO facilities (site_id, facility_code, name, facility_type)
+            VALUES (%s, %s, 'Drying Facility', %s) RETURNING id
+            """,
+            (self.site_id, f"d{uuid4().hex[:10]}", kind),
+        )["id"]
+
+    def _ready_harvest(self):
+        substrate_id = self._create_substrate()
+        batch = self._create_production(substrate_id, harvest_limit_kg="2.000").get_json()["record"]
+        self._move_to_harvest_ready(batch)
+        harvest = self._harvest(batch, wet_weight="1.000")
+        self.assertEqual(harvest.status_code, 201, harvest.get_json())
+        return harvest.get_json()["harvest"]["id"]
+
+    def _drying_at(self, facility_id, harvest_id, farm_id=None, site_id=None):
+        return self.client.post(
+            "/api/drying/batches",
+            json={
+                "batch_code": f"dry-{uuid4().hex[:15]}",
+                "drying_date": "2026-09-25",
+                "drying_method": "solar",
+                "personnel": self.actor,
+                "farm_id": farm_id or self.farm_id,
+                "site_id": site_id or self.site_id,
+                "facility_id": facility_id,
+                "inputs": [{"harvest_id": harvest_id, "quantity": "0.500", "unit": "kg"}],
+            },
+        )
+
+    def test_drying_can_use_another_facility_on_the_same_farm_only(self):
+        harvest_id = self._ready_harvest()
+        drying_facility = self._second_facility()
+        moved = self._drying_at(drying_facility, harvest_id)
+        self.assertEqual(moved.status_code, 201, moved.get_json())
+
+        other = self._create_other_farm_location()  # registers its own cleanup
+        other_scope = db.fetch_one(
+            "SELECT farm_id, site_id, facility_id FROM inventory_locations WHERE id = %s", (other,)
+        )
+        cross_farm = self._drying_at(
+            other_scope["facility_id"], harvest_id,
+            farm_id=other_scope["farm_id"], site_id=other_scope["site_id"],
+        )
+        self.assertEqual(cross_farm.status_code, 400, cross_farm.get_json())
+        self.assertIn("same farm", cross_farm.get_json()["message"])
+
+        dryer_only = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (dryer_only.id, drying_facility),
+        )
+        with self._as(dryer_only):
+            denied = self._drying_at(drying_facility, harvest_id)
+        self.assertEqual(denied.status_code, 403, denied.get_json())
+
+    def test_record_links_are_admin_only(self):
+        member = self._create_db_user()
+        payload = {"entity_table": "waste_sourcing", "entity_id": 1, "facility_id": self.facility_id}
+        with self._as(member):
+            self.assertEqual(self.client.post("/api/locations/record-links", json=payload).status_code, 403)
+        with self._as(self._admin()):
+            response = self.client.post("/api/locations/record-links", json=payload)
+        self.assertIn(response.status_code, (200, 201, 404), response.get_json())
+
+    def test_deactivation_blocks_new_work_and_protects_stock(self):
+        admin = self._admin()
+        member = self._create_db_user()
+        lot = self._release_lot()  # issues 4 of the substrate's 8 kg
+        substrate_id = self.substrate_ids[-1]
+        with self._as(member):
+            denied = self.client.post(
+                f"/api/locations/facility/{self.facility_id}/status", json={"status": "inactive"}
+            )
+        self.assertEqual(denied.status_code, 403)
+        with self._as(admin):
+            off = self.client.post(
+                f"/api/locations/facility/{self.facility_id}/status", json={"status": "inactive"}
+            )
+        self.assertEqual(off.get_json()["data"]["status"], "inactive")
+        blocked = self._create_production(substrate_id)
+        self.assertEqual(blocked.status_code, 400, blocked.get_json())
+        self.assertIn("ownership is invalid", blocked.get_json()["message"])
+        with self._as(admin):
+            self.client.post(f"/api/locations/facility/{self.facility_id}/status", json={"status": "active"})
+
+        listing = self.client.get(f"/api/substrate-batches?facility_id={self.facility_id}").get_json()["data"]
+        self.assertAlmostEqual(next(s for s in listing if s["id"] == substrate_id)["available_kg"], 4.0)
+
+        empty_store = self._add_inventory_location("EMPTY")
+        with self._as(admin):
+            in_use = self.client.post(
+                f"/api/inventory/locations/{self.inventory_location_id}/status", json={"status": "inactive"}
+            )
+            emptied = self.client.post(
+                f"/api/inventory/locations/{empty_store}/status", json={"status": "inactive"}
+            )
+            page = self.client.get("/setup")
+        self.assertEqual(in_use.status_code, 400, in_use.get_json())
+        self.assertIn("Move the stock out", in_use.get_json()["message"])
+        self.assertEqual(emptied.status_code, 200, emptied.get_json())
+        self.assertEqual(page.status_code, 200)
+        moved = self._move(
+            lot, "TRANSFER", "0.100",
+            from_location_id=self.inventory_location_id, to_location_id=empty_store,
+        )
+        self.assertEqual(moved.status_code, 400, moved.get_json())
+        self.assertIn("inactive", moved.get_json()["message"])
+        with self._as(member):
+            self.assertEqual(self.client.get("/setup").status_code, 403)
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(
@@ -2558,6 +2678,7 @@ class _UserContext:
         self._patches = [
             patch.dict(app.config, {"LOGIN_DISABLED": False}),
             patch("backend.app.current_user", user),
+            patch("backend.location_routes.current_user", user),
             patch("flask_login.utils.current_user", user),
         ]
 

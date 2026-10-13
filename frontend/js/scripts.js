@@ -673,6 +673,12 @@ document.addEventListener('DOMContentLoaded', function() {
     refreshSubstrateChainData();
     loadLocationHierarchy();
     refreshAlertBadge();
+    fetch('/api/admin/me', { credentials: 'include' })
+        .then(response => {
+            const link = document.getElementById('setupNavLink');
+            if (link && response.ok) link.hidden = false;
+        })
+        .catch(() => {});
 
     // Sidebar badge: open critical and warning alerts visible to this user.
     async function refreshAlertBadge() {

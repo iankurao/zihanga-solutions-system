@@ -2107,6 +2107,11 @@ def _substrate_batch_detail_query(where_clause='', order_clause=''):
                fa.name AS facility_name,
                sb.total_input_weight_kg, sb.particle_size,
                sb.notes, sb.recorded_by, sb.created_at,
+               -- Same availability rule as Production Batch creation.
+               COALESCE(sb.output_weight_kg, sb.total_input_weight_kg, 0) - COALESCE((
+                   SELECT SUM(pbi.quantity_issued) FROM production_batch_inputs AS pbi
+                   WHERE pbi.substrate_batch_id = sb.id
+               ), 0) AS available_kg,
                COALESCE(
                    json_agg(
                        json_build_object(
@@ -3848,6 +3853,47 @@ def create_inventory_location():
                 'message': 'This location code already exists in the facility',
             }), 409
         logger.exception('Error creating inventory location')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+@app.route('/api/inventory/locations/<int:location_id>/status', methods=['POST'])
+@login_required
+@super_admin_required
+def set_inventory_location_status(location_id):
+    """Deactivate or reactivate a store; history and balances are kept."""
+    data = request.get_json() or {}
+    status = str(data.get('status') or '').strip().lower()
+    if status not in ('active', 'inactive'):
+        return jsonify({'success': False, 'message': 'status must be active or inactive'}), 400
+    try:
+        with db.transaction() as cursor:
+            if status == 'inactive':
+                cursor.execute(
+                    f"""
+                    WITH {INVENTORY_LEDGER_CTE}
+                    SELECT COALESCE(SUM(delta), 0) AS on_hand
+                    FROM ledger WHERE location_id = %s
+                    """,
+                    (location_id,),
+                )
+                if Decimal(str(cursor.fetchone()['on_hand'])) > 0:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Move the stock out of this location before deactivating it',
+                    }), 400
+            cursor.execute(
+                """
+                UPDATE inventory_locations SET status = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s RETURNING id, status
+                """,
+                (status, location_id),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Inventory location not found'}), 404
+        return jsonify({'success': True, 'data': dict(row)}), 200
+    except Exception:
+        logger.exception('Error updating inventory location status')
         return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
 
 
@@ -5993,6 +6039,13 @@ def alerts_page():
     return render_template('alerts.html')
 
 
+@app.route('/setup')
+@login_required
+@super_admin_required
+def setup_page():
+    return render_template('setup.html')
+
+
 @app.route('/api/waste-monitoring', methods=['POST'])
 @login_required
 def handle_waste_environmental_monitoring():
@@ -6452,12 +6505,13 @@ def _drying_add_inputs(cursor, batch, rows, data):
     actor, actor_user_id = _drying_actor(data)
     for row in rows:
         harvest = _drying_harvest_row(cursor, row['harvest_ref'])
-        if (
-            harvest['farm_id'] != batch['farm_id']
-            or harvest['site_id'] != batch['site_id']
-            or harvest['facility_id'] != batch['facility_id']
-        ):
-            raise ValueError('Harvest and Drying Batch locations must match')
+        # Wet larvae may go to a dedicated drying facility, but never leave
+        # the farm, and the caller must also be allowed at the harvest site.
+        if harvest['farm_id'] != batch['farm_id']:
+            raise ValueError('Harvest and Drying Batch must be on the same farm')
+        _assert_production_scope_access(
+            cursor, harvest['farm_id'], harvest['site_id'], harvest['facility_id']
+        )
         quantity_kg = _drying_quantity_kg(row['quantity'], row['unit'])
         available_kg = (
             harvest['wet_weight']

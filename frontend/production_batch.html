@@ -51,6 +51,12 @@
     .event-meta { color:var(--muted); font-size:.82rem; }
     .event-details { display:flex; gap:1rem; flex-wrap:wrap; font-size:.9rem; }
     .form-message { min-height:1.2rem; color:var(--danger); font-size:.85rem; }
+    .new-batch-card { margin-bottom:1rem; }
+    .new-batch-card h2 { margin:0 0 .35rem; font-size:1.15rem; }
+    .new-batch-card .help { color:var(--muted); margin:0 0 1rem; }
+    .nb-substrate-line { display:grid; grid-template-columns:auto 1fr 9rem; align-items:center; gap:.5rem; padding:.35rem 0; border-bottom:1px solid var(--line); }
+    .nb-substrate-line label { margin:0; font-weight:600; }
+    .batch-search button + button { background:#fff; color:var(--accent); border:1px solid var(--accent); }
     @media (max-width:760px) {
       .batch-header { flex-direction:column; }
       .batch-search { width:100%; min-width:0; }
@@ -73,9 +79,31 @@
         <label class="sr-only" for="batchRef">Batch number</label>
         <input id="batchRef" name="batchRef" placeholder="BSF-2026-00001 or ID" required>
         <button type="submit">Load</button>
+        <button type="button" id="newBatchToggle">New batch</button>
       </form>
     </div>
     <div class="batch-error" id="batchError" role="alert"></div>
+
+    <section class="batch-card new-batch-card" id="newBatchCard" hidden>
+      <h2>New production batch</h2>
+      <p class="help">The batch starts as PLANNED. Substrate must already be prepared at the same facility.</p>
+      <form class="event-form" id="newBatchForm">
+        <div><label for="nbFarm">Farm</label><select id="nbFarm" required></select></div>
+        <div><label for="nbSite">Site</label><select id="nbSite" required></select></div>
+        <div><label for="nbFacility">Facility</label><select id="nbFacility" required></select></div>
+        <div><label for="nbCode">Batch code (optional)</label><input id="nbCode" maxlength="30" placeholder="Generated if blank"></div>
+        <div><label for="nbStart">Start date</label><input id="nbStart" type="date" required></div>
+        <div><label for="nbExpected">Expected harvest date</label><input id="nbExpected" type="date"></div>
+        <div><label for="nbLimit">Harvest limit (kg, optional)</label><input id="nbLimit" type="number" min="0.001" step="0.001"></div>
+        <div><label for="nbStage">Starting stage</label><input id="nbStage" maxlength="20" value="STARTING"></div>
+        <div class="full">
+          <label>Substrate to issue</label>
+          <div id="nbSubstrate" class="empty">Select a facility to see its available substrate.</div>
+        </div>
+        <div class="full"><button type="submit">Create batch</button></div>
+        <p class="form-message full" id="nbMessage" role="status" aria-live="polite"></p>
+      </form>
+    </section>
     <section class="batch-card" id="batchCard" hidden>
       <div class="batch-overview">
         <dl class="batch-metric"><dt>Batch number</dt><dd id="batchNumber">—</dd></dl>
@@ -378,6 +406,7 @@
       loadBatch(initialReference).catch(error => showError(error.message));
     }
   </script>
+  <script src="/js/productionBatchCreate.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>
 </html>
