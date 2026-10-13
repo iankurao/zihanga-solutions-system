@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BSF Farm - Login</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="css/auth.css">
+  <link href="https://fonts.googleapis.com/css?family=Pacifico:400&display=swap" rel="stylesheet">
+</head>
+<body class="bsf-bg">
+  <div class="auth-flex-wrapper">
+    <div class="auth-container">
+      <div class="logo">
+        <img src="images/logo.png" alt="Zehunger Solutions Logo">
+        <span>BSF FARM</span>
+      </div>
+      <h2>Login to Your Account</h2>
+      <!-- Alert messages (initially hidden) -->
+      <div class="alert alert-danger hidden" id="loginError">
+        <i class="fas fa-exclamation-circle"></i>
+        <span id="errorMessage">Invalid username or password</span>
+      </div>
+      <form id="loginForm" method="POST" action="/login">
+        <div class="form-group input-icon">
+          <label for="email">Email</label>
+          <i class="fas fa-envelope"></i>
+          <input type="email" id="email" name="email" class="form-control" placeholder="Enter your email" autocomplete="email" required>
+        </div>
+        <div class="form-group input-icon password-field">
+          <label for="password">Password</label>
+          <i class="fas fa-lock"></i>
+          <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" autocomplete="current-password" required>
+          <i class="fas fa-eye password-toggle" id="passwordToggle"></i>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" id="remember" name="remember" value="y">
+          <label for="remember">Remember me</label>
+        </div>
+        <div class="form-group">
+          <button type="submit" class="btn" id="loginBtn">
+            <i class="fas fa-spinner spinner"></i>
+            <i class="fas fa-sign-in-alt"></i> Login
+          </button>
+        </div>
+      </form>
+      <div class="links">
+        Don't have an account? <a href="register.html">Register here</a>
+      </div>
+    </div>
+    <!-- Expanded Company Statement, free-floating -->
+    <section class="company-statement">
+      <h1>Zehunger Solutions</h1>
+      <p class="tagline">“Empowering Sustainability, Enriching Earth.”</p>
+      <p class="mission">We are a passionate, youth-led movement on a mission to transform the world—one kilogram of waste at a time. At Zehunger Solutions, we believe that every bit of organic waste is an opportunity to create value, restore our environment, and inspire a new generation of eco-champions. Through innovative bioconversion using black soldier fly larvae, we turn what others discard into gold: sustainable animal feed, organic fertilizer, and a cleaner, greener planet for all. Join us as we lead the way in responsible waste management, circular economy, and environmental stewardship. Together, we are not just managing waste—we are nurturing hope, empowering communities, and enriching the earth for generations to come.”</p>
+    </section>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const loginForm = document.getElementById('loginForm');
+      const loginBtn = document.getElementById('loginBtn');
+      const passwordToggle = document.getElementById('passwordToggle');
+      const passwordInput = document.getElementById('password');
+      
+      // Password visibility toggle
+      passwordToggle.addEventListener('click', function() {
+        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+        passwordInput.setAttribute('type', type);
+        this.classList.toggle('fa-eye');
+        this.classList.toggle('fa-eye-slash');
+      });
+      
+      // Show loading state on form submit
+      loginForm.addEventListener('submit', function() {
+        loginBtn.classList.add('loading');
+        loginBtn.disabled = true;
+      });
+    });
+  </script>
+</body>
+</html>

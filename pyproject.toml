@@ -1,0 +1,21 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "eFarm Zehunger — Black Soldier Fly (BSF) Farm Management System by Zehunger Solutions"
+requires-python = ">=3.11"
+dependencies = [
+    "email-validator>=2.3.0",
+    "flask==3.1.1",
+    "flask-cors==6.0.1",
+    "flask-login==0.6.3",
+    "flask-session==0.8.0",
+    "flask-sqlalchemy==3.1.1",
+    "flask-wtf==1.2.2",
+    "gunicorn==23.0.0",
+    "psycopg2-binary==2.9.9",
+    "pytest>=9.1.1",
+    "requests==2.32.4",
+    "sqlalchemy==2.0.36",
+    "werkzeug==3.1.3",
+    "wtforms==3.2.1",
+]

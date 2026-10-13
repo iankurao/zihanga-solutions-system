@@ -1,0 +1,38 @@
+﻿# Python
+.venv/
+venv/
+.pythonlibs/
+__pycache__/
+*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment
+.env
+
+# Credentials (never commit)
+admin_credentials.txt
+
+# Node
+node_modules/
+
+# Database files
+mysql_data/
+*.sock
+*.pid
+*.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

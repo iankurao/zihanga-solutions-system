@@ -1,0 +1,1 @@
+import{j as t}from"./index-CQ_grA7E.js";function s(){return t.jsx("iframe",{title:"Analytics dashboard using the farmer dashboard palette",src:"/__mockup/snapshots/analytics/index.html",style:{display:"block",width:"100%",height:"100vh",border:0,pointerEvents:"none"}})}export{s as AnalyticsTheme};

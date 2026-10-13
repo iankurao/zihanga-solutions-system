@@ -1,0 +1,3 @@
+- [Sequence migration safety](sequence-migration-safety.md) — repeatable startup migrations must never move live business-ID sequences backward.
+- [Production scope ownership](production-scope-ownership.md) — new BSF production records require matching canonical farm, site, and facility IDs.
+- [Repeatable DDL idempotency](repeatable-ddl-idempotency.md) — unique-constraint migrations must handle orphaned auto-created indexes after partial runs.

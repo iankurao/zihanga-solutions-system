@@ -1,0 +1,114 @@
+# Step 2.5 — Verify the Actual Database Before Migration
+
+We have completed the Phase One canonical production data model.
+
+Do NOT create the new Phase One tables yet.
+
+Do NOT migrate data yet.
+
+Do NOT delete or rename existing tables.
+
+The canonical target model is defined in:
+
+PHASE_ONE_PRODUCTION_DATA_MODEL.md
+
+Before implementation, perform a complete comparison between the target model and the ACTUAL PostgreSQL database currently used by the application.
+
+IMPORTANT:
+The repository analysis explicitly states that the live database schema was not verified. We must not assume the source-code schema is identical to the deployed database.
+
+Inspect:
+
+1. Actual PostgreSQL tables.
+2. Actual columns.
+3. Actual data types.
+4. Primary keys.
+5. Foreign keys.
+6. Unique constraints.
+7. Check constraints.
+8. Indexes.
+9. Existing sequences/identity columns.
+10. Existing row counts.
+11. Existing status values.
+12. Existing units.
+13. Existing NULL patterns.
+14. Existing duplicate business IDs.
+15. Existing orphan records.
+16. Existing relationships that can be safely migrated.
+17. Existing relationships that cannot be reliably reconstructed.
+
+Compare the actual database against:
+
+PHASE_ONE_PRODUCTION_DATA_MODEL.md
+
+Produce:
+
+CURRENT DATABASE
+→ TARGET PHASE ONE MODEL
+→ REQUIRED MIGRATIONS
+→ DATA MAPPING
+→ UNRESOLVED RECORDS
+→ RISKS
+
+For every target table, classify it as:
+
+REUSE
+ALTER
+CREATE
+MIGRATE
+LEGACY
+DEPRECATE
+
+For every legacy table, identify:
+
+* source table
+* target table
+* source primary key
+* target primary key
+* source business ID
+* target business ID
+* mapping rules
+* records that cannot be safely mapped
+
+DO NOT GUESS relationships.
+
+Especially do not infer lineage solely from:
+
+* matching names
+* matching text labels
+* matching batch numbers
+* matching tray labels
+* matching usernames
+
+Create:
+
+PHASE_ONE_DATABASE_MIGRATION_MAP.md
+
+Also create:
+
+PHASE_ONE_DATA_MIGRATION_EXCEPTIONS.md
+
+The second document must contain all records or categories of records that cannot be safely reconciled.
+
+IMPORTANT QC DESIGN DECISION FOR PHASE ONE:
+
+Use this release flow:
+
+Drying Batch
+→ Drying Output
+→ Quality Check
+→ Quality Approval
+→ Product Lot
+→ Inventory
+
+Do not create a circular dependency where a Quality Check depends on an already-created Product Lot while the Product Lot itself depends on the Quality Approval.
+
+For Phase One, Product Lot creation/release must be downstream of the required QC approval.
+
+Do not implement code changes in this step.
+
+Do not create migrations.
+
+Do not alter production data.
+
+STOP after producing the analysis documents.

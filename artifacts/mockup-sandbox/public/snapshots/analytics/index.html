@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics Dashboard — BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #2ecc71;
+      --primary-dark: #27ae60;
+      --sidebar: #2c3e50;
+      --sidebar-active: #27ae60;
+      --text: #2c3e50;
+      --text-light: #7f8c8d;
+      --bg: #f5f6fa;
+      --card-bg: #fff;
+      --border: #e2e8f0;
+      --shadow: 0 2px 12px rgba(44,62,80,.08);
+    }
+
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 240px; min-height: 100vh; background: var(--sidebar);
+      display: flex; flex-direction: column; flex-shrink: 0;
+      position: sticky; top: 0; max-height: 100vh; overflow-y: auto;
+    }
+
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 20px 16px; border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+
+    .sidebar-logo img { width: 40px; height: 40px; border-radius: 50%; }
+    .sidebar-logo span { color: #fff; font-size: 1rem; font-weight: 700; letter-spacing: .5px; }
+
+    .sidebar-heading {
+      padding: 14px 16px 6px;
+      font-size: .7rem; text-transform: uppercase; letter-spacing: 1px;
+      color: rgba(255,255,255,.4); font-weight: 600;
+    }
+
+    .tab-btn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 16px; cursor: pointer; color: rgba(255,255,255,.75);
+      font-size: .88rem; transition: all .2s; border: none; background: none; width: 100%; text-align: left;
+    }
+
+    .tab-btn i { width: 18px; text-align: center; }
+    .tab-btn:hover { background: rgba(255,255,255,.07); color: #fff; }
+    .tab-btn.active { background: var(--primary); color: #fff; font-weight: 600; }
+
+    .sidebar-divider { height: 1px; background: rgba(255,255,255,.08); margin: 8px 0; }
+
+    .back-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 11px 16px; color: rgba(255,255,255,.6); font-size: .85rem;
+      text-decoration: none; transition: color .2s; margin-top: auto;
+    }
+    .back-btn:hover { color: #fff; }
+
+    /* ── Main ── */
+    .main { flex: 1; min-width: 0; padding: 24px; }
+
+    .page-header {
+      background: var(--sidebar);
+      border-radius: 14px; padding: 24px 28px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+      gap: 12px; margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(44,62,80,.15);
+    }
+
+    .page-header-left h1 { color: #fff; font-size: 1.5rem; margin-bottom: 4px; }
+    .page-header-left p { color: rgba(255,255,255,.6); font-size: .88rem; }
+
+    .refresh-btn {
+      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+      color: #fff; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+      font-size: .88rem; display: flex; align-items: center; gap: 8px; transition: all .2s;
+    }
+    .refresh-btn:hover { background: rgba(255,255,255,.25); }
+
+    /* ── Overview Cards ── */
+    .overview-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 14px; margin-bottom: 24px;
+    }
+
+    .overview-card {
+      background: var(--card-bg); border-radius: 12px;
+      padding: 16px; box-shadow: var(--shadow); border: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    .overview-card-label { font-size: .75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: .5px; }
+    .overview-card-value { font-size: 1.6rem; font-weight: 700; color: var(--text); }
+    .overview-card-icon { font-size: 1.2rem; }
+
+    /* ── Tab Sections ── */
+    .tab-section { display: none; }
+    .tab-section.active { display: block; }
+
+    .section-title {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.15rem; font-weight: 700; color: var(--text);
+      margin-bottom: 18px; padding-bottom: 10px;
+      border-bottom: 2px solid var(--primary);
+    }
+
+    .section-title i { color: var(--primary); }
+
+    /* ── Subsection Panel ── */
+    .subsection-panel {
+      background: var(--card-bg); border-radius: 12px;
+      border: 1px solid var(--border); margin-bottom: 20px;
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+
+    .bsf-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--sidebar);
+      color: #fff; padding: 14px 20px; flex-wrap: wrap; gap: 8px;
+    }
+
+    .bsf-panel-title { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
+    .bsf-badge {
+      background: rgba(255,255,255,.18); border-radius: 20px;
+      padding: 3px 12px; font-size: .82rem; font-weight: 500;
+    }
+
+    .bsf-summary-cards {
+      display: flex; flex-wrap: wrap; gap: 12px;
+      padding: 16px 20px; background: #f8f9fb; border-bottom: 1px solid var(--border);
+    }
+
+    .bsf-card {
+      background: #fff; border-radius: 10px; padding: 14px 18px;
+      display: flex; align-items: center; gap: 14px;
+      min-width: 150px; flex: 1;
+      box-shadow: 0 1px 6px rgba(44,62,80,.07);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .bsf-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(44,62,80,.12); }
+    .bsf-card-icon { font-size: 1.5rem; width: 36px; text-align: center; flex-shrink: 0; }
+    .bsf-card-value { font-size: 1.35rem; font-weight: 700; color: #2c3e50; line-height: 1.2; }
+    .bsf-card-label { font-size: .73rem; color: #7f8c8d; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+
+    .bsf-charts-grid {
+      display: flex; flex-wrap: wrap; gap: 16px;
+      padding: 16px 20px; background: #fff; border-bottom: 1px solid var(--border);
+    }
+
+    .bsf-chart-container {
+      background: #fafbfc; border-radius: 10px; padding: 14px;
+      flex: 1; min-width: 260px; max-width: 420px; border: 1px solid var(--border);
+    }
+
+    .bsf-chart-title { font-size: .85rem; font-weight: 600; color: #34495e; margin-bottom: 10px; text-align: center; }
+
+    .bsf-table-section { padding: 16px 20px; }
+
+    .bsf-table-title {
+      font-size: .92rem; font-weight: 600; color: #2c3e50;
+      margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+    }
+
+    .bsf-table-wrapper { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+
+    .bsf-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+
+    .bsf-table thead tr { background: linear-gradient(90deg, #2ecc71, #27ae60); color: #fff; }
+
+    .bsf-table thead th {
+      padding: 10px 12px; text-align: left; font-weight: 600;
+      white-space: nowrap; font-size: .8rem; text-transform: uppercase; letter-spacing: .4px;
+    }
+
+    .bsf-table tbody tr:nth-child(even) { background: #f8f9fb; }
+    .bsf-table tbody tr:hover { background: #eaf6ee; }
+
+    .bsf-table td {
+      padding: 9px 12px; border-bottom: 1px solid #eef0f5;
+      color: #34495e; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .bsf-empty { text-align: center; color: #95a5a6; padding: 24px; font-style: italic; }
+
+    .bsf-btn-delete {
+      background: #fee; border: 1px solid #fcc; color: #e74c3c;
+      border-radius: 6px; padding: 4px 8px; cursor: pointer;
+      font-size: .78rem; transition: all .2s;
+    }
+    .bsf-btn-delete:hover { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+
+    .bsf-export-buttons {
+      display: flex; gap: 10px; padding: 14px 20px;
+      background: #f8f9fb; border-top: 1px solid var(--border); flex-wrap: wrap;
+    }
+
+    .bsf-btn-excel, .bsf-btn-pdf {
+      padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer;
+      font-size: .86rem; font-weight: 600; display: flex; align-items: center; gap: 7px; transition: all .2s;
+    }
+
+    .bsf-btn-excel { background: linear-gradient(135deg, var(--primary-dark), #27ae60); color: #fff; }
+    .bsf-btn-excel:hover { box-shadow: 0 4px 12px rgba(39,174,96,.35); transform: translateY(-1px); }
+
+    .bsf-btn-pdf { background: linear-gradient(135deg, #922b21, #e74c3c); color: #fff; }
+    .bsf-btn-pdf:hover { box-shadow: 0 4px 12px rgba(231,76,60,.35); transform: translateY(-1px); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .tab-section.active { animation: fadeIn .3s ease; }
+
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; min-height: unset; flex-direction: row; flex-wrap: wrap; position: static; }
+      .tab-btn { font-size: .8rem; padding: 8px 12px; }
+      .bsf-summary-cards { flex-direction: column; }
+      .bsf-chart-container { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <a href="/dashboard" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
+        <img src="images/logo.png" alt="BSF Farm">
+        <span>BSF FARM</span>
+      </a>
+    </div>
+
+    <div class="sidebar-heading">Analytics Sections</div>
+
+    <button class="tab-btn active" onclick="switchTab('waste', this)">
+      <i class="fas fa-recycle"></i> Waste Management
+    </button>
+    <button class="tab-btn" onclick="switchTab('feeding', this)">
+      <i class="fas fa-utensils"></i> Larval Feeding
+    </button>
+    <button class="tab-btn" onclick="switchTab('drying', this)">
+      <i class="fas fa-wind"></i> Drying Process
+    </button>
+    <button class="tab-btn" onclick="switchTab('hatchery', this)">
+      <i class="fas fa-egg"></i> Hatchery
+    </button>
+    <button class="tab-btn" onclick="switchTab('facility', this)">
+      <i class="fas fa-warehouse"></i> Fly Facility
+    </button>
+    <button class="tab-btn" onclick="switchTab('sales-section', this)">
+      <i class="fas fa-cash-register"></i> Sales
+    </button>
+
+    <div class="sidebar-divider"></div>
+
+    <a class="back-btn" href="/dashboard">
+      <i class="fas fa-arrow-left"></i> Back to Main App
+    </a>
+  </nav>
+
+  <!-- ── Main Content ── -->
+  <main class="main">
+
+    <!-- Page Header -->
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1><i class="fas fa-chart-line"></i> Analytics Dashboard</h1>
+        <p>Live data from the database — all records from your farm operations</p>
+      </div>
+      <button class="refresh-btn" onclick="refreshAll()">
+        <i class="fas fa-sync-alt"></i> Refresh All
+      </button>
+    </div>
+
+    <!-- Overview Summary -->
+    <div class="overview-grid" id="overviewGrid"></div>
+
+    <!-- ── WASTE MANAGEMENT ── -->
+    <div id="tab-waste" class="tab-section active">
+      <div class="section-title"><i class="fas fa-recycle"></i> Waste Management</div>
+
+      <div class="subsection-panel" id="panel-wasteSourcing"></div>
+      <div class="subsection-panel" id="panel-storageRecords"></div>
+      <div class="subsection-panel" id="panel-processingRecords"></div>
+      <div class="subsection-panel" id="panel-wasteEnvMonitoring"></div>
+    </div>
+
+    <!-- ── HATCHERY ── -->
+    <div id="tab-hatchery" class="tab-section">
+      <div class="section-title"><i class="fas fa-egg"></i> Hatchery</div>
+
+      <div class="subsection-panel" id="panel-hatcheryBatch"></div>
+      <div class="subsection-panel" id="panel-hatcheryFeeding"></div>
+      <div class="subsection-panel" id="panel-hatcheryEnvMonitoring"></div>
+    </div>
+
+    <!-- ── LARVAL FEEDING ── -->
+    <div id="tab-feeding" class="tab-section">
+      <div class="section-title"><i class="fas fa-utensils"></i> Larval Feeding</div>
+
+      <div class="subsection-panel" id="panel-larvaeEnvMonitoring"></div>
+      <div class="subsection-panel" id="panel-substratePrep"></div>
+      <div class="subsection-panel" id="panel-healthIntervention"></div>
+      <div class="subsection-panel" id="panel-harvestYield"></div>
+      <div class="subsection-panel" id="panel-feedingSchedule"></div>
+    </div>
+
+    <!-- ── DRYING PROCESS ── -->
+    <div id="tab-drying" class="tab-section">
+      <div class="section-title"><i class="fas fa-wind"></i> Drying Process</div>
+
+      <div class="subsection-panel" id="panel-dryingBatch"></div>
+      <div class="subsection-panel" id="panel-dryingInput"></div>
+      <div class="subsection-panel" id="panel-dryingOutput"></div>
+    </div>
+
+    <!-- ── FLY FACILITY ── -->
+    <div id="tab-facility" class="tab-section">
+      <div class="section-title"><i class="fas fa-warehouse"></i> Fly Facility</div>
+
+      <div class="subsection-panel" id="panel-cageMonitoring"></div>
+      <div class="subsection-panel" id="panel-facilityMaintenance"></div>
+      <div class="subsection-panel" id="panel-pupaeTransition"></div>
+      <div class="subsection-panel" id="panel-eggCollection"></div>
+      <div class="subsection-panel" id="panel-baitPreparation"></div>
+    </div>
+
+    <!-- ── SALES ── -->
+    <div id="tab-sales-section" class="tab-section">
+      <div class="section-title"><i class="fas fa-cash-register"></i> Sales</div>
+
+      <div class="subsection-panel" id="panel-customers"></div>
+      <div class="subsection-panel" id="panel-sales"></div>
+      <div class="subsection-panel" id="panel-deliveries"></div>
+      <div class="subsection-panel" id="panel-feedback"></div>
+    </div>
+
+  </main>
+
+  <script src="js/exportManager.js"></script>
+  <script src="js/analyticsManager.js"></script>
+
+  <script>
+    const PANEL_MAP = {
+      wasteSourcing:       'panel-wasteSourcing',
+      storageRecords:      'panel-storageRecords',
+      processingRecords:   'panel-processingRecords',
+      wasteEnvMonitoring:  'panel-wasteEnvMonitoring',
+      hatcheryBatch:       'panel-hatcheryBatch',
+      hatcheryFeeding:     'panel-hatcheryFeeding',
+      hatcheryEnvMonitoring: 'panel-hatcheryEnvMonitoring',
+      larvaeEnvMonitoring: 'panel-larvaeEnvMonitoring',
+      substratePrep:       'panel-substratePrep',
+      healthIntervention:  'panel-healthIntervention',
+      harvestYield:        'panel-harvestYield',
+      feedingSchedule:     'panel-feedingSchedule',
+      cageMonitoring:      'panel-cageMonitoring',
+      facilityMaintenance: 'panel-facilityMaintenance',
+      pupaeTransition:     'panel-pupaeTransition',
+      eggCollection:       'panel-eggCollection',
+      baitPreparation:     'panel-baitPreparation',
+      dryingBatch:         'panel-dryingBatch',
+      dryingInput:         'panel-dryingInput',
+      dryingOutput:        'panel-dryingOutput',
+      customers:           'panel-customers',
+      sales:               'panel-sales',
+      deliveries:          'panel-deliveries',
+      feedback:            'panel-feedback'
+    };
+
+    const OVERVIEW_SECTIONS = [
+      { key: 'wasteSourcing',   label: 'Waste Records',   icon: 'fa-recycle',       color: '#2ecc71' },
+      { key: 'harvestYield',    label: 'Harvest Records', icon: 'fa-leaf',           color: '#3498db' },
+      { key: 'dryingOutput',    label: 'Drying Batches',  icon: 'fa-wind',           color: '#e67e22' },
+      { key: 'eggCollection',   label: 'Egg Collections', icon: 'fa-egg',            color: '#9b59b6' },
+      { key: 'sales',           label: 'Sales Records',   icon: 'fa-cash-register',  color: '#e74c3c' },
+      { key: 'customers',       label: 'Customers',       icon: 'fa-users',          color: '#1abc9c' }
+    ];
+
+    async function renderOverview() {
+      const grid = document.getElementById('overviewGrid');
+      grid.innerHTML = OVERVIEW_SECTIONS.map(s => `
+        <div class="overview-card">
+          <span class="overview-card-icon" style="color:${s.color}"><i class="fas ${s.icon}"></i></span>
+          <div class="overview-card-value" id="overview-count-${s.key}"><i class="fas fa-spinner fa-spin" style="font-size:.9rem"></i></div>
+          <div class="overview-card-label">${s.label}</div>
+        </div>`).join('');
+
+      await Promise.all(OVERVIEW_SECTIONS.map(async s => {
+        const records = await AnalyticsManager.fetchRecords(s.key);
+        const el = document.getElementById('overview-count-' + s.key);
+        if (el) el.textContent = records.length;
+      }));
+    }
+
+    async function renderAllPanels() {
+      await Promise.all(
+        Object.entries(PANEL_MAP).map(([key, containerId]) =>
+          AnalyticsManager.renderSubsectionPanel(containerId, key)
+        )
+      );
+    }
+
+    async function refreshAll() {
+      const btn = document.querySelector('.refresh-btn i');
+      btn.style.transform = 'rotate(360deg)';
+      btn.style.transition = 'transform .5s';
+      setTimeout(() => { btn.style.transform = ''; }, 600);
+      await renderOverview();
+      await renderAllPanels();
+    }
+
+    function switchTab(id, btn) {
+      document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + id).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      await renderOverview();
+      await renderAllPanels();
+    });
+  </script>
+
+</body>
+</html>

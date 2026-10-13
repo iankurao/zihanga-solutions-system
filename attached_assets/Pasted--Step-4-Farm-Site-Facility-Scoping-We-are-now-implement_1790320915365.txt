@@ -1,0 +1,135 @@
+# Step 4 — Farm, Site & Facility Scoping
+
+We are now implementing the organizational and operational location hierarchy for the Zehunger Solutions BSF ERP.
+
+IMPORTANT:
+
+Do NOT redesign the entire application.
+
+Do NOT create microservices.
+
+Do NOT create duplicate farm/site/facility tables if equivalent structures already exist.
+
+First inspect the existing implementation and reuse existing structures where they are appropriate.
+
+The goal is to establish a reliable hierarchy:
+
+Organization
+↓
+Farm
+↓
+Site
+↓
+Facility
+↓
+Operational Assets / Production Units
+
+The system must be able to answer:
+
+* Which organization owns this operation?
+* Which farm does this record belong to?
+* Which site does it belong to?
+* Which facility did the operation happen in?
+* Which user performed the action?
+* Is that user authorized to access this farm/facility?
+
+---
+
+## 1. AUDIT THE CURRENT IMPLEMENTATION FIRST
+
+Before modifying anything, inspect:
+
+* existing organization tables
+* existing farms
+* existing sites
+* existing facilities
+* users
+* roles
+* permissions
+* farmer relationships
+* production batches
+* waste records
+* substrate records
+* feeding records
+* harvest records
+* drying records
+* inventory records
+* sales records
+* existing foreign keys
+* existing farm/site/facility IDs
+
+Compare the existing implementation against the target hierarchy:
+
+Organization
+→ Farm
+→ Site
+→ Facility
+
+Document:
+
+1. What already exists.
+2. What can be reused.
+3. What needs modification.
+4. What is missing.
+5. Which operational tables already contain location information.
+6. Which operational tables have no location relationship.
+7. Which existing records have ambiguous or missing location information.
+
+Do NOT change the database yet.
+
+Create:
+
+FARM_FACILITY_CURRENT_STATE.md
+
+---
+
+# 2. ESTABLISH THE CANONICAL HIERARCHY
+
+The canonical hierarchy for Phase One should be:
+
+Organization
+→ Farm
+→ Site
+→ Facility
+
+Use the existing domain model where appropriate.
+
+### Organization
+
+Represents the business/entity operating the ERP.
+
+Example:
+
+Zehunger Solutions
+
+### Farm
+
+Represents a farm-level operation.
+
+Example:
+
+Zehunger Farm — Kericho
+
+### Site
+
+Represents a distinct physical operational site within a farm where needed.
+
+Example:
+
+Main Farm Site
+
+### Facility
+
+Represents a specific operational facility.
+
+Examples:
+
+* BSF Production House
+* Hatchery
+* Waste Processing Area
+* Drying Facility
+* Feed Preparation Area
+* Cold/Storage Facility
+* Warehouse
+
+Do not create unnecessary hierarchy levels if the existing application

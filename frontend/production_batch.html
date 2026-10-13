@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production Batch Detail | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    :root { --ink:#18322b; --muted:#66766f; --line:#dce8e1; --accent:#2f7d58; --soft:#f3f8f4; --danger:#a23b31; }
+    body { background:#f5f8f6; color:var(--ink); }
+    .batch-page { max-width:1160px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+    .batch-header { display:flex; gap:1rem; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; }
+    .batch-header h1 { margin:0 0 .35rem; }
+    .batch-header p { color:var(--muted); margin:0; }
+    .batch-search { display:flex; gap:.5rem; min-width:300px; }
+    .batch-search input, .event-form input, .event-form select, .event-form textarea {
+      min-width:0; width:100%; padding:.7rem .8rem; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink);
+    }
+    .batch-search input { flex:1; }
+    button { font:inherit; }
+    .batch-search button, .event-form button { border:0; border-radius:7px; background:var(--accent); color:#fff; padding:.7rem 1rem; cursor:pointer; }
+    .batch-search button:disabled, .event-form button:disabled { opacity:.6; cursor:wait; }
+    .batch-error { color:var(--danger); background:#fff0ee; border:1px solid #f0c4bf; padding:.8rem 1rem; border-radius:7px; display:none; margin-bottom:1rem; }
+    .batch-card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1.25rem; box-shadow:0 4px 16px rgba(24,50,43,.05); }
+    .batch-overview { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; margin-bottom:1rem; }
+    .batch-metric { background:var(--soft); border-radius:8px; padding:.9rem; }
+    .batch-metric dt { color:var(--muted); font-size:.78rem; margin-bottom:.3rem; }
+    .batch-metric dd { margin:0; font-weight:700; overflow-wrap:anywhere; }
+    .status-pill { display:inline-block; padding:.3rem .6rem; border-radius:999px; background:#e2f1e7; color:#21633e; font-size:.8rem; font-weight:700; }
+    .batch-tabs { display:flex; gap:.5rem; flex-wrap:wrap; border-bottom:1px solid var(--line); margin:1.25rem 0 0; }
+    .batch-tab { border:0; background:transparent; color:var(--muted); padding:.75rem .9rem; border-bottom:3px solid transparent; cursor:pointer; font-weight:700; }
+    .batch-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .batch-panel { padding-top:1.25rem; }
+    .batch-panel[hidden] { display:none; }
+    .batch-section h2 { font-size:1.05rem; margin:0 0 .8rem; }
+    .batch-inputs { width:100%; border-collapse:collapse; }
+    .batch-inputs th, .batch-inputs td { padding:.7rem .5rem; text-align:left; border-bottom:1px solid var(--line); }
+    .batch-inputs th { color:var(--muted); font-size:.78rem; font-weight:600; }
+    .empty { color:var(--muted); padding:.5rem 0; }
+    .event-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+    .event-form .full { grid-column:1 / -1; }
+    .event-form label { display:block; font-size:.82rem; font-weight:700; margin-bottom:.35rem; }
+    .event-form .help { color:var(--muted); font-size:.78rem; margin:.25rem 0 0; }
+    .event-form button { justify-self:start; }
+    .event-list { display:grid; gap:.75rem; }
+    .event-item { border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:8px; padding:.85rem 1rem; background:#fff; }
+    .event-item header { display:flex; justify-content:space-between; gap:1rem; margin-bottom:.4rem; }
+    .event-item strong { text-transform:capitalize; }
+    .event-meta { color:var(--muted); font-size:.82rem; }
+    .event-details { display:flex; gap:1rem; flex-wrap:wrap; font-size:.9rem; }
+    .form-message { min-height:1.2rem; color:var(--danger); font-size:.85rem; }
+    @media (max-width:760px) {
+      .batch-header { flex-direction:column; }
+      .batch-search { width:100%; min-width:0; }
+      .batch-overview { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .event-form { grid-template-columns:1fr; }
+      .event-form .full { grid-column:auto; }
+      .batch-inputs { display:block; overflow-x:auto; white-space:nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <main class="batch-page">
+    <div class="batch-header">
+      <div>
+        <h1>Production Batch Detail</h1>
+        <p>One lifecycle record for feeding, monitoring, health interventions, and harvests.</p>
+      </div>
+      <form class="batch-search" id="batchSearchForm">
+        <label class="sr-only" for="batchRef">Batch number</label>
+        <input id="batchRef" name="batchRef" placeholder="BSF-2026-00001 or ID" required>
+        <button type="submit">Load</button>
+      </form>
+    </div>
+    <div class="batch-error" id="batchError" role="alert"></div>
+    <section class="batch-card" id="batchCard" hidden>
+      <div class="batch-overview">
+        <dl class="batch-metric"><dt>Batch number</dt><dd id="batchNumber">—</dd></dl>
+        <dl class="batch-metric"><dt>Lifecycle status</dt><dd><span class="status-pill" id="batchStatus">—</span></dd></dl>
+        <dl class="batch-metric"><dt>Current stage</dt><dd id="batchStage">—</dd></dl>
+        <dl class="batch-metric"><dt>Age</dt><dd id="batchAge">—</dd></dl>
+        <dl class="batch-metric"><dt>Facility</dt><dd id="batchFacility">—</dd></dl>
+        <dl class="batch-metric"><dt>Farm / site</dt><dd id="batchSite">—</dd></dl>
+        <dl class="batch-metric"><dt>Start date</dt><dd id="batchStartDate">—</dd></dl>
+        <dl class="batch-metric"><dt>Events</dt><dd id="batchEventCount">0</dd></dl>
+      </div>
+
+      <nav class="batch-tabs" aria-label="Production Batch sections">
+        <button class="batch-tab active" type="button" data-tab="overview">Overview</button>
+        <button class="batch-tab" type="button" data-tab="feeding">Feeding</button>
+        <button class="batch-tab" type="button" data-tab="monitoring">Monitoring</button>
+        <button class="batch-tab" type="button" data-tab="health">Health</button>
+        <button class="batch-tab" type="button" data-tab="harvest">Harvest</button>
+        <button class="batch-tab" type="button" data-tab="timeline">Timeline</button>
+      </nav>
+
+      <section class="batch-panel" data-panel="overview">
+        <div class="batch-section">
+          <h2>Substrate source and quantity used</h2>
+          <div id="batchInputsEmpty" class="empty" hidden>No substrate inputs recorded.</div>
+          <table class="batch-inputs" id="batchInputsTable">
+            <thead><tr><th>Substrate batch</th><th>Source</th><th>Quantity used</th></tr></thead>
+            <tbody id="batchInputs"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="batch-panel" data-panel="feeding" hidden>
+        <h2>Record Feeding Event</h2>
+        <form class="event-form" id="feedingEventForm">
+          <div><label for="feedingDate">Date</label><input id="feedingDate" name="feeding_date" type="date" required></div>
+          <div><label for="feedingTime">Time (optional)</label><input id="feedingTime" name="event_time" type="time"></div>
+          <div><label for="feedType">Feed type</label><input id="feedType" name="feed_type" required></div>
+          <div><label for="feedQuantity">Quantity offered</label><input id="feedQuantity" name="quantity_offered" type="number" min="0.001" step="0.001" required></div>
+          <div><label for="feedUnit">Offered unit</label><select id="feedUnit" name="offered_unit"><option value="kg">kg</option><option value="g">g</option></select></div>
+          <div><label for="feedConsumed">Quantity consumed (optional)</label><input id="feedConsumed" name="quantity_consumed" type="number" min="0" step="0.001"></div>
+          <div><label for="feedConsumedUnit">Consumed unit</label><select id="feedConsumedUnit" name="consumed_unit"><option value="kg">kg</option><option value="g">g</option></select></div>
+          <div><label for="larvaeBiomass">Larvae biomass (optional)</label><input id="larvaeBiomass" name="larvae_biomass" type="number" min="0" step="0.001"></div>
+          <div><label for="larvaeBiomassUnit">Biomass unit</label><select id="larvaeBiomassUnit" name="biomass_unit"><option value="g">g</option><option value="kg">kg</option></select></div>
+          <div><label for="larvaeAge">Larvae age (days, optional)</label><input id="larvaeAge" name="larvae_age_days" type="number" min="0" step="1"></div>
+          <div><label for="feedingTray">Tray / unit reference (optional)</label><input id="feedingTray" name="tray_batch_id"></div>
+          <div><label for="feedingOperator">Operator</label><input id="feedingOperator" name="operator" required></div>
+          <div class="full"><label for="feedingNotes">Notes</label><textarea id="feedingNotes" name="notes" rows="2"></textarea></div>
+          <div class="full form-message" id="feedingMessage" role="status"></div>
+          <button type="submit">Record Feeding</button>
+        </form>
+        <div class="batch-section"><h2>Feeding events</h2><div id="feedingEvents" class="event-list"></div></div>
+      </section>
+
+      <section class="batch-panel" data-panel="monitoring" hidden>
+        <h2>Record Monitoring Event</h2>
+        <form class="event-form" id="monitoringEventForm">
+          <div><label for="monitoringDate">Date</label><input id="monitoringDate" name="monitoring_date" type="date" required></div>
+          <div><label for="monitoringTime">Time</label><input id="monitoringTime" name="monitoring_time" type="time" required></div>
+          <div><label for="monitoringAsset">Facility / asset reference</label><input id="monitoringAsset" name="asset_reference" required></div>
+          <div><label for="monitoringType">Monitoring type</label><input id="monitoringType" name="monitoring_type" value="larval_environment" required></div>
+          <div><label for="monitoringTemperature">Temperature (°C)</label><input id="monitoringTemperature" name="temperature" type="number" min="-50" max="100" step="0.01" required></div>
+          <div><label for="monitoringHumidity">Humidity (%)</label><input id="monitoringHumidity" name="humidity" type="number" min="0" max="100" step="0.01" required></div>
+          <div><label for="monitoringAmmonia">Ammonia (ppm, optional)</label><input id="monitoringAmmonia" name="ammonia" type="number" min="0" step="0.001"></div>
+          <div><label for="ammoniaOdor">Ammonia odor</label><select id="ammoniaOdor" name="ammonia_odor"><option value="no">No</option><option value="yes">Yes</option></select></div>
+          <div class="full"><label for="monitoringNotes">Notes</label><textarea id="monitoringNotes" name="notes" rows="2"></textarea></div>
+          <div class="full form-message" id="monitoringMessage" role="status"></div>
+          <button type="submit">Record Monitoring</button>
+        </form>
+        <div class="batch-section"><h2>Monitoring events</h2><div id="monitoringEvents" class="event-list"></div></div>
+      </section>
+
+      <section class="batch-panel" data-panel="health" hidden>
+        <h2>Record Health Event</h2>
+        <form class="event-form" id="healthEventForm">
+          <div><label for="healthDate">Date</label><input id="healthDate" name="health_date" type="date" required></div>
+          <div><label for="healthTime">Time (optional)</label><input id="healthTime" name="event_time" type="time"></div>
+          <div><label for="healthIssue">Observed issue</label><input id="healthIssue" name="observed_issue" required></div>
+          <div><label for="healthSeverity">Severity</label><select id="healthSeverity" name="severity" required><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+          <div><label for="healthStatus">Intervention status</label><select id="healthStatus" name="status"><option value="open">Open</option><option value="follow_up">Follow-up</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></div>
+          <div><label for="healthFollowUp">Follow-up date</label><input id="healthFollowUp" name="follow_up_date" type="date"></div>
+          <div class="full"><label for="healthAction">Action taken</label><textarea id="healthAction" name="action_taken" rows="2" required></textarea></div>
+          <div class="full"><label for="healthComments">Notes</label><textarea id="healthComments" name="comments" rows="2"></textarea></div>
+          <div class="full form-message" id="healthMessage" role="status"></div>
+          <button type="submit">Record Health Event</button>
+        </form>
+        <div class="batch-section"><h2>Health events</h2><div id="healthEvents" class="event-list"></div></div>
+      </section>
+
+      <section class="batch-panel" data-panel="harvest" hidden>
+        <div class="batch-section">
+          <h2>Production Batch → Harvest(s)</h2>
+          <div class="batch-overview">
+            <dl class="batch-metric"><dt>Harvest limit</dt><dd id="harvestLimitSummary">Not configured</dd></dl>
+            <dl class="batch-metric"><dt>Total harvested</dt><dd id="harvestTotal">0.000 kg</dd></dl>
+            <dl class="batch-metric"><dt>Remaining</dt><dd id="harvestRemaining">—</dd></dl>
+          </div>
+          <form class="event-form" id="harvestLimitForm">
+            <div>
+              <label for="harvestLimitInput">Maximum harvestable wet weight (kg)</label>
+              <input id="harvestLimitInput" name="harvest_limit_kg" type="number" min="0.001" step="0.001" required>
+              <p class="help">Set the batch’s approved total limit. It cannot be changed after its first harvest.</p>
+            </div>
+            <div class="full form-message" id="harvestLimitMessage" role="status"></div>
+            <button type="submit">Save harvest limit</button>
+          </form>
+        </div>
+        <div class="batch-section">
+          <h2>Record a harvest</h2>
+          <p class="empty" id="harvestStateMessage"></p>
+          <form class="event-form" id="harvestEventForm" hidden>
+            <div><label for="harvestDate">Harvest date</label><input id="harvestDate" name="harvest_date" type="date" required></div>
+            <div><label for="harvestTime">Harvest time</label><input id="harvestTime" name="event_time" type="time" required></div>
+            <div><label for="harvestWeight">Wet weight</label><input id="harvestWeight" name="wet_weight" type="number" min="0.001" step="0.001" required></div>
+            <div><label for="harvestUnit">Unit</label><select id="harvestUnit" name="unit"><option value="kg">kg</option><option value="g">g</option></select></div>
+            <div><label for="harvestStage">Harvest stage</label><input id="harvestStage" name="harvest_stage" maxlength="80" required></div>
+            <div><label for="harvestOperator">Operator</label><input id="harvestOperator" name="operator" maxlength="100" required></div>
+            <div class="full"><label for="harvestLocation">Harvest location</label><input id="harvestLocation" name="location" maxlength="200" required></div>
+            <div class="full"><label for="harvestNotes">Notes</label><textarea id="harvestNotes" name="notes" rows="2"></textarea></div>
+            <div class="full form-message" id="harvestMessage" role="status"></div>
+            <button type="submit">Record harvest</button>
+          </form>
+        </div>
+        <div class="batch-section">
+          <h2>Harvest records</h2>
+          <div id="harvestEvents" class="event-list"></div>
+        </div>
+      </section>
+
+      <section class="batch-panel" data-panel="timeline" hidden>
+        <h2>Combined Timeline</h2>
+        <div id="timelineEvents" class="event-list"></div>
+      </section>
+    </section>
+  </main>
+  <script>
+    const esc = value => String(value ?? '—').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    let activeBatchReference = '';
+    let activeBatch = null;
+    const field = id => document.getElementById(id);
+    function showError(message) {
+      const error = field('batchError');
+      error.textContent = message;
+      error.style.display = 'block';
+      field('batchCard').hidden = true;
+    }
+    function showMessage(id, message, isError = true) {
+      const element = field(id);
+      element.textContent = message;
+      element.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+    }
+    function eventSummary(event) {
+      const values = [];
+      if (event.event_type === 'feeding') {
+        values.push(`Offered: ${event.quantity_offered} ${event.offered_unit}`);
+        if (event.quantity_consumed != null) values.push(`Consumed: ${event.quantity_consumed} ${event.consumed_unit}`);
+        if (event.feed_type) values.push(`Feed: ${event.feed_type}`);
+      } else if (event.event_type === 'monitoring') {
+        values.push(`Temperature: ${event.temperature} °C`, `Humidity: ${event.humidity} %`);
+        if (event.ammonia != null) values.push(`Ammonia: ${event.ammonia} ppm`);
+        if (event.asset_reference) values.push(`Asset: ${event.asset_reference}`);
+      } else if (event.event_type === 'harvest') {
+        values.push(`Harvest ${event.harvest_code}`);
+        values.push(`Wet weight: ${event.wet_weight} ${event.harvest_unit}`);
+        values.push(`Stage: ${event.harvest_stage}`);
+        values.push(`Operator: ${event.harvest_operator}`);
+        values.push(`Location: ${event.harvest_location}`);
+      } else {
+        values.push(`Issue: ${event.observed_issue}`, `Severity: ${event.severity}`, `Status: ${event.health_status}`);
+      }
+      return values.map(esc).join(' · ');
+    }
+    function renderEvents(events, targetId, emptyText) {
+      const target = field(targetId);
+      if (!events.length) {
+        target.innerHTML = `<div class="empty">${esc(emptyText)}</div>`;
+        return;
+      }
+      target.innerHTML = events.map(event => `
+        <article class="event-item">
+          <header><strong>${esc(event.event_type)}</strong><span class="event-meta">${esc(event.occurred_at)} · ${esc(event.actor)}</span></header>
+          <div class="event-details"><span>${eventSummary(event)}</span>${event.notes ? `<span>Notes: ${esc(event.notes)}</span>` : ''}</div>
+        </article>`).join('');
+    }
+    function renderBatch(batch) {
+      field('batchError').style.display = 'none';
+      field('batchCard').hidden = false;
+      field('batchNumber').textContent = batch.batch_number || batch.business_id || batch.batch_code;
+      field('batchStatus').textContent = batch.status || '—';
+      field('batchStage').textContent = batch.current_stage || '—';
+      field('batchAge').textContent = `${batch.age_days ?? '—'} day${batch.age_days === 1 ? '' : 's'}`;
+      field('batchFacility').textContent = batch.facility_name || batch.facility_id || '—';
+      field('batchSite').textContent = [batch.farm_name, batch.site_name].filter(Boolean).join(' / ') || '—';
+      field('batchStartDate').textContent = batch.start_date || '—';
+      field('batchEventCount').textContent = (batch.events || []).length;
+      const totalHarvested = Number(batch.total_harvested_kg || 0);
+      const harvestLimit = batch.harvest_limit_kg == null ? null : Number(batch.harvest_limit_kg);
+      field('harvestLimitSummary').textContent = harvestLimit == null ? 'Not configured' : `${harvestLimit.toFixed(3)} kg`;
+      field('harvestTotal').textContent = `${totalHarvested.toFixed(3)} kg`;
+      field('harvestRemaining').textContent = harvestLimit == null
+        ? '—'
+        : `${Number(batch.remaining_harvest_kg || 0).toFixed(3)} kg`;
+      field('harvestLimitInput').value = harvestLimit == null ? '' : harvestLimit;
+      const harvests = batch.harvests || [];
+      field('harvestLimitInput').disabled = harvests.length !== 0;
+      field('harvestLimitForm').querySelector('button[type="submit"]').disabled = harvests.length !== 0;
+      field('harvestStateMessage').textContent = batch.status !== 'READY_FOR_HARVEST'
+        ? 'The batch must be READY_FOR_HARVEST before recording a harvest.'
+        : harvestLimit == null
+          ? 'Set a harvest limit before recording the first harvest.'
+          : '';
+      field('harvestEventForm').hidden = batch.status !== 'READY_FOR_HARVEST' || harvestLimit == null;
+      const inputs = batch.inputs || [];
+      field('batchInputsEmpty').hidden = inputs.length !== 0;
+      field('batchInputsTable').hidden = inputs.length === 0;
+      field('batchInputs').innerHTML = inputs.map(input => `<tr><td>${esc(input.business_id || input.batch_code || input.substrate_batch_id)}</td><td>${esc(input.batch_code || input.business_id || input.substrate_batch_id)}</td><td>${esc(input.quantity_issued)} ${esc(input.unit || 'kg')}</td></tr>`).join('');
+      renderEvents(batch.feeding_events || [], 'feedingEvents', 'No feeding events recorded.');
+      renderEvents(batch.monitoring_events || [], 'monitoringEvents', 'No monitoring events recorded.');
+      renderEvents(batch.health_events || [], 'healthEvents', 'No health events recorded.');
+      renderEvents(harvests, 'harvestEvents', 'No harvests recorded.');
+      renderEvents(batch.timeline || [], 'timelineEvents', 'No production events recorded.');
+    }
+    async function loadBatch(reference) {
+      const response = await fetch('/api/production/batches/' + encodeURIComponent(reference), {credentials:'include'});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || 'Could not load Production Batch');
+      activeBatchReference = reference;
+      activeBatch = payload.data;
+      renderBatch(activeBatch);
+    }
+    async function submitEvent(type, form, messageId) {
+      if (!activeBatchReference) return showMessage(messageId, 'Load a Production Batch first.');
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      showMessage(messageId, '');
+      try {
+        const data = Object.fromEntries(new FormData(form).entries());
+        ['quantity_offered','quantity_consumed','larvae_biomass','larvae_age_days','temperature','humidity','ammonia','wet_weight'].forEach(key => {
+          if (data[key] !== undefined && data[key] !== '') data[key] = Number(data[key]);
+        });
+        if (type === 'harvest') {
+          data.occurred_at = new Date(`${data.harvest_date}T${data.event_time}`).toISOString();
+        }
+        const response = await fetch(`/api/production/batches/${encodeURIComponent(activeBatchReference)}/events/${type}`, {
+          method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(data)
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || 'Could not record event');
+        form.reset();
+        showMessage(messageId, payload.message, false);
+        await loadBatch(activeBatchReference);
+      } catch (error) {
+        showMessage(messageId, error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+    document.querySelectorAll('.batch-tab').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('.batch-tab').forEach(item => item.classList.toggle('active', item === tab));
+      document.querySelectorAll('.batch-panel').forEach(panel => panel.hidden = panel.dataset.panel !== tab.dataset.tab);
+    }));
+    field('batchSearchForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const reference = field('batchRef').value.trim();
+      if (reference) loadBatch(reference).catch(error => showError(error.message));
+    });
+    field('feedingEventForm').addEventListener('submit', event => { event.preventDefault(); submitEvent('feeding', event.currentTarget, 'feedingMessage'); });
+    field('monitoringEventForm').addEventListener('submit', event => { event.preventDefault(); submitEvent('monitoring', event.currentTarget, 'monitoringMessage'); });
+    field('healthEventForm').addEventListener('submit', event => { event.preventDefault(); submitEvent('health', event.currentTarget, 'healthMessage'); });
+    field('harvestEventForm').addEventListener('submit', event => { event.preventDefault(); submitEvent('harvest', event.currentTarget, 'harvestMessage'); });
+    field('harvestLimitForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!activeBatchReference) return showMessage('harvestLimitMessage', 'Load a Production Batch first.');
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      showMessage('harvestLimitMessage', '');
+      try {
+        const response = await fetch(`/api/production/batches/${encodeURIComponent(activeBatchReference)}/harvest-limit`, {
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          credentials:'include',
+          body:JSON.stringify({harvest_limit_kg:Number(field('harvestLimitInput').value)})
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || 'Could not save harvest limit');
+        showMessage('harvestLimitMessage', payload.message, false);
+        await loadBatch(activeBatchReference);
+      } catch (error) {
+        showMessage('harvestLimitMessage', error.message);
+      } finally {
+        button.disabled = (activeBatch.harvests || []).length !== 0;
+      }
+    });
+    const initialReference = new URLSearchParams(window.location.search).get('batch');
+    if (initialReference) {
+      field('batchRef').value = initialReference;
+      loadBatch(initialReference).catch(error => showError(error.message));
+    }
+  </script>
+</body>
+</html>

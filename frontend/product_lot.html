@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Lot Traceability | BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/product-lot.css">
+</head>
+<body class="product-lot-page">
+  <header class="lot-header">
+    <a class="lot-back-link" href="/" aria-label="Back to farm operations">
+      <i class="fas fa-arrow-left"></i> Operations
+    </a>
+    <div>
+      <p class="lot-eyebrow">PHASE ONE · PRODUCT RELEASE</p>
+      <h1>Product Lot Traceability</h1>
+    </div>
+    <span class="lot-header-mark"><i class="fas fa-leaf"></i> BSF FARM</span>
+  </header>
+
+  <main class="lot-main">
+    <section class="lot-search-panel" aria-labelledby="lot-search-title">
+      <div>
+        <h2 id="lot-search-title">Find a Product Lot</h2>
+        <p>Enter its business ID, lot number, or database ID.</p>
+      </div>
+      <form id="lotLookupForm" class="lot-search-form">
+        <label class="sr-only" for="lotLookupRef">Product Lot reference</label>
+        <input id="lotLookupRef" name="lotRef" type="text" autocomplete="off"
+               placeholder="LOT-2026-00001" required>
+        <button type="submit"><i class="fas fa-search"></i> Load lot</button>
+      </form>
+      <p id="lotMessage" class="lot-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="lotContent" hidden>
+      <div class="lot-summary-panel">
+        <div class="lot-summary-heading">
+          <div>
+            <p class="lot-eyebrow">RELEASED PRODUCT</p>
+            <h2 id="lotBusinessId">—</h2>
+            <p id="lotNumber" class="lot-number">Lot number —</p>
+          </div>
+          <span id="lotStatus" class="lot-status">—</span>
+        </div>
+        <div class="lot-facts-grid">
+          <div class="lot-fact"><span>Product type</span><strong id="lotProductType">—</strong></div>
+          <div class="lot-fact"><span>Quantity</span><strong id="lotQuantity">—</strong></div>
+          <div class="lot-fact"><span>Production date</span><strong id="lotProductionDate">—</strong></div>
+          <div class="lot-fact"><span>Farm</span><strong id="lotFarm">—</strong></div>
+          <div class="lot-fact"><span>QC status</span><strong id="lotQcStatus">—</strong></div>
+          <div class="lot-fact"><span>Approval status</span><strong id="lotApprovalStatus">—</strong></div>
+          <div class="lot-fact"><span>Storage location</span><strong id="lotStorageLocation">—</strong></div>
+          <div class="lot-fact"><span>Approved by</span><strong id="lotReleasedBy">—</strong></div>
+        </div>
+      </div>
+
+      <section class="trace-panel" aria-labelledby="trace-title">
+        <div class="trace-heading">
+          <div>
+            <p class="lot-eyebrow">UPSTREAM TRACEABILITY</p>
+            <h2 id="trace-title">Source chain</h2>
+          </div>
+          <p>Each row follows recorded foreign-key relationships upstream to a Waste Lot.</p>
+        </div>
+        <div class="trace-chain-banner" aria-label="Traceability sequence">
+          <span>Product Lot</span><i class="fas fa-chevron-right"></i>
+          <span>Drying Batch</span><i class="fas fa-chevron-right"></i>
+          <span>Harvest</span><i class="fas fa-chevron-right"></i>
+          <span>Production Batch</span><i class="fas fa-chevron-right"></i>
+          <span>Substrate Batch</span><i class="fas fa-chevron-right"></i>
+          <span>Waste Lot</span>
+        </div>
+        <div class="trace-table-wrap">
+          <table class="trace-table">
+            <thead>
+              <tr>
+                <th>Drying Output / Batch</th>
+                <th>Harvest</th>
+                <th>Production Batch</th>
+                <th>Substrate Batch</th>
+                <th>Waste Lot</th>
+              </tr>
+            </thead>
+            <tbody id="traceRows"></tbody>
+          </table>
+        </div>
+        <p id="traceEmpty" class="trace-empty" hidden>
+          No complete upstream links were found for this lot. Historical source data has not been inferred.
+        </p>
+      </section>
+    </section>
+  </main>
+
+  <script src="/js/productLot.js"></script>
+</body>
+</html>
