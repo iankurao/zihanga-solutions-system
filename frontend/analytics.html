@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <link rel="stylesheet" href="/css/reports.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -240,9 +241,15 @@
       </a>
     </div>
 
-    <div class="sidebar-heading">Analytics Sections</div>
+    <div class="sidebar-heading">Reports</div>
 
-    <button class="tab-btn active" onclick="switchTab('waste', this)">
+    <button class="tab-btn active" onclick="switchTab('reports', this)">
+      <i class="fas fa-file-lines"></i> Operational reports
+    </button>
+
+    <div class="sidebar-heading">Legacy records</div>
+
+    <button class="tab-btn" onclick="switchTab('waste', this)">
       <i class="fas fa-recycle"></i> Waste Management
     </button>
     <button class="tab-btn" onclick="switchTab('feeding', this)">
@@ -282,11 +289,71 @@
       </button>
     </div>
 
-    <!-- Overview Summary -->
-    <div class="overview-grid" id="overviewGrid"></div>
+    <!-- Overview Summary (legacy records) -->
+    <div class="overview-grid" id="overviewGrid" hidden></div>
+    <p class="legacy-note" id="legacyNote" hidden>
+      <i class="fas fa-circle-info"></i>
+      Legacy records were entered before farm and facility tracking. They are not linked to batches or stock
+      and are not filtered by location. Use Operational reports for traceable figures.
+    </p>
+
+    <!-- ── OPERATIONAL REPORTS ── -->
+    <div id="tab-reports" class="tab-section active">
+      <div class="section-title"><i class="fas fa-file-lines"></i> Operational reports</div>
+      <div class="report-builder">
+        <div class="report-field report-field-wide">
+          <label for="reportKey">Report</label>
+          <select id="reportKey"></select>
+        </div>
+        <div class="report-field" data-filter="dates">
+          <label for="reportFrom">From</label>
+          <input type="date" id="reportFrom">
+        </div>
+        <div class="report-field" data-filter="dates">
+          <label for="reportTo">To</label>
+          <input type="date" id="reportTo">
+        </div>
+        <div class="report-field" data-filter="farm">
+          <label for="reportFarm">Farm</label>
+          <select id="reportFarm"><option value="">All my farms</option></select>
+        </div>
+        <div class="report-field" data-filter="facility">
+          <label for="reportFacility">Facility</label>
+          <select id="reportFacility"><option value="">All facilities</option></select>
+        </div>
+        <div class="report-field" data-filter="status">
+          <label for="reportStatus">Status</label>
+          <select id="reportStatus"><option value="">Any status</option></select>
+        </div>
+        <div class="report-field" data-filter="product">
+          <label for="reportProduct">Product</label>
+          <input id="reportProduct" list="reportProducts" maxlength="50" placeholder="Any product">
+          <datalist id="reportProducts"></datalist>
+        </div>
+        <button type="button" id="reportRun" class="report-run"><i class="fas fa-play"></i> Run report</button>
+      </div>
+      <p id="reportMessage" class="report-message" role="status" aria-live="polite"></p>
+      <div id="reportResult" hidden>
+        <div class="report-head">
+          <div>
+            <h2 id="reportTitle"></h2>
+            <p id="reportMeta"></p>
+          </div>
+          <div class="report-exports">
+            <button type="button" id="reportCsv"><i class="fas fa-file-csv"></i> CSV</button>
+            <button type="button" id="reportExcel"><i class="fas fa-file-excel"></i> Excel</button>
+            <button type="button" id="reportPdf"><i class="fas fa-file-pdf"></i> PDF</button>
+          </div>
+        </div>
+        <div id="reportTotals" class="report-totals"></div>
+        <div class="report-table-wrap">
+          <table class="report-table" id="reportTable"><thead></thead><tbody></tbody><tfoot></tfoot></table>
+        </div>
+      </div>
+    </div>
 
     <!-- ── WASTE MANAGEMENT ── -->
-    <div id="tab-waste" class="tab-section active">
+    <div id="tab-waste" class="tab-section">
       <div class="section-title"><i class="fas fa-recycle"></i> Waste Management</div>
 
       <div class="subsection-panel" id="panel-wasteSourcing"></div>
@@ -348,6 +415,7 @@
   </main>
 
   <script src="js/exportManager.js"></script>
+  <script src="js/reports.js"></script>
   <script src="js/analyticsManager.js"></script>
 
   <script>
@@ -425,6 +493,9 @@
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('tab-' + id).classList.add('active');
       btn.classList.add('active');
+      // The overview and note describe legacy records only.
+      document.getElementById('overviewGrid').hidden = id === 'reports';
+      document.getElementById('legacyNote').hidden = id === 'reports';
     }
 
     document.addEventListener('DOMContentLoaded', async function () {
@@ -433,5 +504,6 @@
     });
   </script>
 
+  <script src="/js/notificationCenter.js" defer></script>
 </body>
 </html>

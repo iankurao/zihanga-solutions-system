@@ -132,7 +132,8 @@ document.addEventListener('DOMContentLoaded', function () {
   function fillSelects() {
     document.querySelectorAll('select[data-options]').forEach(function (select) {
       var rows = model[select.dataset.options].filter(function (r) { return r.status === 'active'; });
-      select.replaceChildren(new Option('Select ' + select.dataset.options.replace(/s$/, ''), ''));
+      var singular = { organizations: 'organization', farms: 'farm', sites: 'site', facilities: 'facility' };
+      select.replaceChildren(new Option('Select ' + singular[select.dataset.options], ''));
       rows.forEach(function (r) { select.add(new Option(r.label || r.name, r.id)); });
     });
     fillGrantTargets();

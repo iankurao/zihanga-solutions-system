@@ -342,3 +342,24 @@ gunicorn \
 ## Setup History
 - **October 2025**: Initial development; configured for Replit (PostgreSQL, Gunicorn, port 5000); added `__init__.py`; switched to module-style invocation
 - **March 2026**: Completed Replit environment import — installed all Python packages via `uv add` (pinned in `pyproject.toml`); fixed deployment run command from `main:app` → `backend.app:app` (no `main.py` exists at root); resolved port 5000 conflict with `pkill` guard in `run.sh`; fixed duplicate workflow (`Start application` removed, only `BSF Farm Server` remains); registered missing `fly_facility` blueprint in `app.py`; updated `pyproject.toml` description; confirmed database auto-initialises cleanly on first boot; updated all documentation. Deep API/frontend audit completed: added missing `GET /api/substrate/batches/<batch_no>` route; fixed 4 wrong DB column names in Full Process Flow Efficiency analysis (all values were reading as 0); removed duplicate dead `POST /api/environmental-monitoring` handler that shadowed the active `-waste` variant.
+
+## Phase One reports and setup
+
+- **Reports** (`REPORTS` in `app.py`, `/api/reports`, `/api/reports/<key>`):
+  waste received, substrate, production batches, feeding, harvest, drying,
+  quality, current stock, customer orders, deliveries, product lineage and
+  farm performance. Filters: `date_from`, `date_to`, `farm_id`,
+  `facility_id`, `status`, `product_type` (per report). Rows are limited to
+  the caller's locations; order, delivery and farm-performance reports need
+  farm access, and lineage shows customers only to farm-level users.
+  `format=csv` streams CSV (formula-injection safe); Excel/PDF are built in
+  the browser by `ExportManager.rowsToExcel/rowsToPDF`. The UI is the
+  "Operational reports" tab on `/analytics`; the other analytics tabs show
+  legacy records that are not location-filtered.
+- **Setup** (`/setup`, super admin): organizations, farms, sites, facilities
+  and storage locations, activate/deactivate (never delete), and user access.
+  `POST /api/locations/<scope>/<id>/status`,
+  `POST /api/inventory/locations/<id>/status` (refused while stock remains).
+  `/api/locations/record-links` is super-admin only.
+- Drying may happen at another facility or site of the same farm as the
+  harvest; cross-farm drying is rejected.

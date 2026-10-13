@@ -2663,6 +2663,108 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         with self._as(member):
             self.assertEqual(self.client.get("/setup").status_code, 403)
 
+    # ---- Reports -----------------------------------------------------------------
+
+    def _report(self, key, **params):
+        params.setdefault("farm_id", self.farm_id)
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        response = self.client.get(f"/api/reports/{key}?{query}")
+        self.assertEqual(response.status_code, 200, response.get_json())
+        return response.get_json()
+
+    def _sold_lot(self):
+        lot = self._release_lot()
+        order = self._order("0.300")
+        allocation = self._allocate(order, lot, "0.200").get_json()["data"]["allocations"][0]
+        dispatched = self._dispatch(order, allocation["id"], "0.200")
+        self.assertEqual(dispatched.status_code, 201, dispatched.get_json())
+        return lot, order
+
+    def test_reports_follow_the_chain_with_consistent_totals(self):
+        lot, order = self._sold_lot()
+        totals = {key: self._report(key)["totals"] for key in (
+            "waste_received", "substrate", "production_batches", "harvest", "drying", "inventory",
+            "sales", "deliveries",
+        )}
+        self.assertAlmostEqual(totals["waste_received"]["received_kg"], 10.0)
+        self.assertAlmostEqual(totals["waste_received"]["used_kg"], 8.0)
+        self.assertAlmostEqual(totals["substrate"]["issued_kg"], 4.0)
+        self.assertAlmostEqual(totals["production_batches"]["harvested_kg"], 1.5)
+        self.assertAlmostEqual(totals["harvest"]["sent_to_drying_kg"], 1.2)
+        self.assertAlmostEqual(totals["drying"]["dry_out_kg"], 0.6)
+        self.assertAlmostEqual(totals["inventory"]["on_hand_kg"], 0.4)
+        self.assertAlmostEqual(totals["sales"]["ordered_kg"], 0.3)
+        self.assertAlmostEqual(totals["sales"]["dispatched_kg"], 0.2)
+        self.assertAlmostEqual(totals["deliveries"]["quantity_kg"], 0.2)
+
+        drying = self._report("drying")["data"][0]
+        self.assertAlmostEqual(drying["yield_pct"], 50.0)
+        quality = self._report("quality")["data"][0]
+        self.assertEqual((quality["result"], quality["decision"]), ("PASSED", "APPROVED"))
+        lineage = self._report("traceability")["data"][0]
+        waste_ref = db.fetch_one("SELECT business_id FROM waste_lots WHERE id = %s", (self.waste_lot_id,))["business_id"]
+        self.assertEqual(lineage["product_lot"], lot["business_id"])
+        self.assertEqual(lineage["waste_lots"], waste_ref)
+        self.assertEqual(lineage["customers"], self.marker)
+        farm = self._report("farm_performance")["data"]
+        self.assertEqual(len(farm), 1)
+        self.assertAlmostEqual(farm[0]["harvested_kg"], 1.5)
+        self.assertAlmostEqual(farm[0]["dispatched_kg"], 0.2)
+        self.assertAlmostEqual(farm[0]["drying_yield_pct"], 50.0)
+
+        empty = self._report("harvest", date_from="2000-01-01", date_to="2000-01-31")
+        self.assertEqual(empty["row_count"], 0)
+        planned = self._report("production_batches", status="PLANNED")
+        self.assertEqual(planned["row_count"], 0)
+
+    def test_reports_respect_location_and_commercial_access(self):
+        self._sold_lot()
+        outsider = self._create_db_user(farm_access=False)
+        facility_only = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (facility_only.id, self.facility_id),
+        )
+        with self._as(outsider):
+            outsider_counts = {k: self._report(k)["row_count"] for k in ("harvest", "inventory", "sales", "traceability")}
+        with self._as(facility_only):
+            harvest = self._report("harvest")["row_count"]
+            sales = self._report("sales")["row_count"]
+            farm = self._report("farm_performance")["row_count"]
+            lineage = self._report("traceability")["data"][0]["customers"]
+        self.assertEqual(outsider_counts, {"harvest": 0, "inventory": 0, "sales": 0, "traceability": 0})
+        self.assertEqual((harvest, sales, farm), (1, 0, 0))
+        self.assertEqual(lineage, "restricted")
+
+    def test_report_validation_and_safe_csv(self):
+        response = self.client.post(
+            "/api/waste-sourcing",
+            json={**{k: v for k, v in {
+                "collection_date": "2026-09-24", "collection_time": "09:30",
+                "source_type": "market", "source_name": '=HYPERLINK("http://x")',
+                "waste_type": "vegetable", "waste_weight": "1", "segregation_status": "organic",
+                "collection_personnel": "Integration test", "lot_status": "available",
+                "contaminants_found": [],
+            }.items()}, "farm_id": self.farm_id, "site_id": self.site_id, "facility_id": self.facility_id},
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.addCleanup(db.execute_query,
+                        "DELETE FROM waste_sourcing WHERE source_name = %s", ('=HYPERLINK("http://x")',))
+        csv_response = self.client.get(f"/api/reports/waste_received?farm_id={self.farm_id}&format=csv")
+        self.assertEqual(csv_response.status_code, 200)
+        self.assertIn("attachment", csv_response.headers["Content-Disposition"])
+        body = csv_response.get_data(as_text=True)
+        self.assertTrue(body.startswith("﻿Date,Waste lot"))
+        self.assertIn("'=HYPERLINK", body)
+
+        bad_dates = self.client.get("/api/reports/harvest?date_from=2026-10-02&date_to=2026-10-01")
+        bad_status = self.client.get("/api/reports/drying?status=BURNT")
+        self.assertEqual((bad_dates.status_code, bad_status.status_code), (400, 400))
+        self.assertEqual(self.client.get("/api/reports/unknown").status_code, 404)
+        catalog = self.client.get("/api/reports").get_json()["data"]
+        self.assertEqual(len(catalog), 12)
+        self.assertEqual(self.client.get("/analytics").status_code, 200)
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(
