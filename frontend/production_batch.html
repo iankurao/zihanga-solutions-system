@@ -56,6 +56,7 @@
     .new-batch-card .help { color:var(--muted); margin:0 0 1rem; }
     .nb-substrate-line { display:grid; grid-template-columns:auto 1fr 9rem; align-items:center; gap:.5rem; padding:.35rem 0; border-bottom:1px solid var(--line); }
     .nb-substrate-line label { margin:0; font-weight:600; }
+    .nb-unit { display:inline-flex; align-items:center; gap:.35rem; margin:0 1rem .4rem 0; font-weight:600; }
     .batch-search button + button { background:#fff; color:var(--accent); border:1px solid var(--accent); }
     @media (max-width:760px) {
       .batch-header { flex-direction:column; }
@@ -100,6 +101,10 @@
           <label>Substrate to issue</label>
           <div id="nbSubstrate" class="empty">Select a facility to see its available substrate.</div>
         </div>
+        <div class="full">
+          <label>Bio-pods / trays (optional)</label>
+          <div id="nbUnits" class="empty">Select a facility to see its free units.</div>
+        </div>
         <div class="full"><button type="submit">Create batch</button></div>
         <p class="form-message full" id="nbMessage" role="status" aria-live="polite"></p>
       </form>
@@ -114,6 +119,7 @@
         <dl class="batch-metric"><dt>Farm / site</dt><dd id="batchSite">—</dd></dl>
         <dl class="batch-metric"><dt>Start date</dt><dd id="batchStartDate">—</dd></dl>
         <dl class="batch-metric"><dt>Events</dt><dd id="batchEventCount">0</dd></dl>
+        <dl class="batch-metric"><dt>Bio-pods / trays</dt><dd id="batchUnits">—</dd></dl>
       </div>
 
       <nav class="batch-tabs" aria-label="Production Batch sections">
@@ -293,6 +299,8 @@
       field('batchCard').hidden = false;
       field('batch360Link').href = '/batch-360?ref=' + encodeURIComponent(batch.business_id || batch.id);
       field('batch360Link').hidden = false;
+      const activeUnits = (batch.units || []).filter(unit => !unit.released_at).map(unit => unit.unit_code);
+      field('batchUnits').textContent = activeUnits.length ? activeUnits.join(', ') : 'None assigned';
       field('batchNumber').textContent = batch.batch_number || batch.business_id || batch.batch_code;
       field('batchStatus').textContent = batch.status || '—';
       field('batchStage').textContent = batch.current_stage || '—';

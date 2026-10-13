@@ -371,3 +371,17 @@ gunicorn \
   farm-level access. Charts are plain SVG drawn at container width; colours
   validated with the dataviz palette checker, with legends, direct labels
   and table views.
+- **Production units** (`migrations/production_units.sql`): `production_units`
+  (bio-pod/tray/bed/rack per facility; active/maintenance/retired) and
+  `production_batch_units` (one open allocation per unit, history kept).
+  Units are assigned at batch creation (`unit_ids`) or via
+  `POST /api/production/batches/<ref>/units`; they are released when the
+  batch becomes HARVESTED, COMPLETED or CANCELLED. Units are managed on
+  `/setup` (super admin).
+- **Farmer portal** (`/farmer`, `GET /api/farmer/overview`, `GET /api/me`):
+  mobile-first view of the user's active batches, bio-pods and a daily task
+  list derived from records (not fed today, ready to harvest, harvest
+  overdue, health follow-up due), with quick feeding / check / health /
+  harvest forms that post to the existing production-event APIs. The landing
+  page's Farmer Portal button signs in to `/login?next=/farmer`; `next` only
+  accepts same-site paths.

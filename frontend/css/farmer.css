@@ -1,0 +1,345 @@
+/* Farmer portal: mobile first, large touch targets, plain language. */
+
+.farmer-page {
+  --ink: #16302a;
+  --muted: #5d6e66;
+  --line: #dfe8e2;
+  --brand: #143c2d;
+  --accent: #19804b;
+  --accent-soft: #e6f4ec;
+  --amber: #8a5a0b;
+  --amber-soft: #fdf1dc;
+  --red: #9c3328;
+  --red-soft: #fde6e2;
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: #f2f5f3;
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.farmer-page *,
+.farmer-page *::before,
+.farmer-page *::after {
+  box-sizing: border-box;
+}
+
+.farmer-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1rem 1.2rem;
+  color: #f2fbf5;
+  background: var(--brand);
+}
+
+.farmer-eyebrow {
+  margin: 0;
+  color: #a6d6b8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.farmer-top h1 {
+  margin: 0.15rem 0;
+  font-size: 1.5rem;
+}
+
+.farmer-places {
+  margin: 0;
+  color: #cfe8d9;
+  font-size: 0.9rem;
+}
+
+.farmer-top-link {
+  align-self: flex-start;
+  padding: 0.6rem;
+  color: inherit;
+  font-size: 1.2rem;
+}
+
+.farmer-main {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 1rem 1rem 6rem;
+}
+
+.farmer-main h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.4rem 0 0.7rem;
+  font-size: 1.15rem;
+}
+
+.farmer-main h2 i {
+  color: var(--accent);
+}
+
+.farmer-toast {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  color: #0f5a33;
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.farmer-toast.is-error {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.farmer-tasks {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.farmer-task {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  background: #fff;
+  border-left: 5px solid var(--accent);
+}
+
+.farmer-task.is-urgent {
+  border-left-color: var(--red);
+}
+
+.farmer-task.is-soon {
+  border-left-color: var(--amber);
+}
+
+.farmer-task i {
+  width: 1.4rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.farmer-task.is-done {
+  color: var(--muted);
+  border-left-color: var(--line);
+}
+
+.farmer-batches {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.farmer-batch {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.farmer-batch-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.farmer-batch-head strong {
+  font-size: 1.15rem;
+}
+
+.farmer-pill {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  color: #0f5a33;
+  background: var(--accent-soft);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.farmer-pill.is-alert {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.farmer-pill.is-wait {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.farmer-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 0.8rem;
+  margin: 0.7rem 0 0.9rem;
+  font-size: 0.9rem;
+}
+
+.farmer-facts span {
+  color: var(--muted);
+}
+
+.farmer-facts b {
+  display: block;
+  color: var(--ink);
+}
+
+.farmer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.farmer-actions button,
+.farmer-primary,
+.farmer-secondary {
+  min-height: 48px;
+  padding: 0.7rem 0.8rem;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.farmer-actions button,
+.farmer-secondary {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.farmer-actions button.is-harvest,
+.farmer-primary {
+  color: #fff;
+  background: var(--accent);
+}
+
+.farmer-primary:disabled {
+  opacity: 0.6;
+}
+
+.farmer-batch-link {
+  display: inline-block;
+  margin-top: 0.7rem;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.farmer-units {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+
+.farmer-unit {
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.farmer-unit strong {
+  display: block;
+}
+
+.farmer-unit small {
+  color: var(--muted);
+}
+
+.farmer-unit.is-free {
+  border-style: dashed;
+}
+
+.farmer-unit.is-maintenance {
+  background: var(--amber-soft);
+}
+
+.farmer-empty {
+  margin: 0;
+  padding: 1rem;
+  border-radius: 12px;
+  color: var(--muted);
+  background: #fff;
+}
+
+.farmer-foot {
+  margin-top: 2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.farmer-foot a {
+  color: var(--accent);
+}
+
+.farmer-dialog {
+  width: min(520px, calc(100% - 1.5rem));
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.farmer-dialog::backdrop {
+  background: rgba(10, 25, 18, 0.55);
+}
+
+.farmer-dialog form {
+  padding: 1.2rem;
+}
+
+.farmer-dialog h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.farmer-dialog-batch {
+  margin: 0.2rem 0 1rem;
+  color: var(--muted);
+}
+
+.farmer-field {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.9rem;
+}
+
+.farmer-field label {
+  font-weight: 700;
+}
+
+.farmer-field small {
+  color: var(--muted);
+}
+
+.farmer-field input,
+.farmer-field select,
+.farmer-field textarea {
+  min-height: 48px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #c4d3ca;
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.farmer-error {
+  min-height: 1.2rem;
+  margin: 0 0 0.6rem;
+  color: var(--red);
+  font-weight: 600;
+}
+
+.farmer-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}

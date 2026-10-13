@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#143c2d">
+  <title>My Farm | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/farmer.css">
+</head>
+<body class="farmer-page">
+  <header class="farmer-top">
+    <div>
+      <p class="farmer-eyebrow">ZEHUNGER · MY FARM</p>
+      <h1 id="farmerGreeting">My farm</h1>
+      <p id="farmerPlaces" class="farmer-places"></p>
+    </div>
+    <a class="farmer-top-link" href="/logout" aria-label="Sign out"><i class="fas fa-right-from-bracket"></i></a>
+  </header>
+
+  <main class="farmer-main">
+    <p id="farmerToast" class="farmer-toast" role="status" aria-live="polite" hidden></p>
+
+    <section aria-labelledby="todayTitle">
+      <h2 id="todayTitle"><i class="fas fa-list-check"></i> Today</h2>
+      <ul id="farmerTasks" class="farmer-tasks"></ul>
+    </section>
+
+    <section aria-labelledby="batchesTitle">
+      <h2 id="batchesTitle"><i class="fas fa-seedling"></i> My batches</h2>
+      <div id="farmerBatches" class="farmer-batches"></div>
+    </section>
+
+    <section aria-labelledby="unitsTitle">
+      <h2 id="unitsTitle"><i class="fas fa-cubes"></i> My bio-pods &amp; trays</h2>
+      <div id="farmerUnits" class="farmer-units"></div>
+    </section>
+
+    <p class="farmer-foot">
+      <a href="/dashboard">Open the full workspace</a> ·
+      <a href="/operations">Operations dashboard</a>
+    </p>
+  </main>
+
+  <dialog id="farmerDialog" class="farmer-dialog" aria-labelledby="dialogTitle">
+    <form id="farmerForm" method="dialog" novalidate>
+      <h3 id="dialogTitle">Record</h3>
+      <p id="dialogBatch" class="farmer-dialog-batch"></p>
+      <div id="dialogFields"></div>
+      <p id="dialogError" class="farmer-error" role="alert"></p>
+      <div class="farmer-dialog-actions">
+        <button type="button" id="dialogCancel" class="farmer-secondary">Cancel</button>
+        <button type="submit" id="dialogSave" class="farmer-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/js/farmer.js"></script>
+  <script src="/js/notificationCenter.js" defer></script>
+</body>
+</html>

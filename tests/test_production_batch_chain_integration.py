@@ -218,6 +218,9 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                         SELECT id FROM customer_orders WHERE farm_id = %s)""",
                     "DELETE FROM customer_orders WHERE farm_id = %s",
                     "DELETE FROM operational_alerts WHERE farm_id = %s",
+                    """DELETE FROM production_batch_units WHERE production_unit_id IN (
+                        SELECT id FROM production_units WHERE farm_id = %s)""",
+                    "DELETE FROM production_units WHERE farm_id = %s",
                     "DELETE FROM inventory_alert_thresholds WHERE farm_id = %s",
                 ):
                     cursor.execute(statement, (self.farm_id,))
@@ -2840,6 +2843,134 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/dashboard?farm_id=abc").status_code, 400)
         self.assertEqual(self.client.get("/operations").status_code, 200)
 
+    # ---- Production units and farmer portal -------------------------------------
+
+    def _unit(self, code, facility_id=None, **extra):
+        admin = self._admin()
+        with self._as(admin):
+            response = self.client.post("/api/production/units", json={
+                "farm_id": self.farm_id, "site_id": self.site_id,
+                "facility_id": facility_id or self.facility_id,
+                "unit_code": code, "name": f"Bio-pod {code}", **extra,
+            })
+        return response
+
+    def test_units_hold_one_batch_and_are_released_on_harvest(self):
+        member = self._create_db_user()
+        with self._as(member):
+            denied = self.client.post("/api/production/units", json={
+                "farm_id": self.farm_id, "site_id": self.site_id, "facility_id": self.facility_id,
+                "unit_code": "X", "name": "X"})
+        self.assertEqual(denied.status_code, 403)
+        pod_a = self._unit("POD-A").get_json()["data"]
+        pod_b = self._unit("POD-B").get_json()["data"]
+        self.assertEqual(self._unit("POD-A").status_code, 409)
+        other_facility = self._second_facility("production")
+        pod_far = self._unit("POD-F", facility_id=other_facility).get_json()["data"]
+
+        substrate_id = self._create_substrate()
+        first = self.client.post("/api/production/batches", json={
+            "start_date": "2026-09-24", "farm_id": self.farm_id, "site_id": self.site_id,
+            "facility_id": self.facility_id, "harvest_limit_kg": "2.000", "unit_ids": [pod_a["id"]],
+            "inputs": [{"substrate_batch_id": substrate_id, "quantity_issued": "2.000"}],
+        })
+        self.assertEqual(first.status_code, 201, first.get_json())
+        batch = first.get_json()["record"]
+        detail = self.client.get(f"/api/production/batches/{batch['business_id']}").get_json()["data"]
+        self.assertEqual([u["unit_code"] for u in detail["units"]], ["POD-A"])
+
+        second = self._create_production(substrate_id, quantity="2.000").get_json()["record"]
+        taken = self.client.post(f"/api/production/batches/{second['business_id']}/units",
+                                 json={"unit_ids": [pod_a["id"]]})
+        self.assertEqual(taken.status_code, 409, taken.get_json())
+        elsewhere = self.client.post(f"/api/production/batches/{second['business_id']}/units",
+                                     json={"unit_ids": [pod_far["id"]]})
+        self.assertEqual(elsewhere.status_code, 400, elsewhere.get_json())
+        self.assertIn("different facility", elsewhere.get_json()["message"])
+
+        with self._as(self._admin()):
+            busy_retire = self.client.post(f"/api/production/units/{pod_a['id']}/status", json={"status": "retired"})
+            maintenance = self.client.post(f"/api/production/units/{pod_b['id']}/status", json={"status": "maintenance"})
+        self.assertEqual(busy_retire.status_code, 400)
+        self.assertEqual(maintenance.status_code, 200)
+        blocked = self.client.post(f"/api/production/batches/{second['business_id']}/units",
+                                   json={"unit_ids": [pod_b["id"]]})
+        self.assertEqual(blocked.status_code, 400, blocked.get_json())
+
+        free_units = self.client.get(f"/api/production/units?free=1&facility_id={self.facility_id}").get_json()["data"]
+        self.assertNotIn(pod_a["id"], [u["id"] for u in free_units])
+
+        self._move_to_harvest_ready(batch)
+        self.assertEqual(self._harvest(batch, wet_weight="1.000").status_code, 201)
+        harvested = self.client.post(f"/api/production/batches/{batch['business_id']}/status",
+                                     json={"status": "HARVESTED"})
+        self.assertEqual(harvested.status_code, 200, harvested.get_json())
+        units = self.client.get(f"/api/production/batches/{batch['business_id']}").get_json()["data"]["units"]
+        self.assertIsNotNone(units[0]["released_at"])
+        self.assertEqual(units[0]["release_reason"], "Batch HARVESTED")
+        reused = self.client.post(f"/api/production/batches/{second['business_id']}/units",
+                                  json={"unit_ids": [pod_a["id"]]})
+        self.assertEqual(reused.status_code, 201, reused.get_json())
+        released = self.client.post(
+            f"/api/production/batches/{second['business_id']}/units/{pod_a['id']}/release", json={})
+        self.assertEqual(released.status_code, 200, released.get_json())
+
+    def test_farmer_overview_builds_tasks_from_records(self):
+        self._unit("POD-1")
+        substrate_id = self._create_substrate()
+        growing = self._create_production(substrate_id, quantity="2.000", harvest_limit_kg="2.000").get_json()["record"]
+        ready = self._create_production(substrate_id, quantity="2.000", harvest_limit_kg="2.000").get_json()["record"]
+        self.client.post(f"/api/production/batches/{growing['business_id']}/status", json={"status": "ACTIVE"})
+        self._move_to_harvest_ready(ready)
+        db.execute_query(
+            "UPDATE production_batches SET expected_harvest_at = now() - interval '2 days' WHERE id = %s",
+            (ready["id"],),
+        )
+        health = self.client.post(f"/api/production/batches/{growing['business_id']}/events/health", json={
+            "occurred_at": "2026-09-25T09:00:00+00:00", "observed_issue": "Mites",
+            "severity": "low", "action_taken": "Dried edges", "follow_up_date": "2026-09-26",
+        })
+        self.assertEqual(health.status_code, 201, health.get_json())
+
+        farmer = self._create_db_user(farm_access=False)
+        db.execute_query("INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+                         (farmer.id, self.facility_id))
+        outsider = self._create_db_user(farm_access=False)
+        with self._as(farmer):
+            data = self.client.get("/api/farmer/overview").get_json()["data"]
+            me = self.client.get("/api/me").get_json()["data"]
+        kinds = {(t["kind"], t["batch"]) for t in data["tasks"]}
+        self.assertIn(("feed", growing["business_id"]), kinds)
+        self.assertIn(("harvest", ready["business_id"]), kinds)
+        self.assertIn(("overdue", ready["business_id"]), kinds)
+        self.assertIn(("health", growing["business_id"]), kinds)
+        self.assertEqual({b["business_id"] for b in data["batches"]}, {growing["business_id"], ready["business_id"]})
+        self.assertEqual([u["unit_code"] for u in data["units"]], ["POD-1"])
+        self.assertEqual(me["username"], farmer.username)
+
+        fed = self.client.post(f"/api/production/batches/{growing['business_id']}/events/feeding", json={
+            "occurred_at": datetime_now_iso(), "feed_type": "vegetable", "operator": "Farmer",
+            "quantity_offered": "1.0", "offered_unit": "kg"})
+        self.assertEqual(fed.status_code, 201, fed.get_json())
+        with self._as(farmer):
+            after = self.client.get("/api/farmer/overview").get_json()["data"]
+        self.assertNotIn(("feed", growing["business_id"]), {(t["kind"], t["batch"]) for t in after["tasks"]})
+
+        with self._as(outsider):
+            empty = self.client.get("/api/farmer/overview").get_json()["data"]
+        self.assertEqual((empty["batches"], empty["units"]), ([], []))
+        self.assertEqual(self.client.get("/farmer").status_code, 200)
+
+    def test_login_only_redirects_to_same_site_paths(self):
+        user = self._create_db_user()
+        with self._as(user):
+            to_portal = self.client.get("/login?next=/farmer")
+            to_evil = self.client.get("/login?next=//evil.example/steal")
+            to_backslash = self.client.get("/login?next=/\\evil.example")
+        self.assertTrue(to_portal.headers["Location"].endswith("/farmer"))
+        self.assertTrue(to_evil.headers["Location"].endswith("/dashboard"))
+        self.assertTrue(to_backslash.headers["Location"].endswith("/dashboard"))
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(
@@ -2889,3 +3020,9 @@ class _FakeEmailChannel:
             self.fail_times -= 1
             raise ConnectionError(self.error)
         self.sent.append((recipient, subject, body))
+
+
+def datetime_now_iso():
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()

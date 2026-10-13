@@ -61,7 +61,11 @@
       const loginBtn = document.getElementById('loginBtn');
       const passwordToggle = document.getElementById('passwordToggle');
       const passwordInput = document.getElementById('password');
-      
+
+      // Keep ?next=/farmer (etc.) so the server can return the user there;
+      // the server only accepts same-site paths.
+      loginForm.action = '/login' + window.location.search;
+
       // Password visibility toggle
       passwordToggle.addEventListener('click', function() {
         const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';

@@ -84,3 +84,7 @@
     grid-template-columns: 1fr;
   }
 }
+
+.setup-node span button + button {
+  margin-left: 0.35rem;
+}

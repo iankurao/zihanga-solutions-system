@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var site = document.getElementById('nbSite');
   var facility = document.getElementById('nbFacility');
   var substrateBox = document.getElementById('nbSubstrate');
+  var unitsBox = document.getElementById('nbUnits');
   var message = document.getElementById('nbMessage');
   var rows = [];
   var substrates = [];
@@ -32,7 +33,38 @@ document.addEventListener('DOMContentLoaded', function () {
     option(facility, facilities, 'facility_id', 'facility_name', site.value ? 'Select facility' : 'Select a site first');
   }
 
+  async function loadUnits() {
+    unitsBox.textContent = '';
+    if (!facility.value) {
+      unitsBox.textContent = 'Select a facility to see its free units.';
+      return;
+    }
+    try {
+      var response = await fetch('/api/production/units?free=1&facility_id=' + encodeURIComponent(facility.value),
+        { credentials: 'include' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || 'Could not load units');
+      var units = payload.data || [];
+      if (!units.length) {
+        unitsBox.textContent = 'No free bio-pods or trays at this facility.';
+        return;
+      }
+      units.forEach(function (u) {
+        var label = document.createElement('label');
+        label.className = 'nb-unit';
+        var check = document.createElement('input');
+        check.type = 'checkbox';
+        check.value = u.id;
+        label.append(check, document.createTextNode(' ' + u.unit_code + ' · ' + u.name));
+        unitsBox.appendChild(label);
+      });
+    } catch (error) {
+      unitsBox.textContent = error.message;
+    }
+  }
+
   async function loadSubstrate() {
+    loadUnits();
     substrateBox.textContent = '';
     substrates = [];
     if (!facility.value) {
@@ -129,6 +161,7 @@ document.addEventListener('DOMContentLoaded', function () {
           expected_harvest_at: expected ? expected + 'T12:00:00' : null,
           harvest_limit_kg: document.getElementById('nbLimit').value || null,
           current_stage: document.getElementById('nbStage').value.trim() || 'STARTING',
+          unit_ids: [].map.call(unitsBox.querySelectorAll('input:checked'), function (c) { return Number(c.value); }),
           inputs: inputs
         })
       });

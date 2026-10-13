@@ -73,6 +73,21 @@
         <input name="name" placeholder="Name, e.g. Warehouse Bay 1" maxlength="100" required aria-label="Storage name">
         <button class="orders-primary" type="submit">Add storage location</button>
       </form>
+      <form class="setup-form" data-kind="units">
+        <p class="b360-subtitle">Bio-pod / tray (production unit)</p>
+        <select name="facility_id" data-options="facilities" required aria-label="Facility"></select>
+        <input name="unit_code" placeholder="Code, e.g. POD-01" maxlength="30" required aria-label="Unit code">
+        <input name="name" placeholder="Name, e.g. Bio-pod 1" maxlength="100" required aria-label="Unit name">
+        <select name="unit_type" aria-label="Unit type">
+          <option value="bio_pod">Bio-pod</option>
+          <option value="tray">Tray</option>
+          <option value="bed">Bed</option>
+          <option value="rack">Rack</option>
+          <option value="other">Other</option>
+        </select>
+        <input name="capacity_kg" type="number" min="0.001" step="0.001" placeholder="Capacity kg (optional)" aria-label="Capacity kg">
+        <button class="orders-primary" type="submit">Add unit</button>
+      </form>
     </section>
 
     <section class="b360-card setup-full">

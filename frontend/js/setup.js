@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var tree = document.getElementById('locationTree');
   var userSelect = document.getElementById('accessUser');
   var grantForm = document.getElementById('grantForm');
-  var model = { organizations: [], farms: [], sites: [], facilities: [], stores: [] };
+  var model = { organizations: [], farms: [], sites: [], facilities: [], stores: [], units: [] };
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -65,9 +65,33 @@ document.addEventListener('DOMContentLoaded', function () {
     model.stores = stores.map(function (s) {
       return { id: s.id, parent: s.facility_id, name: s.name, code: s.location_code, status: s.status };
     });
+    var units = (await api('/api/production/units?include_inactive=1')).data || [];
+    model.units = units.map(function (u) {
+      return { id: u.id, parent: u.facility_id, name: u.name, code: u.unit_code, status: u.status,
+        detail: u.unit_type.replace(/_/g, ' ') + (u.batch_business_id ? ' · holds ' + u.batch_business_id : ' · free') };
+    });
+  }
+
+  function unitButtons(item) {
+    var wrap = el('span');
+    var choices = item.status === 'active' ? [['maintenance', 'Maintenance'], ['retired', 'Retire']]
+      : item.status === 'maintenance' ? [['active', 'Back in use'], ['retired', 'Retire']] : [['active', 'Reinstate']];
+    choices.forEach(function (choice) {
+      var button = el('button', null, choice[1]);
+      button.type = 'button';
+      button.addEventListener('click', function () {
+        button.disabled = true;
+        api('/api/production/units/' + item.id + '/status', 'POST', { status: choice[0] })
+          .then(function () { say(item.name + ' is now ' + choice[0] + '.'); refresh(); })
+          .catch(function (error) { say(error.message, true); button.disabled = false; });
+      });
+      wrap.appendChild(button);
+    });
+    return wrap;
   }
 
   function toggle(kind, item) {
+    if (kind === 'unit') return unitButtons(item);
     var next = item.status === 'active' ? 'inactive' : 'active';
     var url = kind === 'store'
       ? '/api/inventory/locations/' + item.id + '/status'
@@ -85,7 +109,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function node(kind, item, detail) {
     var li = el('li');
-    var line = el('div', 'setup-node' + (item.status === 'active' ? '' : ' is-inactive'));
+    var inUse = item.status === 'active' || item.status === 'maintenance';
+    var line = el('div', 'setup-node' + (inUse ? '' : ' is-inactive'));
     line.append(el('strong', null, item.name), el('small', null, [item.code, detail, item.status].filter(Boolean).join(' · ')),
       toggle(kind, item));
     li.appendChild(line);
@@ -113,6 +138,9 @@ document.addEventListener('DOMContentLoaded', function () {
             var stores = el('ul');
             model.stores.filter(function (s) { return s.parent === facility.id; }).forEach(function (store) {
               stores.appendChild(node('store', store, 'storage'));
+            });
+            model.units.filter(function (u) { return u.parent === facility.id; }).forEach(function (unit) {
+              stores.appendChild(node('unit', unit, unit.detail));
             });
             if (stores.children.length) facilityNode.appendChild(stores);
             facilities.appendChild(facilityNode);
@@ -153,10 +181,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var data = {};
       new FormData(form).forEach(function (value, key) { data[key] = value; });
       var url = '/api/locations/' + form.dataset.kind;
-      if (form.dataset.kind === 'stores') {
+      if (form.dataset.kind === 'stores' || form.dataset.kind === 'units') {
         var facility = model.facilities.find(function (f) { return String(f.id) === data.facility_id; });
         if (!facility) { say('Select a facility.', true); return; }
-        url = '/api/inventory/locations';
+        url = form.dataset.kind === 'stores' ? '/api/inventory/locations' : '/api/production/units';
         data.site_id = facility.site;
         data.farm_id = facility.farm;
       }
