@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Batch 360 | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/batch-360.css">
+</head>
+<body class="b360-page">
+  <header class="b360-topbar">
+    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
+    <div class="b360-topbar-title">
+      <p class="b360-eyebrow">PHASE ONE · EXECUTIVE VIEW</p>
+      <h1>Batch 360</h1>
+    </div>
+    <form id="b360Picker" class="b360-picker">
+      <label class="sr-only" for="b360BatchSelect">Production Batch</label>
+      <select id="b360BatchSelect" aria-label="Production Batch">
+        <option value="">Loading batches…</option>
+      </select>
+      <button type="submit"><i class="fas fa-arrow-right"></i> Open</button>
+    </form>
+  </header>
+
+  <main class="b360-main">
+    <p id="b360Message" class="b360-message" role="status" aria-live="polite"></p>
+
+    <section id="b360Empty" class="b360-welcome">
+      <i class="fas fa-seedling"></i>
+      <h2>Choose a production batch</h2>
+      <p>Batch 360 follows one BSF batch from the waste that fed it to the product sitting in stock, using only recorded data.</p>
+    </section>
+
+    <div id="b360Content" hidden>
+      <section class="b360-hero">
+        <div class="b360-hero-id">
+          <p class="b360-eyebrow">PRODUCTION BATCH</p>
+          <h2 id="b360BatchId">—</h2>
+          <span id="b360Status" class="b360-status">—</span>
+        </div>
+        <dl class="b360-hero-facts">
+          <div><dt>Farm</dt><dd id="b360Farm">—</dd></div>
+          <div><dt>Facility</dt><dd id="b360Facility">—</dd></div>
+          <div><dt>Started</dt><dd id="b360Started">—</dd></div>
+          <div><dt>Age</dt><dd id="b360Age">—</dd></div>
+        </dl>
+      </section>
+
+      <ol id="b360Stages" class="b360-stages" aria-label="Lifecycle progress"></ol>
+
+      <section id="b360Kpis" class="b360-kpis" aria-label="Key figures"></section>
+
+      <div class="b360-grid">
+        <section class="b360-card" id="section-source">
+          <h3><span>1</span> Source material</h3>
+          <div class="b360-body" data-body="source"></div>
+        </section>
+        <section class="b360-card" id="section-production">
+          <h3><span>2</span> Production</h3>
+          <div class="b360-body" data-body="production"></div>
+        </section>
+        <section class="b360-card b360-wide" id="section-operations">
+          <h3><span>3</span> Operations</h3>
+          <div class="b360-body" data-body="operations"></div>
+        </section>
+        <section class="b360-card" id="section-harvest">
+          <h3><span>4</span> Harvest</h3>
+          <div class="b360-body" data-body="harvest"></div>
+        </section>
+        <section class="b360-card" id="section-processing">
+          <h3><span>5</span> Processing</h3>
+          <div class="b360-body" data-body="processing"></div>
+        </section>
+        <section class="b360-card" id="section-quality">
+          <h3><span>6</span> Quality</h3>
+          <div class="b360-body" data-body="quality"></div>
+        </section>
+        <section class="b360-card" id="section-product">
+          <h3><span>7</span> Product</h3>
+          <div class="b360-body" data-body="product"></div>
+        </section>
+        <section class="b360-card b360-wide" id="section-inventory">
+          <h3><span>8</span> Inventory</h3>
+          <div class="b360-body" data-body="inventory"></div>
+        </section>
+        <section class="b360-card b360-wide" id="section-traceability">
+          <h3><span>9</span> Traceability</h3>
+          <div class="b360-body" data-body="traceability"></div>
+        </section>
+        <section class="b360-card b360-wide" id="section-audit">
+          <h3><span>10</span> Audit trail</h3>
+          <div class="b360-body" data-body="audit"></div>
+        </section>
+      </div>
+
+      <p class="b360-footnote">
+        Every figure is read from recorded transactions. Missing stages are shown as not yet recorded; nothing is estimated or inferred.
+        <a id="b360OperationalLink" href="/production_batch.html">Open the operational batch record</a>
+      </p>
+    </div>
+  </main>
+
+  <script src="/js/batch360.js"></script>
+</body>
+</html>

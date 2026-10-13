@@ -181,6 +181,11 @@ ALTER TABLE feeding_schedule
     ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
     ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ;
 
+-- Larval biomass is optional on canonical feeding events; the legacy mirror
+-- must not force an invented value when it was not measured.
+ALTER TABLE feeding_schedule
+    ALTER COLUMN larvae_weight DROP NOT NULL;
+
 ALTER TABLE environmental_monitoring_larvaefeeding
     ADD COLUMN IF NOT EXISTS production_event_id BIGINT,
     ADD COLUMN IF NOT EXISTS production_batch_id INTEGER,

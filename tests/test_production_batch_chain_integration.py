@@ -1516,6 +1516,179 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         invalid = self.client.get("/api/production/batches?status=sold")
         self.assertEqual(invalid.status_code, 400)
 
+    # ---- Batch 360 ----------------------------------------------------------
+    def _get_360(self, ref):
+        return self.client.get(f"/api/production/batches/{ref}/360")
+
+    def test_batch_360_follows_one_batch_from_waste_to_stock(self):
+        lot = self._release_lot()
+        detail = self.client.get(f"/api/product-lots/{lot['business_id']}").get_json()["data"]
+        batch_ref = detail["source_chain"][0]["production_batch_business_id"]
+        feeding = self.client.post(
+            f"/api/production/batches/{batch_ref}/events/feeding",
+            json={
+                "occurred_at": "2026-09-25T08:00:00+00:00",
+                "feed_type": "vegetable mash",
+                "operator": self.actor,
+                "quantity_offered": "2.000",
+                "offered_unit": "kg",
+                "larvae_biomass": "0.750",
+                "biomass_unit": "kg",
+            },
+        )
+        self.assertEqual(feeding.status_code, 201, feeding.get_json())
+
+        response = self._get_360(batch_ref)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        data = response.get_json()["data"]
+        self.assertEqual(data["batch"]["business_id"], batch_ref)
+        self.assertEqual(data["batch"]["farm_name"], self.marker)
+        self.assertTrue(all(stage["done"] for stage in data["stages"]), data["stages"])
+
+        self.assertAlmostEqual(data["source"]["substrate_issued_kg"], 4.0)
+        waste_ids = [
+            w["waste_lot_id"]
+            for s in data["source"]["substrate_batches"] for w in s["waste_lots"]
+        ]
+        self.assertEqual(waste_ids, [self.waste_lot_id])
+
+        self.assertEqual(data["operations"]["feeding"]["count"], 1)
+        self.assertAlmostEqual(data["operations"]["feeding"]["total_offered_kg"], 2.0)
+        self.assertAlmostEqual(data["harvest"]["total_wet_kg"], 1.5)
+        self.assertAlmostEqual(data["harvest"]["substrate_conversion_percent"], 37.5)
+
+        drying = data["processing"]["drying_batches"]
+        self.assertEqual(len(drying), 1)
+        self.assertAlmostEqual(drying[0]["input_from_this_batch_kg"], 1.2)
+        self.assertAlmostEqual(drying[0]["total_output_kg"], 0.6)
+        self.assertAlmostEqual(drying[0]["yield_percent"], 50.0)
+        self.assertEqual(drying[0]["shared_with_other_batches"], 0)
+
+        self.assertEqual(
+            [(q["check_status"], q["decision"]) for q in data["quality"]],
+            [("passed", "approved")],
+        )
+        self.assertEqual([p["business_id"] for p in data["product_lots"]], [lot["business_id"]])
+        self.assertAlmostEqual(data["inventory"]["on_hand_kg"], 0.6)
+        self.assertAlmostEqual(data["inventory"]["available_kg"], 0.6)
+        self.assertEqual(
+            [m["movement_type"] for m in data["inventory"]["movements"]], ["RECEIPT"]
+        )
+        self.assertEqual(
+            [p["business_id"] for p in data["traceability"]["downstream"]["product_lots"]],
+            [lot["business_id"]],
+        )
+        self.assertIsNone(data["traceability"]["downstream"]["commercial"])
+
+        titles = [entry["title"] for entry in data["audit"]]
+        self.assertIn("Batch created as PLANNED", titles)
+        self.assertTrue(any(t.startswith("Harvest HRV-") for t in titles), titles)
+        self.assertTrue(any(t.startswith("QC decision") for t in titles), titles)
+        self.assertIn(f"Product Lot {lot['business_id']} released", titles)
+        self.assertTrue(any(t.endswith("RECEIPT") for t in titles), titles)
+        timestamps = [entry["at"] for entry in data["audit"]]
+        self.assertEqual(timestamps, sorted(timestamps, key=_parse_iso))
+
+    def test_new_batch_reports_unrecorded_stages_without_placeholders(self):
+        created = self._create_production(self._create_substrate())
+        self.assertEqual(created.status_code, 201, created.get_json())
+        batch = created.get_json()["record"]
+        data = self._get_360(batch["business_id"]).get_json()["data"]
+        self.assertEqual(
+            {stage["key"]: stage["done"] for stage in data["stages"]},
+            {
+                "source": True, "production": False, "harvest": False,
+                "processing": False, "quality": False, "product": False,
+                "inventory": False,
+            },
+        )
+        self.assertEqual(data["harvest"]["count"], 0)
+        self.assertIsNone(data["harvest"]["substrate_conversion_percent"])
+        self.assertEqual(data["processing"]["drying_batches"], [])
+        self.assertEqual(data["quality"], [])
+        self.assertEqual(data["product_lots"], [])
+        self.assertEqual(data["inventory"]["on_hand_kg"], 0)
+        self.assertEqual([e["title"] for e in data["audit"]], ["Batch created as PLANNED"])
+
+    def test_batch_360_is_farm_scoped(self):
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        outsider = self._create_db_user(farm_access=False)
+        member = self._create_db_user()
+        with self._as(outsider):
+            denied = self._get_360(batch["business_id"])
+        with self._as(member):
+            allowed = self._get_360(batch["business_id"])
+        self.assertEqual(denied.status_code, 403, denied.get_json())
+        self.assertEqual(allowed.status_code, 200, allowed.get_json())
+        self.assertEqual(self._get_360("BSF-0000-99999").status_code, 404)
+        self.assertEqual(self.client.get("/batch-360").status_code, 200)
+
+    def test_shared_drying_batch_is_flagged_not_split(self):
+        first_substrate = self._create_substrate(quantity="4.000")
+        second_substrate = self._create_substrate(quantity="4.000")
+        batches = []
+        for substrate_id in (first_substrate, second_substrate):
+            created = self._create_production(
+                substrate_id, quantity="2.000", harvest_limit_kg="2.000"
+            )
+            self.assertEqual(created.status_code, 201, created.get_json())
+            batch = created.get_json()["record"]
+            self._move_to_harvest_ready(batch)
+            harvest = self._harvest(batch, wet_weight="1.000")
+            self.assertEqual(harvest.status_code, 201, harvest.get_json())
+            batches.append((batch, harvest.get_json()["harvest"]["id"]))
+
+        drying = self.client.post(
+            "/api/drying/batches",
+            json={
+                "batch_code": f"shared-{uuid4().hex[:15]}",
+                "drying_date": "2026-09-25",
+                "drying_method": "sun_drying",
+                "personnel": self.actor,
+                "farm_id": self.farm_id,
+                "site_id": self.site_id,
+                "facility_id": self.facility_id,
+                "inputs": [
+                    {"harvest_id": batches[0][1], "quantity": "0.800", "unit": "kg"},
+                    {"harvest_id": batches[1][1], "quantity": "0.400", "unit": "kg"},
+                ],
+            },
+        )
+        self.assertEqual(drying.status_code, 201, drying.get_json())
+
+        data = self._get_360(batches[0][0]["business_id"]).get_json()["data"]
+        row = data["processing"]["drying_batches"][0]
+        self.assertEqual(row["shared_with_other_batches"], 1)
+        self.assertAlmostEqual(row["input_from_this_batch_kg"], 0.8)
+        self.assertAlmostEqual(row["total_input_kg"], 1.2)
+        self.assertTrue(data["processing"]["any_shared"])
+        self.assertAlmostEqual(data["processing"]["wet_input_kg"], 0.8)
+
+    def test_feeding_accepts_canonical_biomass_and_mirrors_it_in_grams(self):
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        payload = {
+            "occurred_at": "2026-09-25T08:00:00+00:00",
+            "feed_type": "vegetable mash",
+            "operator": self.actor,
+            "quantity_offered": "1.500",
+            "offered_unit": "kg",
+        }
+        endpoint = f"/api/production/batches/{batch['business_id']}/events/feeding"
+        with_biomass = self.client.post(
+            endpoint, json={**payload, "larvae_biomass": "0.031", "biomass_unit": "kg"}
+        )
+        without_biomass = self.client.post(endpoint, json=payload)
+        self.assertEqual(with_biomass.status_code, 201, with_biomass.get_json())
+        self.assertEqual(without_biomass.status_code, 201, without_biomass.get_json())
+        weights = db.fetch_all(
+            "SELECT larvae_weight FROM feeding_schedule WHERE production_batch_id = %s ORDER BY id",
+            (batch["id"],),
+        )
+        self.assertEqual([None if r["larvae_weight"] is None else float(r["larvae_weight"])
+                          for r in weights], [31.0, None])
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(
@@ -1542,3 +1715,9 @@ class _UserContext:
     def __exit__(self, *exc):
         for item in reversed(self._patches):
             item.__exit__(*exc)
+
+
+def _parse_iso(value):
+    from datetime import datetime
+
+    return datetime.fromisoformat(value)

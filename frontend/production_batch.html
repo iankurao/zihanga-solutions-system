@@ -12,6 +12,8 @@
     .batch-header { display:flex; gap:1rem; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; }
     .batch-header h1 { margin:0 0 .35rem; }
     .batch-header p { color:var(--muted); margin:0; }
+    .batch-360-link { display:inline-block; margin-top:.5rem; color:var(--accent); font-weight:700; }
+    .batch-360-link[hidden] { display:none; }
     .batch-search { display:flex; gap:.5rem; min-width:300px; }
     .batch-search input, .event-form input, .event-form select, .event-form textarea {
       min-width:0; width:100%; padding:.7rem .8rem; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink);
@@ -65,6 +67,7 @@
       <div>
         <h1>Production Batch Detail</h1>
         <p>One lifecycle record for feeding, monitoring, health interventions, and harvests.</p>
+        <a id="batch360Link" class="batch-360-link" href="/batch-360" hidden>Open Batch 360 executive view →</a>
       </div>
       <form class="batch-search" id="batchSearchForm">
         <label class="sr-only" for="batchRef">Batch number</label>
@@ -260,6 +263,8 @@
     function renderBatch(batch) {
       field('batchError').style.display = 'none';
       field('batchCard').hidden = false;
+      field('batch360Link').href = '/batch-360?ref=' + encodeURIComponent(batch.business_id || batch.id);
+      field('batch360Link').hidden = false;
       field('batchNumber').textContent = batch.batch_number || batch.business_id || batch.batch_code;
       field('batchStatus').textContent = batch.status || '—';
       field('batchStage').textContent = batch.current_stage || '—';

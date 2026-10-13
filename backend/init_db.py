@@ -232,7 +232,7 @@ def create_tables(cursor):
             feeding_date DATE NOT NULL,
             tray_batch_id VARCHAR(50) NOT NULL,
             larvae_age_days INT NOT NULL,
-            larvae_weight DECIMAL(10,2) NOT NULL,
+            larvae_weight DECIMAL(10,2),
             feed_type VARCHAR(50) NOT NULL,
             feed_quantity DECIMAL(10,2) NOT NULL,
             start_weight DECIMAL(10,2),

@@ -90,6 +90,12 @@ instead of scanning `hatchery_feeding`.
 - Reads: `GET /api/inventory`, `GET /api/inventory/locations`,
   `GET /api/product-lots`, `GET /api/production/batches`; Product Lot detail
   includes `inventory` (balances + movement history).
+- **Batch 360** (`/batch-360?ref=BSF-…`, `GET /api/production/batches/<ref>/360`):
+  one read-only payload per production batch — source material, production,
+  operations, harvest, drying, QC, product lots, stock, traceability and an
+  audit trail — built only from stored relationships. A drying batch fed by
+  several production batches is flagged as shared; its output is never split
+  or estimated per batch.
 
 ### 1. Python Environment
 Replit manages Python packages via `uv` and the `.pythonlibs/` environment. All required packages are declared in `pyproject.toml`. On a fresh import, install them before starting the workflow; `run.sh` adds `.pythonlibs/bin/` to PATH for the server.
