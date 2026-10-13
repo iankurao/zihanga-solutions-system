@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Operational Alerts | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/batch-360.css">
+  <link rel="stylesheet" href="/css/traceability.css">
+  <link rel="stylesheet" href="/css/orders.css">
+  <link rel="stylesheet" href="/css/alerts.css">
+</head>
+<body class="b360-page">
+  <header class="b360-topbar">
+    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
+    <div class="b360-topbar-title">
+      <p class="b360-eyebrow">PHASE ONE · OPERATIONS</p>
+      <h1>Operational alerts</h1>
+    </div>
+  </header>
+
+  <main class="b360-main">
+    <section class="b360-card alerts-toolbar">
+      <div id="alertCounts" class="alert-counts" aria-live="polite"></div>
+      <div class="alerts-filters">
+        <label class="sr-only" for="alertView">Show</label>
+        <select id="alertView">
+          <option value="active">Active alerts</option>
+          <option value="resolved">Resolved history</option>
+          <option value="all">All alerts</option>
+        </select>
+        <label class="sr-only" for="alertSeverity">Severity</label>
+        <select id="alertSeverity">
+          <option value="">All severities</option>
+          <option value="critical">Critical</option>
+          <option value="warning">Warning</option>
+          <option value="info">Info</option>
+        </select>
+        <button type="button" id="alertRefresh" class="orders-secondary"><i class="fas fa-rotate"></i> Check now</button>
+      </div>
+      <p class="trace-hint">Alerts come from recorded batches, QC, stock and orders. They resolve on their own when the condition is fixed.</p>
+      <p id="alertMessage" class="b360-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="alertList" class="alert-list" aria-label="Alerts"></section>
+
+    <section class="b360-card">
+      <h3><span><i class="fas fa-scale-balanced"></i></span> Low-stock minimums</h3>
+      <p class="trace-hint">A warning is raised when free, QC-released stock of a product on a farm falls below its minimum.</p>
+      <div id="thresholdList"></div>
+      <form id="thresholdForm" class="inline-form" hidden>
+        <select id="thresholdFarm" required aria-label="Farm"></select>
+        <input id="thresholdProduct" type="text" maxlength="50" placeholder="Product type, e.g. dried_larvae" required aria-label="Product type">
+        <input id="thresholdMinimum" type="number" min="0.001" step="0.001" placeholder="Minimum kg" required aria-label="Minimum kg" class="qty-input">
+        <button type="submit" class="orders-primary">Save minimum</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/js/alerts.js"></script>
+</body>
+</html>

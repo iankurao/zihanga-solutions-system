@@ -680,3 +680,31 @@
     break-inside: avoid;
   }
 }
+
+/* Active operational alerts for this batch */
+.b360-alerts {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.b360-alert {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  color: #234;
+  background: #eaf1fb;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.b360-alert.is-warning { color: #6b4508; background: var(--amber-soft); }
+.b360-alert.is-critical { color: #7a2a22; background: var(--red-soft); }
+
+.b360-alert em {
+  margin-left: auto;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}

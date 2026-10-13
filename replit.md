@@ -112,6 +112,17 @@ instead of scanning `hatchery_feeding`.
   returns the undelivered quantity. Orders are visible to farm/organization
   users only. The legacy `sales` and `deliveries` tables are history and are
   not linked to stock — do not build on them.
+- **Operational alerts** (`/alerts`, `migrations/operational_alerts.sql`):
+  `_alert_candidates` evaluates rules over live records (harvest overdue/due,
+  batch health alert, open health issues, QC pending >24 h or failed, blocked
+  stock on hand, low free stock vs `inventory_alert_thresholds`, orders past
+  requested date, deliveries unconfirmed >48 h). `_sync_alerts` keeps one
+  active row per `alert_key`, resolves alerts when the condition clears, and
+  reopens snoozed/acknowledged alerts that expire or escalate. Sync runs at
+  most once a minute (on alert reads; forced refresh every 10 s). Alerts are
+  never deleted. Production/QC/stock alerts follow facility access; order,
+  delivery and low-stock alerts need farm access. Thresholds are super-admin
+  only.
 
 ### 1. Python Environment
 Replit manages Python packages via `uv` and the `.pythonlibs/` environment. All required packages are declared in `pyproject.toml`. On a fresh import, install them before starting the workflow; `run.sh` adds `.pythonlibs/bin/` to PATH for the server.

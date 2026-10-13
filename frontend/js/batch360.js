@@ -446,8 +446,26 @@ document.addEventListener('DOMContentLoaded', function () {
     target.appendChild(list);
   }
 
+  function renderAlerts(data) {
+    var target = document.getElementById('b360Alerts');
+    target.textContent = '';
+    var alerts = data.alerts || [];
+    target.hidden = !alerts.length;
+    alerts.forEach(function (alert) {
+      var item = el('a', 'b360-alert is-' + alert.severity);
+      item.href = '/alerts';
+      item.appendChild(el('i', 'fas fa-triangle-exclamation'));
+      var text = el('span');
+      text.append(el('strong', null, alert.title), document.createTextNode(' — ' + alert.message));
+      item.appendChild(text);
+      if (alert.status !== 'OPEN') item.appendChild(el('em', null, label(alert.status).toLowerCase()));
+      target.appendChild(item);
+    });
+  }
+
   function render(data) {
     renderHeader(data);
+    renderAlerts(data);
     renderSource(data);
     renderProduction(data);
     renderOperations(data);

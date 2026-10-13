@@ -1,0 +1,136 @@
+/* Operational alerts page; builds on batch-360, traceability and orders CSS. */
+
+.b360-page {
+  --info: #3b6fb6;
+  --info-soft: #eaf1fb;
+}
+
+.alerts-toolbar {
+  margin-bottom: 1.1rem;
+}
+
+.alert-counts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.alert-count {
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  background: #f5f8f6;
+}
+
+.alert-count span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.alert-count strong {
+  font-size: 1.5rem;
+}
+
+.alert-count.is-critical { background: var(--red-soft); }
+.alert-count.is-critical strong { color: var(--red); }
+.alert-count.is-warning { background: var(--amber-soft); }
+.alert-count.is-warning strong { color: var(--amber); }
+.alert-count.is-info { background: var(--info-soft); }
+.alert-count.is-info strong { color: var(--info); }
+
+.alerts-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.alerts-filters select {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cad8ce;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.alert-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 1.1rem;
+}
+
+.alert-card {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--info);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.alert-card.is-warning { border-left-color: var(--amber); }
+.alert-card.is-critical { border-left-color: var(--red); }
+.alert-card.is-muted { opacity: 0.72; }
+
+.alert-card-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.alert-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.alert-card p {
+  margin: 0.35rem 0 0;
+}
+
+.alert-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.alert-actions select,
+.alert-actions input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #cad8ce;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.alert-actions .orders-primary,
+.alert-actions .orders-secondary {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.alert-open-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.b360-pill.is-info {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+@media (max-width: 760px) {
+  .alert-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

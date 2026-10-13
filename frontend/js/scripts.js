@@ -672,6 +672,24 @@ document.addEventListener('DOMContentLoaded', function() {
     addSubstrateInputRow();
     refreshSubstrateChainData();
     loadLocationHierarchy();
+    refreshAlertBadge();
+
+    // Sidebar badge: open critical and warning alerts visible to this user.
+    async function refreshAlertBadge() {
+        const badge = document.getElementById('alertsNavCount');
+        if (!badge) return;
+        try {
+            const response = await fetch('/api/alerts/summary', { credentials: 'include' });
+            if (!response.ok) return;
+            const counts = (await response.json()).counts || {};
+            const urgent = (counts.critical || 0) + (counts.warning || 0);
+            badge.textContent = String(urgent);
+            badge.hidden = urgent === 0;
+            badge.title = `${counts.critical || 0} critical, ${counts.warning || 0} warning`;
+        } catch (error) {
+            console.error('Could not load alert count:', error);
+        }
+    }
 
     // Auto-fetch and populate next Hatchery Batch ID for Feeding Records
     async function fetchNextHatcheryBatchId() {

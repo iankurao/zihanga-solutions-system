@@ -1,6 +1,7 @@
 import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 from unittest.mock import patch
@@ -215,6 +216,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                     """DELETE FROM customer_order_lines WHERE order_id IN (
                         SELECT id FROM customer_orders WHERE farm_id = %s)""",
                     "DELETE FROM customer_orders WHERE farm_id = %s",
+                    "DELETE FROM operational_alerts WHERE farm_id = %s",
+                    "DELETE FROM inventory_alert_thresholds WHERE farm_id = %s",
                 ):
                     cursor.execute(statement, (self.farm_id,))
                 cursor.execute("DELETE FROM customers WHERE name = %s", (self.marker,))
@@ -2106,6 +2109,243 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             responses = list(executor.map(allocate, orders))
         self.assertEqual(sorted(r.status_code for r in responses), [201, 400])
         self.assertEqual(self._free_and_reserved(lot), (0.2, 0.4))
+
+    # ---- Operational alerts ------------------------------------------------------
+
+    def _alerts(self, view="all"):
+        db.execute_query("UPDATE operational_alert_sync SET last_run_at = NULL")
+        response = self.client.get(f"/api/alerts?status={view}&farm_id={self.farm_id}")
+        self.assertEqual(response.status_code, 200, response.get_json())
+        return response.get_json()["data"]
+
+    @staticmethod
+    def _by_rule(alerts, rule, status=None):
+        return [a for a in alerts if a["rule"] == rule and (status is None or a["status"] == status)]
+
+    def _health_event(self, batch, severity="critical"):
+        response = self.client.post(
+            f"/api/production/batches/{batch['business_id']}/events/health",
+            json={
+                "occurred_at": "2026-09-25T09:00:00+00:00",
+                "observed_issue": "Larvae climbing out of trays",
+                "severity": severity,
+                "action_taken": "Reduced moisture",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+
+    def test_production_alerts_fire_from_records_and_resolve_when_cleared(self):
+        substrate_id = self._create_substrate(quantity="8.000")
+        first = self._create_production(substrate_id, quantity="2.000").get_json()["record"]
+        second = self._create_production(substrate_id, quantity="2.000").get_json()["record"]
+        db.execute_query(
+            "UPDATE production_batches SET expected_harvest_at = now() - interval '4 days' WHERE id = %s",
+            (first["id"],),
+        )
+        db.execute_query(
+            "UPDATE production_batches SET expected_harvest_at = now() + interval '1 day' WHERE id = %s",
+            (second["id"],),
+        )
+        self._health_event(first)
+        for status in ("ACTIVE", "HEALTH_ALERT"):
+            moved = self.client.post(
+                f"/api/production/batches/{second['business_id']}/status",
+                json={"status": status, "reason": "Mites found"},
+            )
+            self.assertEqual(moved.status_code, 200, moved.get_json())
+
+        alerts = self._alerts()
+        overdue = self._by_rule(alerts, "harvest_overdue")
+        self.assertEqual(len(overdue), 1)
+        self.assertEqual((overdue[0]["entity_id"], overdue[0]["severity"]), (first["id"], "critical"))
+        self.assertEqual(overdue[0]["href"], f"/batch-360?ref={first['business_id']}")
+        self.assertEqual(
+            [(a["entity_id"], a["severity"]) for a in self._by_rule(alerts, "harvest_due")],
+            [(second["id"], "info")],
+        )
+        self.assertEqual(self._by_rule(alerts, "health_issue_open")[0]["severity"], "critical")
+        self.assertEqual(
+            [a["entity_id"] for a in self._by_rule(alerts, "batch_health_alert")], [second["id"]]
+        )
+
+        # A second evaluation must not duplicate anything.
+        self.assertEqual(len(self._alerts()), len(alerts))
+
+        db.execute_query(
+            "UPDATE production_batches SET expected_harvest_at = now() + interval '10 days' WHERE id = %s",
+            (first["id"],),
+        )
+        alerts = self._alerts()
+        resolved = self._by_rule(alerts, "harvest_overdue")
+        self.assertEqual([a["status"] for a in resolved], ["RESOLVED"])
+        self.assertEqual(resolved[0]["resolved_reason"], "Condition cleared")
+        self.assertNotIn(
+            first["id"], [a["entity_id"] for a in self._by_rule(alerts, "harvest_due", "OPEN")]
+        )
+
+        batch360 = self._get_360(second["business_id"]).get_json()["data"]
+        self.assertIn("batch_health_alert", [a["rule"] for a in batch360["alerts"]])
+
+    def test_qc_pending_turns_into_qc_failed(self):
+        drying_ref, output = self._create_output_for_product_lot()
+        db.execute_query(
+            """
+            UPDATE drying_batch_status_history SET changed_at = now() - interval '2 days'
+            WHERE new_status = 'QC_PENDING' AND drying_batch_id = (
+                SELECT id FROM drying_batches WHERE business_id = %s)
+            """,
+            (drying_ref,),
+        )
+        pending = self._by_rule(self._alerts(), "qc_pending", "OPEN")
+        self.assertEqual(len(pending), 1)
+        self.assertIn("hours", pending[0]["message"])
+
+        failed = self._create_output_quality_check(output, status="failed")
+        self.assertEqual(failed.status_code, 201, failed.get_json())
+        alerts = self._alerts()
+        self.assertEqual(len(self._by_rule(alerts, "qc_failed", "OPEN")), 1)
+        self.assertEqual([a["status"] for a in self._by_rule(alerts, "qc_pending")], ["RESOLVED"])
+
+    def test_stock_order_and_delivery_alerts(self):
+        lot = self._release_lot()
+        admin = self._create_db_user()
+        admin.role = "super_admin"
+        with self._as(admin):
+            threshold = self.client.put(
+                "/api/alerts/thresholds",
+                json={"farm_id": self.farm_id, "product_type": "dried_larvae", "minimum_kg": "1.000"},
+            )
+        self.assertEqual(threshold.status_code, 200, threshold.get_json())
+        response = self.client.post(
+            "/api/orders",
+            json={
+                "customer_id": self._customer(), "farm_id": self.farm_id,
+                "order_date": "2026-09-01", "requested_delivery_date": "2026-09-02",
+                "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.500"}],
+            },
+        )
+        order = response.get_json()["data"]
+        allocation = self._allocate(order, lot, "0.200").get_json()["data"]["allocations"][0]
+        dispatched = self._dispatch(order, allocation["id"], "0.200")
+        delivery_ref = dispatched.get_json()["data"]["created_delivery"]
+        db.execute_query(
+            "UPDATE customer_deliveries SET dispatched_at = now() - interval '3 days' WHERE business_id = %s",
+            (delivery_ref,),
+        )
+
+        alerts = self._alerts()
+        low = self._by_rule(alerts, "low_stock", "OPEN")
+        self.assertEqual(len(low), 1)
+        self.assertEqual(low[0]["severity"], "warning")
+        self.assertIn("0.4 kg free", low[0]["message"])
+        self.assertEqual(self._by_rule(alerts, "order_overdue", "OPEN")[0]["severity"], "critical")
+        self.assertEqual(
+            self._by_rule(alerts, "delivery_unconfirmed", "OPEN")[0]["entity_ref"], delivery_ref
+        )
+
+        db.execute_query(
+            """
+            INSERT INTO quality_approvals (quality_check_id, decision, rationale, approver)
+            SELECT quality_check_id, 'revoked', 'Recall', %s FROM quality_approvals WHERE id = %s
+            """,
+            (self.actor, lot_release_approval_id(lot)),
+        )
+        alerts = self._alerts()
+        self.assertEqual(
+            [a["entity_id"] for a in self._by_rule(alerts, "quarantined_stock", "OPEN")], [lot["id"]]
+        )
+        self.assertEqual(self._by_rule(alerts, "low_stock", "OPEN")[0]["severity"], "critical")
+
+        confirmed = self.client.post(
+            f"/api/deliveries/{delivery_ref}/confirm", json={"received_by": "Stores"}
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(
+            [a["status"] for a in self._by_rule(self._alerts(), "delivery_unconfirmed")], ["RESOLVED"]
+        )
+
+    def test_alert_acknowledge_snooze_and_escalation(self):
+        response = self.client.post(
+            "/api/orders",
+            json={
+                "customer_id": self._customer(), "farm_id": self.farm_id,
+                "order_date": "2026-09-01", "requested_delivery_date": str(date.today() - timedelta(days=1)),
+                "lines": [{"product_type": "dried_larvae", "quantity_kg": "1"}],
+            },
+        )
+        order = response.get_json()["data"]
+        alert = self._by_rule(self._alerts(), "order_overdue", "OPEN")[0]
+        self.assertEqual(alert["severity"], "warning")
+
+        ack = self.client.post(f"/api/alerts/{alert['id']}/acknowledge", json={"note": "Customer informed"})
+        self.assertEqual(ack.status_code, 200, ack.get_json())
+        self.assertEqual(
+            self.client.post(f"/api/alerts/{alert['id']}/acknowledge", json={}).status_code, 409
+        )
+        still = self._by_rule(self._alerts(), "order_overdue")
+        self.assertEqual([(a["id"], a["status"]) for a in still], [(alert["id"], "ACKNOWLEDGED")])
+        self.assertEqual(still[0]["acknowledgement_note"], "Customer informed")
+
+        db.execute_query(
+            "UPDATE customer_orders SET requested_delivery_date = CURRENT_DATE - 5 WHERE id = %s",
+            (order["id"],),
+        )
+        escalated = self._by_rule(self._alerts(), "order_overdue")[0]
+        self.assertEqual((escalated["id"], escalated["status"], escalated["severity"]),
+                         (alert["id"], "OPEN", "critical"))
+
+        self.assertEqual(
+            self.client.post(f"/api/alerts/{alert['id']}/snooze", json={"hours": 0}).status_code, 400
+        )
+        snoozed = self.client.post(f"/api/alerts/{alert['id']}/snooze", json={"hours": 24})
+        self.assertEqual(snoozed.status_code, 200, snoozed.get_json())
+        self.assertEqual(self._by_rule(self._alerts(), "order_overdue")[0]["status"], "SNOOZED")
+        db.execute_query(
+            "UPDATE operational_alerts SET snoozed_until = now() - interval '1 minute' WHERE id = %s",
+            (alert["id"],),
+        )
+        self.assertEqual(self._by_rule(self._alerts(), "order_overdue")[0]["status"], "OPEN")
+
+    def test_alert_visibility_and_threshold_permissions(self):
+        created = self._create_production(self._create_substrate()).get_json()["record"]
+        db.execute_query(
+            "UPDATE production_batches SET expected_harvest_at = now() - interval '1 day' WHERE id = %s",
+            (created["id"],),
+        )
+        self.client.post(
+            "/api/orders",
+            json={"customer_id": self._customer(), "farm_id": self.farm_id,
+                  "order_date": "2026-09-01", "requested_delivery_date": "2026-09-02",
+                  "lines": [{"product_type": "dried_larvae", "quantity_kg": "1"}]},
+        )
+        alerts = self._alerts("active")
+        production_alert = self._by_rule(alerts, "harvest_overdue")[0]
+        order_alert = self._by_rule(alerts, "order_overdue")[0]
+
+        outsider = self._create_db_user(farm_access=False)
+        facility_only = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (facility_only.id, self.facility_id),
+        )
+        with self._as(outsider):
+            outsider_ids = [a["id"] for a in self.client.get("/api/alerts").get_json()["data"]]
+            outsider_ack = self.client.post(f"/api/alerts/{production_alert['id']}/acknowledge", json={})
+            threshold = self.client.put(
+                "/api/alerts/thresholds",
+                json={"farm_id": self.farm_id, "product_type": "x", "minimum_kg": "1"},
+            )
+        with self._as(facility_only):
+            facility_ids = [a["id"] for a in self.client.get("/api/alerts").get_json()["data"]]
+            summary = self.client.get("/api/alerts/summary").get_json()["counts"]
+        self.assertNotIn(production_alert["id"], outsider_ids)
+        self.assertNotIn(order_alert["id"], outsider_ids)
+        self.assertEqual(outsider_ack.status_code, 404)
+        self.assertEqual(threshold.status_code, 403)
+        self.assertIn(production_alert["id"], facility_ids)
+        self.assertNotIn(order_alert["id"], facility_ids)
+        self.assertGreaterEqual(summary["open"], 1)
+        self.assertEqual(self.client.get("/alerts").status_code, 200)
 
 
 def lot_release_approval_id(lot):
