@@ -503,7 +503,7 @@ def create_tables(cursor):
         CREATE TABLE IF NOT EXISTS sales (
             id SERIAL PRIMARY KEY,
             date DATE NOT NULL,
-            customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+            customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
             product VARCHAR(100) NOT NULL,
             quantity DECIMAL(10,2) NOT NULL,
             amount DECIMAL(10,2) NOT NULL,
@@ -523,7 +523,7 @@ def create_tables(cursor):
         CREATE TABLE IF NOT EXISTS customer_feedback (
             id SERIAL PRIMARY KEY,
             date DATE NOT NULL,
-            customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+            customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
             feedback TEXT NOT NULL,
             rating INTEGER CHECK (rating >= 1 AND rating <= 5),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -542,7 +542,7 @@ def create_tables(cursor):
         CREATE TABLE IF NOT EXISTS deliveries (
             id SERIAL PRIMARY KEY,
             date DATE NOT NULL,
-            customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+            customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
             product VARCHAR(100),
             quantity DECIMAL(10,2),
             status VARCHAR(50) NOT NULL,
@@ -646,6 +646,8 @@ def create_tables(cursor):
     cursor.execute(drying_chain_migration_path.read_text(encoding="utf-8"))
     product_lot_chain_migration_path = Path(__file__).parent / "migrations" / "product_lot_chain.sql"
     cursor.execute(product_lot_chain_migration_path.read_text(encoding="utf-8"))
+    waste_lot_scope_migration_path = Path(__file__).parent / "migrations" / "waste_lot_scope.sql"
+    cursor.execute(waste_lot_scope_migration_path.read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     init_database()

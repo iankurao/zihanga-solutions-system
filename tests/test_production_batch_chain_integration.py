@@ -51,7 +51,9 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             json={
                 "collection_date": "2026-09-24",
                 "collection_time": "09:30",
-                "farm_site": self.marker,
+                "farm_id": self.farm_id,
+                "site_id": self.site_id,
+                "facility_id": self.facility_id,
                 "source_type": "market",
                 "source_name": self.marker,
                 "waste_type": "vegetable",
@@ -112,7 +114,6 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             json={
                 "batch_no": f"substrate-{uuid4().hex[:18]}",
                 "prep_date": "2026-09-24",
-                "farm_site": self.marker,
                 "farm_id": self.farm_id,
                 "site_id": self.site_id,
                 "facility_id": self.facility_id,
@@ -387,7 +388,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                     "DELETE FROM substrate_batches WHERE farm_id = %s",
                     (self.farm_id,),
                 )
-                cursor.execute("DELETE FROM waste_lots WHERE farm_site = %s", (self.marker,))
+                cursor.execute("DELETE FROM waste_lots WHERE farm_id = %s", (self.farm_id,))
                 cursor.execute(
                     "DELETE FROM waste_sourcing WHERE source_name = %s",
                     (self.marker,),

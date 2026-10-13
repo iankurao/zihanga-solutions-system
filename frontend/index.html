@@ -115,10 +115,22 @@
         <div class="subsection">
           <h2><i class="fas fa-truck"></i> Waste Sourcing</h2>
           <form id="wasteSourcingForm">
-            <div class="form-group">
-              <label for="farmSite" class="required">Farm / Site</label>
-              <input type="text" id="farmSite" name="farmSite" class="form-control" maxlength="150" required>
-              <div class="invalid-feedback">Please enter the farm or receiving site</div>
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="wasteFarmId" class="required">Farm</label>
+                <select id="wasteFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the receiving farm</div>
+              </div>
+              <div class="form-group">
+                <label for="wasteSiteId" class="required">Site</label>
+                <select id="wasteSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the receiving site</div>
+              </div>
+              <div class="form-group">
+                <label for="wasteFacilityId" class="required">Facility</label>
+                <select id="wasteFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the receiving facility</div>
+              </div>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -512,12 +524,25 @@
               </div>
             </div>
             
-            <div class="form-row">
+            <div class="form-row location-picker" id="substrateLocationPicker">
               <div class="form-group">
-                <label for="substrateFarmSite" class="required">Farm / Site</label>
-                <input type="text" id="substrateFarmSite" name="farmSite" class="form-control" maxlength="150" required>
-                <div class="invalid-feedback">Enter the same farm/site as the selected Waste Lots</div>
+                <label for="substrateFarmId" class="required">Farm</label>
+                <select id="substrateFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
               </div>
+              <div class="form-group">
+                <label for="substrateSiteId" class="required">Site</label>
+                <select id="substrateSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Select the same site as the Waste Lots</div>
+              </div>
+              <div class="form-group">
+                <label for="substrateFacilityId" class="required">Facility</label>
+                <select id="substrateFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the preparation facility</div>
+              </div>
+            </div>
+
+            <div class="form-row">
               <div class="form-group">
                 <label for="moistureConsistency" class="required">Moisture Consistency</label>
                 <select id="moistureConsistency" name="moistureConsistency" class="form-control" required>

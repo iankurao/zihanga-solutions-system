@@ -126,18 +126,95 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     let availableWasteLots = [];
+    let locationRows = [];
 
-    function selectedSubstrateSite() {
-        return (document.getElementById('substrateFarmSite')?.value || '').trim().toLowerCase();
+    function uniqueBy(rows, key) {
+        const seen = new Map();
+        rows.forEach(row => {
+            if (row[key] != null && !seen.has(row[key])) seen.set(row[key], row);
+        });
+        return [...seen.values()];
+    }
+
+    function fillLocationSelect(select, rows, idKey, nameKey, placeholder) {
+        const previousValue = select.value;
+        select.replaceChildren(new Option(placeholder, ''));
+        uniqueBy(rows, idKey).forEach(row => select.add(new Option(row[nameKey], row[idKey])));
+        if ([...select.options].some(option => option.value === previousValue && previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
+    // Farm -> Site -> Facility selects, limited to active locations the
+    // server reports as visible to the signed-in user.
+    function renderLocationPicker(picker) {
+        const farm = picker.querySelector('.location-farm');
+        const site = picker.querySelector('.location-site');
+        const facility = picker.querySelector('.location-facility');
+        fillLocationSelect(
+            farm, locationRows, 'farm_id', 'farm_name',
+            locationRows.length ? 'Select farm' : 'No farms available — ask an administrator'
+        );
+        const sites = locationRows.filter(row => String(row.farm_id) === farm.value);
+        fillLocationSelect(site, sites, 'site_id', 'site_name', farm.value ? 'Select site' : 'Select a farm first');
+        const facilities = sites.filter(row => String(row.site_id) === site.value);
+        fillLocationSelect(
+            facility, facilities, 'facility_id', 'facility_name',
+            site.value ? 'Select facility' : 'Select a site first'
+        );
+    }
+
+    async function loadLocationHierarchy() {
+        const pickers = document.querySelectorAll('.location-picker');
+        if (!pickers.length) return;
+        try {
+            const response = await fetch('/api/locations/hierarchy', { credentials: 'include' });
+            if (!response.ok) throw new Error('Could not load farms and facilities');
+            const result = await response.json();
+            locationRows = (result.data || []).filter(row =>
+                row.facility_id && row.farm_status === 'active' &&
+                row.site_status === 'active' && row.facility_status === 'active'
+            );
+        } catch (error) {
+            console.error('Could not load location hierarchy:', error);
+            locationRows = [];
+        }
+        pickers.forEach(renderLocationPicker);
+        refreshWasteLotSelects();
+    }
+
+    document.querySelectorAll('.location-picker').forEach(picker => {
+        picker.addEventListener('change', event => {
+            if (!event.target.matches('.location-farm, .location-site')) return;
+            renderLocationPicker(picker);
+            if (picker.id === 'substrateLocationPicker') refreshWasteLotSelects();
+        });
+        const form = picker.closest('form');
+        if (form) {
+            // form.reset() clears values first; rebuild dependent options after.
+            form.addEventListener('reset', () => setTimeout(() => {
+                renderLocationPicker(picker);
+                if (picker.id === 'substrateLocationPicker') refreshWasteLotSelects();
+            }, 0));
+        }
+    });
+
+    function selectedSubstrateScope() {
+        return {
+            farmId: document.getElementById('substrateFarmId')?.value || '',
+            siteId: document.getElementById('substrateSiteId')?.value || ''
+        };
     }
 
     function refreshWasteLotSelects() {
-        const site = selectedSubstrateSite();
+        const scope = selectedSubstrateScope();
+        const site = scope.farmId && scope.siteId;
         document.querySelectorAll('.substrate-waste-lot').forEach(select => {
             const previousValue = select.value;
             select.replaceChildren(new Option('Select an available Waste Lot', ''));
             const matchingLots = site
-                ? availableWasteLots.filter(lot => lot.farm_site.trim().toLowerCase() === site)
+                ? availableWasteLots.filter(lot =>
+                    String(lot.farm_id) === scope.farmId && String(lot.site_id) === scope.siteId)
                 : [];
             matchingLots.forEach(lot => {
                 select.add(new Option(
@@ -147,7 +224,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             if (!matchingLots.length) {
                 select.add(new Option(
-                    site ? 'No available lots for this farm/site' : 'Enter the farm/site first',
+                    site ? 'No available lots for this farm/site' : 'Select the farm and site first',
                     ''
                 ));
             }
@@ -251,7 +328,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const heading = document.createElement('h4');
                 heading.textContent = `${batch.business_id} · ${batch.preparation_date}`;
                 const site = document.createElement('p');
-                site.textContent = `Farm/site: ${batch.farm_site} · Total input: ${batch.total_input_weight_kg} kg`;
+                const locationText = batch.facility_name
+                    ? `${batch.farm_name} / ${batch.site_name} / ${batch.facility_name}`
+                    : `${batch.farm_site} (legacy, unassigned)`;
+                site.textContent = `Location: ${locationText} · Total input: ${batch.total_input_weight_kg} kg`;
                 const inputs = document.createElement('ul');
                 (batch.inputs || []).forEach(input => {
                     const item = document.createElement('li');
@@ -589,12 +669,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (addSubstrateInputButton) {
         addSubstrateInputButton.addEventListener('click', addSubstrateInputRow);
     }
-    const substrateSiteInput = document.getElementById('substrateFarmSite');
-    if (substrateSiteInput) {
-        substrateSiteInput.addEventListener('input', refreshWasteLotSelects);
-    }
     addSubstrateInputRow();
     refreshSubstrateChainData();
+    loadLocationHierarchy();
 
     // Auto-fetch and populate next Hatchery Batch ID for Feeding Records
     async function fetchNextHatcheryBatchId() {

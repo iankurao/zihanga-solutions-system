@@ -8,6 +8,7 @@ from wtforms import StringField, PasswordField, BooleanField, SubmitField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, ValidationError, Regexp
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import HTTPException
 from backend.init_db import init_database
 from backend.database import DatabaseConnection
 import logging
@@ -822,7 +823,7 @@ def _assert_production_scope_access(cursor, farm_id, site_id, facility_id):
     ):
         return
     if not getattr(current_user, 'is_authenticated', False):
-        raise ProductionEventPermissionError('You must be signed in to record a production event')
+        raise ProductionEventPermissionError('You must be signed in to record operational data')
     cursor.execute(
         """
         SELECT EXISTS (
@@ -859,7 +860,7 @@ def _assert_production_scope_access(cursor, farm_id, site_id, facility_id):
     )
     if not cursor.fetchone()['allowed']:
         raise ProductionEventPermissionError(
-            'You are not authorized for this Production Batch location'
+            'You are not authorized for this farm, site, and facility'
         )
 
 
@@ -1382,20 +1383,82 @@ def _production_input_rows(data):
     return sorted(normalized, key=lambda item: item['substrate_batch_id'])
 
 
-def _production_scope_values(data):
+def _production_scope_values(data, record_label='a Production Batch'):
     values = [data.get(field) for field in ('farm_id', 'site_id', 'facility_id')]
     if any(value in (None, '') for value in values):
-        raise ValueError('farm_id, site_id, and facility_id are required for a Production Batch')
+        raise ValueError(f'farm_id, site_id, and facility_id are required for {record_label}')
     return tuple(
         _parse_positive_integer(value, field)
         for value, field in zip(values, ('farm_id', 'site_id', 'facility_id'))
     )
 
 
+def _scope_visibility_clause(alias):
+    """SQL predicate limiting ``alias`` rows to locations the caller may access.
+
+    ``alias`` must expose farm_id, site_id and facility_id columns and is an
+    internal constant, never user input.  Rows without canonical scope are
+    legacy records and are visible only to super admins.
+    """
+    if app.config.get('LOGIN_DISABLED') or (
+        getattr(current_user, 'is_authenticated', False)
+        and current_user.role == 'super_admin'
+    ):
+        return 'TRUE', ()
+    if not getattr(current_user, 'is_authenticated', False):
+        return 'FALSE', ()
+    return (
+        f"""
+        EXISTS (
+            SELECT 1
+            FROM facilities AS scope_fa
+            JOIN sites AS scope_s ON scope_s.id = scope_fa.site_id
+            JOIN farms AS scope_f ON scope_f.id = scope_s.farm_id
+            WHERE scope_fa.id = {alias}.facility_id
+              AND scope_s.id = {alias}.site_id
+              AND scope_f.id = {alias}.farm_id
+              AND (
+                  EXISTS (
+                      SELECT 1 FROM user_organization_access AS uoa
+                      WHERE uoa.user_id = %s
+                        AND uoa.organization_id = scope_f.organization_id
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM user_farm_access AS ufa
+                      WHERE ufa.user_id = %s AND ufa.farm_id = scope_f.id
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM user_site_access AS usa
+                      WHERE usa.user_id = %s AND usa.site_id = scope_s.id
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM user_facility_access AS uca
+                      WHERE uca.user_id = %s AND uca.facility_id = scope_fa.id
+                  )
+              )
+        )
+        """,
+        (current_user.id,) * 4,
+    )
+
+
+def _optional_scope_filters(alias):
+    """Translate optional farm/site/facility query parameters into SQL."""
+    clauses = []
+    params = []
+    for field in ('farm_id', 'site_id', 'facility_id'):
+        value = request.args.get(field)
+        if value not in (None, ''):
+            clauses.append(f'{alias}.{field} = %s')
+            params.append(_parse_positive_integer(value, field))
+    return clauses, params
+
+
 def _assert_production_location(cursor, farm_id, site_id, facility_id):
     cursor.execute(
         """
-        SELECT f.id AS farm_id, s.id AS site_id, fa.id AS facility_id
+        SELECT f.id AS farm_id, s.id AS site_id, fa.id AS facility_id,
+               f.name AS farm_name, s.name AS site_name, fa.name AS facility_name
         FROM facilities AS fa
         JOIN sites AS s ON s.id = fa.site_id AND s.farm_id = %s
         JOIN farms AS f ON f.id = s.farm_id
@@ -1408,8 +1471,15 @@ def _assert_production_location(cursor, farm_id, site_id, facility_id):
         """,
         (farm_id, farm_id, site_id, facility_id),
     )
-    if not cursor.fetchone():
+    location = cursor.fetchone()
+    if not location:
         raise ValueError('The selected farm, site, and facility ownership is invalid')
+    return location
+
+
+def _location_label(location):
+    """Legacy farm_site display text derived from the canonical hierarchy."""
+    return f"{location['farm_name']} / {location['site_name']}"[:150]
 
 
 def _production_batch_detail_query():
@@ -1533,7 +1603,7 @@ def handle_waste_sourcing():
     normalized_data = normalize_keys(data)
 
     required_fields = [
-        'collection_date', 'collection_time', 'farm_site', 'source_type',
+        'collection_date', 'collection_time', 'source_type',
         'source_name', 'waste_type', 'waste_weight', 'segregation_status',
         'collection_personnel'
     ]
@@ -1542,8 +1612,9 @@ def handle_waste_sourcing():
         return jsonify({'success': False, 'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
 
     try:
-        if not normalized_data['farm_site'].strip():
-            raise ValueError('farm_site is required')
+        farm_id, site_id, facility_id = _production_scope_values(
+            normalized_data, 'a Waste Lot'
+        )
         quantity = _parse_chain_quantity(normalized_data['waste_weight'], 'waste_weight')
         contaminants = normalized_data.get('contaminants_found', [])
         if isinstance(contaminants, list):
@@ -1564,6 +1635,8 @@ def handle_waste_sourcing():
 
         actor = _chain_actor(normalized_data)
         with db.transaction() as cursor:
+            location = _assert_production_location(cursor, farm_id, site_id, facility_id)
+            _assert_production_scope_access(cursor, farm_id, site_id, facility_id)
             cursor.execute(
                 """
                 INSERT INTO waste_sourcing (
@@ -1592,18 +1665,23 @@ def handle_waste_sourcing():
             cursor.execute(
                 """
                 INSERT INTO waste_lots (
-                    business_id, waste_sourcing_id, farm_site, source_type,
+                    business_id, waste_sourcing_id, farm_site,
+                    farm_id, site_id, facility_id, source_type,
                     source_name, waste_type, collection_date, quantity, unit,
                     quality_status, status, recorded_by
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'kg', %s, %s, %s)
-                RETURNING id, business_id, farm_site, source_name,
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'kg', %s, %s, %s)
+                RETURNING id, business_id, farm_site, farm_id, site_id,
+                          facility_id, source_name,
                           collection_date, quantity, unit, quality_status,
                           status, recorded_by, created_at
                 """,
                 (
                     source_record['business_id'],
                     source_record['id'],
-                    normalized_data['farm_site'].strip(),
+                    _location_label(location),
+                    farm_id,
+                    site_id,
+                    facility_id,
                     normalized_data['source_type'],
                     normalized_data['source_name'].strip(),
                     normalized_data['waste_type'],
@@ -1623,6 +1701,8 @@ def handle_waste_sourcing():
             'id': source_record['id'],
             'business_id': source_record['business_id'],
         }), 201
+    except ProductionEventPermissionError as e:
+        return jsonify({'success': False, 'message': str(e)}), 403
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
@@ -1712,7 +1792,7 @@ def handle_substrate_preparation():
     normalized_data = normalize_keys(data)
     
     required_fields = [
-        'prep_date', 'farm_site', 'moisture_consistency',
+        'prep_date', 'moisture_consistency',
         'waste_particle_size', 'foreign_matter', 'handler_operator'
     ]
     missing_fields = [field for field in required_fields if field not in normalized_data or not normalized_data.get(field)]
@@ -1744,38 +1824,20 @@ def handle_substrate_preparation():
         # Lock in a consistent order so concurrent substrate preparations
         # serialize on each lot without deadlocking one another.
         requested_inputs.sort(key=lambda item: item['waste_lot_id'])
-        batch_site = normalized_data['farm_site'].strip()
-        if not batch_site:
-            raise ValueError('farm_site is required')
         actor = _chain_actor(normalized_data)
-        scope_values = [
-            normalized_data.get(field)
-            for field in ('farm_id', 'site_id', 'facility_id')
-        ]
-        if any(value not in (None, '') for value in scope_values):
-            if any(value in (None, '') for value in scope_values):
-                raise ValueError(
-                    'farm_id, site_id, and facility_id must be supplied together'
-                )
-            substrate_scope = tuple(
-                _parse_positive_integer(value, field)
-                for value, field in zip(
-                    scope_values, ('farm_id', 'site_id', 'facility_id')
-                )
-            )
-        else:
-            substrate_scope = (None, None, None)
+        substrate_scope = _production_scope_values(normalized_data, 'a Substrate Batch')
         total_input = Decimal('0')
         validated_inputs = []
 
         with db.transaction() as cursor:
-            if substrate_scope[0] is not None:
-                _assert_production_location(cursor, *substrate_scope)
+            location = _assert_production_location(cursor, *substrate_scope)
+            _assert_production_scope_access(cursor, *substrate_scope)
+            batch_site = _location_label(location)
             for requested in requested_inputs:
                 cursor.execute(
                     """
-                    SELECT id, business_id, farm_site, quantity, unit, status,
-                           source_name
+                    SELECT id, business_id, farm_site, farm_id, site_id,
+                           quantity, unit, status, source_name
                     FROM waste_lots
                     WHERE id = %s
                     FOR UPDATE
@@ -1787,7 +1849,14 @@ def handle_substrate_preparation():
                     raise ValueError('A selected Waste Lot does not exist')
                 if lot['status'] != 'available':
                     raise ValueError(f"Waste Lot {lot['business_id']} is not available")
-                if lot['farm_site'].strip().casefold() != batch_site.casefold():
+                if lot['farm_id'] is None:
+                    raise ValueError(
+                        f"Waste Lot {lot['business_id']} has no assigned farm/site/facility; "
+                        'an administrator must assign it before use'
+                    )
+                # Waste may be received at a different facility on the same
+                # site, but it never crosses farm or site boundaries.
+                if (lot['farm_id'], lot['site_id']) != substrate_scope[:2]:
                     raise ValueError(
                         f"Waste Lot {lot['business_id']} belongs to a different farm/site"
                     )
@@ -1917,6 +1986,9 @@ def handle_substrate_preparation():
             'record': {
                 **batch,
                 'farm_site': batch_site,
+                'farm_id': substrate_scope[0],
+                'site_id': substrate_scope[1],
+                'facility_id': substrate_scope[2],
                 'preparation_date': normalized_data['prep_date'],
                 'total_input_weight_kg': total_input,
                 'inputs': input_details,
@@ -1925,6 +1997,8 @@ def handle_substrate_preparation():
             'id': batch['id'],
             'business_id': batch['business_id'],
         }), 201
+    except ProductionEventPermissionError as e:
+        return jsonify({'success': False, 'message': str(e)}), 403
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
@@ -1935,32 +2009,101 @@ def handle_substrate_preparation():
 @login_required
 def get_available_waste_lots():
     try:
+        visibility, visibility_params = _scope_visibility_clause('wl')
+        filters, filter_params = _optional_scope_filters('wl')
+        where = ' AND '.join(["wl.status = 'available'", visibility, *filters])
         records = db.fetch_all(
-            """
-            SELECT wl.id, wl.business_id, wl.farm_site, wl.source_type,
+            f"""
+            SELECT wl.id, wl.business_id, wl.farm_site, wl.farm_id, wl.site_id,
+                   wl.facility_id, f.name AS farm_name, s.name AS site_name,
+                   fa.name AS facility_name, wl.source_type,
                    wl.source_name, wl.waste_type, wl.collection_date,
                    wl.quantity, wl.unit, wl.quality_status, wl.status,
                    wl.recorded_by, wl.created_at,
                    wl.quantity - COALESCE(SUM(sbi.quantity_used), 0)
                        AS available_quantity
             FROM waste_lots AS wl
+            LEFT JOIN farms AS f ON f.id = wl.farm_id
+            LEFT JOIN sites AS s ON s.id = wl.site_id
+            LEFT JOIN facilities AS fa ON fa.id = wl.facility_id
             LEFT JOIN substrate_batch_inputs AS sbi ON sbi.waste_lot_id = wl.id
-            WHERE wl.status = 'available'
-            GROUP BY wl.id
+            WHERE {where}
+            GROUP BY wl.id, f.name, s.name, fa.name
             HAVING wl.quantity - COALESCE(SUM(sbi.quantity_used), 0) > 0
             ORDER BY wl.collection_date DESC, wl.id DESC
-            """
+            """,
+            (*visibility_params, *filter_params),
         )
         return jsonify({'success': True, 'data': records}), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         logger.error(f"Error fetching available Waste Lots: {e}")
         return jsonify({'success': False, 'message': 'Could not load Waste Lots'}), 500
 
 
+@app.route('/api/waste-lots/<string:lot_ref>/location', methods=['POST'])
+@login_required
+@super_admin_required
+def assign_waste_lot_location(lot_ref):
+    """Assign canonical scope to a legacy Waste Lot exactly once.
+
+    Legacy lots carry only free-text farm_site, which cannot prove ownership,
+    so a super admin records the location explicitly.  Lots that already have
+    canonical scope cannot be moved because substrate lineage depends on it.
+    """
+    data = normalize_keys(request.get_json() or {})
+    try:
+        farm_id, site_id, facility_id = _production_scope_values(data, 'a Waste Lot')
+        lookup_id = int(lot_ref) if str(lot_ref).isdigit() else -1
+        with db.transaction() as cursor:
+            _assert_production_location(cursor, farm_id, site_id, facility_id)
+            cursor.execute(
+                """
+                SELECT id, business_id, farm_id
+                FROM waste_lots
+                WHERE id = %s OR business_id = %s
+                FOR UPDATE
+                """,
+                (lookup_id, str(lot_ref)),
+            )
+            lot = cursor.fetchone()
+            if not lot:
+                return jsonify({'success': False, 'message': 'Waste Lot not found'}), 404
+            if lot['farm_id'] is not None:
+                return jsonify({
+                    'success': False,
+                    'message': f"Waste Lot {lot['business_id']} already has an assigned location",
+                }), 409
+            cursor.execute(
+                """
+                UPDATE waste_lots
+                SET farm_id = %s, site_id = %s, facility_id = %s,
+                    location_assigned_by_user_id = %s,
+                    location_assigned_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, business_id, farm_site, farm_id, site_id,
+                          facility_id, location_assigned_by_user_id,
+                          location_assigned_at
+                """,
+                (farm_id, site_id, facility_id, _production_actor(data)[1], lot['id']),
+            )
+            record = cursor.fetchone()
+        return jsonify({'success': True, 'data': record}), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except Exception:
+        logger.exception('Error assigning Waste Lot location')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
 def _substrate_batch_detail_query(where_clause='', order_clause=''):
     return f"""
         SELECT sb.id, sb.batch_code, sb.business_id, sb.preparation_date,
-               sb.farm_site, sb.total_input_weight_kg, sb.particle_size,
+               sb.farm_site, sb.farm_id, sb.site_id, sb.facility_id,
+               f.name AS farm_name, s.name AS site_name,
+               fa.name AS facility_name,
+               sb.total_input_weight_kg, sb.particle_size,
                sb.notes, sb.recorded_by, sb.created_at,
                COALESCE(
                    json_agg(
@@ -1977,11 +2120,14 @@ def _substrate_batch_detail_query(where_clause='', order_clause=''):
                    '[]'::json
                ) AS inputs
         FROM substrate_batches AS sb
+        LEFT JOIN farms AS f ON f.id = sb.farm_id
+        LEFT JOIN sites AS s ON s.id = sb.site_id
+        LEFT JOIN facilities AS fa ON fa.id = sb.facility_id
         LEFT JOIN substrate_batch_inputs AS sbi
             ON sbi.substrate_batch_id = sb.id
         LEFT JOIN waste_lots AS wl ON wl.id = sbi.waste_lot_id
         {where_clause}
-        GROUP BY sb.id
+        GROUP BY sb.id, f.name, s.name, fa.name
         {order_clause}
     """
 
@@ -1990,12 +2136,18 @@ def _substrate_batch_detail_query(where_clause='', order_clause=''):
 @login_required
 def get_substrate_batches():
     try:
+        visibility, visibility_params = _scope_visibility_clause('sb')
+        filters, filter_params = _optional_scope_filters('sb')
         records = db.fetch_all(
             _substrate_batch_detail_query(
-                order_clause="ORDER BY sb.preparation_date DESC, sb.id DESC"
-            )
+                where_clause='WHERE ' + ' AND '.join([visibility, *filters]),
+                order_clause="ORDER BY sb.preparation_date DESC, sb.id DESC",
+            ),
+            (*visibility_params, *filter_params),
         )
         return jsonify({'success': True, 'data': records}), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         logger.error(f"Error fetching Substrate Batches: {e}")
         return jsonify({'success': False, 'message': 'Could not load Substrate Batches'}), 500
@@ -2005,11 +2157,14 @@ def get_substrate_batches():
 @login_required
 def get_substrate_batch(batch_no):
     try:
+        visibility, visibility_params = _scope_visibility_clause('sb')
+        # Out-of-scope batches are reported as missing so their existence is
+        # not disclosed to other farms.
         record = db.fetch_one(
             _substrate_batch_detail_query(
-                "WHERE sb.batch_code = %s OR sb.business_id = %s"
+                "WHERE (sb.batch_code = %s OR sb.business_id = %s) AND " + visibility
             ),
-            (batch_no, batch_no),
+            (batch_no, batch_no, *visibility_params),
         )
         if not record:
             return jsonify({'success': False, 'message': 'Substrate batch not found'}), 404
@@ -5006,7 +5161,10 @@ def internal_server_error(e):
 
 @app.errorhandler(Exception)
 def handle_general_exception(e):
-    # This will catch any exception not already handled
+    # This will catch any exception not already handled.  Deliberate HTTP
+    # errors such as abort(403) keep their status instead of becoming a 500.
+    if isinstance(e, HTTPException):
+        return jsonify(error=e.name, success=False), e.code
     logger.error(f"An unhandled exception occurred: {e}")
     return jsonify(error="An unexpected error occurred", success=False), 500
 
