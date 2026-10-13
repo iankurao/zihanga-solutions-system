@@ -1164,8 +1164,11 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="productLotStorage">Storage Location</label>
-              <input type="text" id="productLotStorage" name="storageLocation" class="form-control" maxlength="100" placeholder="Optional">
+              <label for="productLotInventoryLocation" class="required">Receive into Inventory Location</label>
+              <select id="productLotInventoryLocation" name="inventoryLocationId" class="form-control" required>
+                <option value="">Loading inventory locations…</option>
+              </select>
+              <div class="help-text">The full released quantity is posted to this location as the lot's stock receipt.</div>
             </div>
             <button type="submit" class="btn btn-success">
               <i class="fas fa-check"></i> Release Approved Output

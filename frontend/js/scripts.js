@@ -1233,6 +1233,31 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 5000);
   }
 
+  var releaseLocationSelect = document.getElementById('productLotInventoryLocation');
+  if (releaseLocationSelect) {
+    fetch('/api/inventory/locations', { credentials: 'include' })
+      .then(function(response) {
+        if (!response.ok) throw new Error('Could not load inventory locations');
+        return response.json();
+      })
+      .then(function(result) {
+        var rows = result.data || [];
+        releaseLocationSelect.replaceChildren(new Option(
+          rows.length ? 'Select inventory location' : 'No inventory locations — ask an administrator', ''
+        ));
+        rows.forEach(function(row) {
+          releaseLocationSelect.add(new Option(
+            row.farm_name + ' / ' + row.facility_name + ' — ' + row.name + ' (' + row.location_code + ')',
+            row.id
+          ));
+        });
+      })
+      .catch(function(error) {
+        console.error(error);
+        releaseLocationSelect.replaceChildren(new Option('Inventory locations could not be loaded', ''));
+      });
+  }
+
   dryingForms.forEach(function(item) {
     var form = document.getElementById(item.id);
     if (!form) return;

@@ -70,6 +70,27 @@ uses `SELECT MAX(...) + 1`; the sequence-backed default is safe under
 concurrent requests. The hatchery preview endpoint also uses its own sequence
 instead of scanning `hatchery_feeding`.
 
+## Phase One location scope and inventory ledger
+
+- **Location scope** (`migrations/waste_lot_scope.sql`): new Waste Lots and
+  Substrate Batches require `farm_id`, `site_id`, `facility_id`; substrate
+  may only consume Waste Lots from the same farm and site. List/detail reads
+  are filtered to the caller's location access (`_scope_visibility_clause`).
+  Legacy lots keep NULL scope (never inferred from `farm_site` text) and are
+  assigned once by a super admin: `POST /api/waste-lots/<ref>/location`.
+- **Inventory ledger** (`migrations/inventory_ledger.sql`): stock is never a
+  stored quantity. It is derived from posted `inventory_movements` per Product
+  Lot and `inventory_locations` row. Types: `RECEIPT`, `TRANSFER` (one row,
+  from + to), `ADJUSTMENT_IN`, `ADJUSTMENT_OUT`, `WASTAGE`. Releasing a Product
+  Lot (`POST /api/product-lots`) requires `inventory_location_id` and posts
+  its single `RECEIPT` in the same transaction. Movements lock the lot row,
+  reject negative stock, cross-farm locations, and QC-blocked inbound moves;
+  adjustments and wastage need a super admin and a reason. Do not use
+  `product_lots.available_quantity_kg` (legacy, unused).
+- Reads: `GET /api/inventory`, `GET /api/inventory/locations`,
+  `GET /api/product-lots`, `GET /api/production/batches`; Product Lot detail
+  includes `inventory` (balances + movement history).
+
 ### 1. Python Environment
 Replit manages Python packages via `uv` and the `.pythonlibs/` environment. All required packages are declared in `pyproject.toml`. On a fresh import, install them before starting the workflow; `run.sh` adds `.pythonlibs/bin/` to PATH for the server.
 

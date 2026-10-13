@@ -2356,6 +2356,51 @@ def create_production_batch():
         return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
 
 
+@app.route('/api/production/batches', methods=['GET'])
+@login_required
+def list_production_batches():
+    try:
+        visibility, visibility_params = _scope_visibility_clause('pb')
+        filters, filter_params = _optional_scope_filters('pb')
+        status = str(request.args.get('status') or '').strip().upper()
+        if status:
+            if status not in PRODUCTION_BATCH_STATUSES:
+                raise ValueError('Unknown Production Batch status')
+            filters.append('UPPER(pb.status) = %s')
+            filter_params.append(status)
+        rows = db.fetch_all(
+            f"""
+            SELECT pb.id, pb.business_id, pb.batch_code, UPPER(pb.status) AS status,
+                   pb.current_stage, pb.start_date, pb.expected_harvest_at,
+                   GREATEST(CURRENT_DATE - pb.start_date, 0) AS age_days,
+                   pb.farm_id, pb.site_id, pb.facility_id,
+                   f.name AS farm_name, s.name AS site_name,
+                   fa.name AS facility_name,
+                   COALESCE((
+                       SELECT SUM(pe.quantity)
+                       FROM production_events AS pe
+                       WHERE pe.production_batch_id = pb.id
+                         AND pe.event_type = 'harvest'
+                         AND pe.status = 'recorded'
+                   ), 0) AS total_harvested_kg
+            FROM production_batches AS pb
+            LEFT JOIN farms AS f ON f.id = pb.farm_id
+            LEFT JOIN sites AS s ON s.id = pb.site_id
+            LEFT JOIN facilities AS fa ON fa.id = pb.facility_id
+            WHERE {' AND '.join([visibility, *filters])}
+            ORDER BY pb.start_date DESC, pb.id DESC
+            LIMIT 500
+            """,
+            (*visibility_params, *filter_params),
+        )
+        return jsonify({'success': True, 'data': rows}), 200
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except Exception:
+        logger.exception('Error listing Production Batches')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
 @app.route('/api/production/batches/<string:batch_ref>', methods=['GET'])
 @login_required
 def get_production_batch(batch_ref):
@@ -2735,35 +2780,543 @@ def get_product_lot(lot_ref):
         return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
 
 
+INVENTORY_MOVEMENT_TYPES = {
+    'RECEIPT', 'TRANSFER', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'WASTAGE',
+}
+# Adjustments and write-offs change stock without a physical receipt, so they
+# need an administrator and a written reason.  This is the interim rule until
+# Phase One RBAC introduces dedicated inventory roles.
+INVENTORY_PRIVILEGED_TYPES = {'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'WASTAGE'}
+INVENTORY_INBOUND_TYPES = {'RECEIPT', 'ADJUSTMENT_IN'}
+INVENTORY_OUTBOUND_TYPES = {'ADJUSTMENT_OUT', 'WASTAGE'}
+
+# True when the lot's release approval is still the latest approved decision
+# for a passing QC check.  ``pl`` must alias product_lots.
+PRODUCT_LOT_RELEASABLE_SQL = """
+    EXISTS (
+        SELECT 1
+        FROM quality_approvals AS rel_qa
+        JOIN quality_checks AS rel_qc ON rel_qc.id = rel_qa.quality_check_id
+        WHERE rel_qa.id = pl.release_approval_id
+          AND rel_qc.status = 'passed'
+          AND (
+              SELECT latest.decision
+              FROM quality_approvals AS latest
+              WHERE latest.quality_check_id = rel_qc.id
+              ORDER BY latest.id DESC
+              LIMIT 1
+          ) = 'approved'
+    )
+"""
+
+# One signed row per ledger leg: a transfer contributes -qty to its source
+# and +qty to its destination.
+INVENTORY_LEDGER_CTE = """
+    ledger AS (
+        SELECT product_lot_id, to_location_id AS location_id,
+               quantity_kg AS delta, occurred_at, id
+        FROM inventory_movements
+        WHERE status = 'posted' AND to_location_id IS NOT NULL
+        UNION ALL
+        SELECT product_lot_id, from_location_id AS location_id,
+               -quantity_kg AS delta, occurred_at, id
+        FROM inventory_movements
+        WHERE status = 'posted' AND from_location_id IS NOT NULL
+    )
+"""
+
+
+class RecordNotFoundError(ValueError):
+    """Raised when a requested record does not exist or is not visible."""
+
+
+class InventoryConflictError(ValueError):
+    """Raised when a movement would duplicate an existing ledger fact."""
+
+
+def _is_inventory_administrator():
+    return bool(app.config.get('LOGIN_DISABLED')) or (
+        getattr(current_user, 'is_authenticated', False)
+        and current_user.role == 'super_admin'
+    )
+
+
+def _inventory_location_row(cursor, location_ref, label):
+    location_id = _parse_positive_integer(location_ref, f'{label}_location_id')
+    cursor.execute(
+        """
+        SELECT il.id, il.location_code, il.name, il.farm_id, il.site_id,
+               il.facility_id, il.status, fa.name AS facility_name
+        FROM inventory_locations AS il
+        JOIN facilities AS fa ON fa.id = il.facility_id
+        WHERE il.id = %s
+        """,
+        (location_id,),
+    )
+    location = cursor.fetchone()
+    if not location:
+        raise ValueError(f'The {label} inventory location does not exist')
+    if location['status'] != 'active':
+        raise ValueError(f"Inventory location {location['location_code']} is inactive")
+    _assert_production_scope_access(
+        cursor, location['farm_id'], location['site_id'], location['facility_id']
+    )
+    return location
+
+
+def _inventory_lot_row(cursor, lot_ref):
+    """Lock a canonical Product Lot and check the caller may act on it."""
+    lookup_id = int(lot_ref) if str(lot_ref).isdigit() else -1
+    cursor.execute(
+        f"""
+        SELECT pl.id, pl.business_id, pl.lot_code, pl.product_type,
+               pl.quantity_kg, pl.farm_id, pl.release_approval_id,
+               batch.site_id, batch.facility_id,
+               {PRODUCT_LOT_RELEASABLE_SQL} AS releasable
+        FROM product_lots AS pl
+        JOIN drying_outputs AS output ON output.id = pl.drying_output_id
+        JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+        WHERE pl.drying_output_id IS NOT NULL
+          AND (pl.id = %s OR pl.business_id = %s OR pl.lot_code = %s)
+        FOR UPDATE OF pl
+        """,
+        (lookup_id, str(lot_ref), str(lot_ref)),
+    )
+    lot = cursor.fetchone()
+    if not lot:
+        raise RecordNotFoundError('Canonical Product Lot not found')
+    _assert_production_scope_access(
+        cursor, lot['farm_id'], lot['site_id'], lot['facility_id']
+    )
+    return lot
+
+
+def _inventory_balances(cursor, lot_id):
+    cursor.execute(
+        f"""
+        WITH {INVENTORY_LEDGER_CTE}
+        SELECT il.id AS location_id, il.location_code, il.name AS location_name,
+               fa.name AS facility_name, SUM(ledger.delta) AS quantity_kg,
+               MAX(ledger.occurred_at) AS last_movement_at
+        FROM ledger
+        JOIN inventory_locations AS il ON il.id = ledger.location_id
+        JOIN facilities AS fa ON fa.id = il.facility_id
+        WHERE ledger.product_lot_id = %s
+        GROUP BY il.id, fa.name
+        HAVING SUM(ledger.delta) <> 0
+        ORDER BY il.name, il.id
+        """,
+        (lot_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def _inventory_movement_history(cursor, lot_id):
+    cursor.execute(
+        """
+        SELECT im.id, im.business_id, im.movement_type, im.quantity_kg,
+               im.unit, im.status, im.occurred_at, im.posted_at, im.reason,
+               im.notes, im.reference_type, im.reference_id, im.recorded_by,
+               src.location_code AS from_location_code,
+               src.name AS from_location_name,
+               dst.location_code AS to_location_code,
+               dst.name AS to_location_name
+        FROM inventory_movements AS im
+        LEFT JOIN inventory_locations AS src ON src.id = im.from_location_id
+        LEFT JOIN inventory_locations AS dst ON dst.id = im.to_location_id
+        WHERE im.product_lot_id = %s
+          AND (im.from_location_id IS NOT NULL OR im.to_location_id IS NOT NULL)
+        ORDER BY im.occurred_at, im.id
+        """,
+        (lot_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def _inventory_summary(cursor, lot_id):
+    balances = _inventory_balances(cursor, lot_id)
+    return {
+        'on_hand_kg': sum(
+            (Decimal(str(row['quantity_kg'])) for row in balances), Decimal('0')
+        ),
+        'unit': 'kg',
+        'balances': balances,
+        'movements': _inventory_movement_history(cursor, lot_id),
+    }
+
+
+def _insert_inventory_movement(
+    cursor, lot, movement_type, quantity_kg, data, *, from_location=None,
+    to_location=None, occurred_at=None, reason=None, notes=None,
+    reference_type=None, reference_id=None,
+):
+    actor, actor_user_id = _production_actor(data)
+    cursor.execute(
+        """
+        INSERT INTO inventory_movements (
+            product_lot_id, farm_id, movement_type, quantity_kg, unit,
+            from_location_id, to_location_id, status, occurred_at, posted_at,
+            reason, notes, reference_type, reference_id, recorded_by,
+            actor_user_id
+        ) VALUES (
+            %s, %s, %s, %s, 'kg', %s, %s, 'posted',
+            COALESCE(%s, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP,
+            %s, %s, %s, %s, %s, %s
+        )
+        RETURNING id, business_id, product_lot_id, farm_id, movement_type,
+                  quantity_kg, unit, from_location_id, to_location_id, status,
+                  occurred_at, posted_at, reason, notes, reference_type,
+                  reference_id, recorded_by
+        """,
+        (
+            lot['id'], lot['farm_id'], movement_type, quantity_kg,
+            from_location['id'] if from_location else None,
+            to_location['id'] if to_location else None,
+            occurred_at, reason, notes, reference_type, reference_id,
+            actor, actor_user_id,
+        ),
+    )
+    return dict(cursor.fetchone())
+
+
+def _location_balance(cursor, lot_id, location_id):
+    cursor.execute(
+        """
+        SELECT
+            COALESCE(SUM(quantity_kg) FILTER (WHERE to_location_id = %s), 0)
+          - COALESCE(SUM(quantity_kg) FILTER (WHERE from_location_id = %s), 0)
+            AS balance
+        FROM inventory_movements
+        WHERE product_lot_id = %s AND status = 'posted'
+        """,
+        (location_id, location_id, lot_id),
+    )
+    return Decimal(str(cursor.fetchone()['balance']))
+
+
+def _optional_text(data, field, maximum):
+    value = str(data.get(field) or '').strip() or None
+    if value and len(value) > maximum:
+        raise ValueError(f'{field} must be at most {maximum} characters')
+    return value
+
+
+def _record_inventory_movement(data):
+    movement_type = str(data.get('movement_type') or '').strip().upper()
+    if movement_type not in INVENTORY_MOVEMENT_TYPES:
+        raise ValueError(
+            'movement_type must be one of: ' + ', '.join(sorted(INVENTORY_MOVEMENT_TYPES))
+        )
+    lot_ref = data.get('product_lot_id') or data.get('product_lot')
+    if lot_ref in (None, ''):
+        raise ValueError('product_lot_id is required')
+    quantity = _parse_chain_quantity(
+        data.get('quantity_kg', data.get('quantity')), 'quantity_kg'
+    )
+    if str(data.get('unit') or 'kg').strip().lower() != 'kg':
+        raise ValueError('Inventory quantities must be recorded in kg')
+    reason = _optional_text(data, 'reason', 500)
+    notes = _optional_text(data, 'notes', 2000)
+    occurred_at = None
+    if data.get('occurred_at') not in (None, ''):
+        occurred_at = _event_occurred_at({'occurred_at': data['occurred_at']}, ())
+    if movement_type in INVENTORY_PRIVILEGED_TYPES:
+        if not _is_inventory_administrator():
+            raise ProductionEventPermissionError(
+                'Only an administrator can post inventory adjustments or wastage'
+            )
+        if not reason:
+            raise ValueError(f'A reason is required for {movement_type}')
+
+    needs_source = movement_type in INVENTORY_OUTBOUND_TYPES or movement_type == 'TRANSFER'
+    needs_destination = movement_type in INVENTORY_INBOUND_TYPES or movement_type == 'TRANSFER'
+    source_ref = data.get('from_location_id')
+    destination_ref = data.get('to_location_id')
+    if needs_source != (source_ref not in (None, '')):
+        raise ValueError(
+            f"{movement_type} {'requires' if needs_source else 'must not have'} a from_location_id"
+        )
+    if needs_destination != (destination_ref not in (None, '')):
+        raise ValueError(
+            f"{movement_type} {'requires' if needs_destination else 'must not have'} a to_location_id"
+        )
+
+    with db.transaction() as cursor:
+        # Locking the lot serializes every movement for it, so balance checks
+        # below cannot race with a concurrent withdrawal.
+        lot = _inventory_lot_row(cursor, lot_ref)
+        source = _inventory_location_row(cursor, source_ref, 'from') if needs_source else None
+        destination = (
+            _inventory_location_row(cursor, destination_ref, 'to') if needs_destination else None
+        )
+        for location in (source, destination):
+            if location and location['farm_id'] != lot['farm_id']:
+                raise ValueError(
+                    f"Inventory location {location['location_code']} belongs to a different farm "
+                    f"than Product Lot {lot['business_id']}"
+                )
+        if source and destination and source['id'] == destination['id']:
+            raise ValueError('A transfer needs two different inventory locations')
+        if (movement_type in INVENTORY_INBOUND_TYPES or movement_type == 'TRANSFER') \
+                and not lot['releasable']:
+            raise ValueError(
+                f"Product Lot {lot['business_id']} is blocked by QC and cannot be received or moved"
+            )
+
+        released = Decimal(str(lot['quantity_kg']))
+        if movement_type == 'RECEIPT':
+            cursor.execute(
+                """
+                SELECT 1 FROM inventory_movements
+                WHERE product_lot_id = %s AND movement_type = 'RECEIPT'
+                  AND status = 'posted'
+                """,
+                (lot['id'],),
+            )
+            if cursor.fetchone():
+                raise InventoryConflictError(
+                    f"Product Lot {lot['business_id']} has already been received into inventory"
+                )
+            if quantity != released:
+                raise ValueError(
+                    f'A RECEIPT must receive the full released quantity of {released:.3f} kg'
+                )
+        if movement_type == 'ADJUSTMENT_IN':
+            cursor.execute(
+                """
+                SELECT
+                    COALESCE(SUM(quantity_kg) FILTER (WHERE to_location_id IS NOT NULL), 0)
+                  - COALESCE(SUM(quantity_kg) FILTER (WHERE from_location_id IS NOT NULL), 0)
+                    AS on_hand
+                FROM inventory_movements
+                WHERE product_lot_id = %s AND status = 'posted'
+                """,
+                (lot['id'],),
+            )
+            on_hand = Decimal(str(cursor.fetchone()['on_hand']))
+            if on_hand + quantity > released:
+                raise ValueError(
+                    f'Stock cannot exceed the released quantity of {released:.3f} kg; '
+                    f'{on_hand:.3f} kg is already on hand'
+                )
+        if source:
+            available = _location_balance(cursor, lot['id'], source['id'])
+            if quantity > available:
+                raise ValueError(
+                    f"Only {available:.3f} kg of {lot['business_id']} is at "
+                    f"{source['location_code']}"
+                )
+
+        movement = _insert_inventory_movement(
+            cursor, lot, movement_type, quantity, data,
+            from_location=source, to_location=destination,
+            occurred_at=occurred_at, reason=reason, notes=notes,
+        )
+        movement['product_lot_business_id'] = lot['business_id']
+        movement['inventory'] = _inventory_summary(cursor, lot['id'])
+        return movement
+
+
 @app.route('/api/inventory/movements', methods=['POST'])
 @login_required
 def create_inventory_movement():
-    """Post an auditable inventory movement with a database-generated MOV ID."""
-    data = normalize_keys(request.get_json() or {})
-    required_fields = ['product_lot_id', 'movement_type', 'quantity_kg']
-    missing_fields = [field for field in required_fields if data.get(field) in (None, '')]
-    if missing_fields:
-        return jsonify({'success': False, 'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
-
+    """Post one validated movement to the Product Lot inventory ledger."""
     try:
-        query = """
-            INSERT INTO inventory_movements (
-                product_lot_id, movement_type, quantity_kg, occurred_at, notes, recorded_by
-            ) VALUES (%s, %s, %s, COALESCE(%s, CURRENT_TIMESTAMP), %s, %s)
-            RETURNING id, business_id, product_lot_id
-        """
-        record = db.execute_returning(query, (
-            data['product_lot_id'],
-            data['movement_type'],
-            data['quantity_kg'],
-            data.get('occurred_at'),
-            data.get('notes'),
-            current_user.username,
-        ))
-        return jsonify({'success': True, 'record': record, 'id': record['id'],
-                        'business_id': record['business_id']}), 201
-    except Exception as e:
-        logger.error(f"Error creating inventory movement: {e}")
+        movement = _record_inventory_movement(normalize_keys(request.get_json() or {}))
+        return jsonify({
+            'success': True,
+            'message': 'Inventory movement posted',
+            'data': movement,
+            'record': movement,
+            'id': movement['id'],
+            'business_id': movement['business_id'],
+        }), 201
+    except ProductionEventPermissionError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 403
+    except RecordNotFoundError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 404
+    except InventoryConflictError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 409
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        if getattr(exc, 'pgcode', None) == '23505':
+            return jsonify({
+                'success': False,
+                'message': 'This Product Lot has already been received into inventory',
+            }), 409
+        logger.exception('Error posting inventory movement')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+@app.route('/api/inventory/locations', methods=['GET'])
+@login_required
+def list_inventory_locations():
+    try:
+        visibility, visibility_params = _scope_visibility_clause('il')
+        filters, filter_params = _optional_scope_filters('il')
+        if request.args.get('include_inactive') not in ('1', 'true'):
+            filters.append("il.status = 'active'")
+        rows = db.fetch_all(
+            f"""
+            SELECT il.id, il.location_code, il.name, il.status,
+                   il.farm_id, il.site_id, il.facility_id,
+                   f.name AS farm_name, s.name AS site_name,
+                   fa.name AS facility_name
+            FROM inventory_locations AS il
+            JOIN farms AS f ON f.id = il.farm_id
+            JOIN sites AS s ON s.id = il.site_id
+            JOIN facilities AS fa ON fa.id = il.facility_id
+            WHERE {' AND '.join([visibility, *filters])}
+            ORDER BY f.name, s.name, fa.name, il.name
+            """,
+            (*visibility_params, *filter_params),
+        )
+        return jsonify({'success': True, 'data': rows}), 200
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception:
+        logger.exception('Error listing inventory locations')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+@app.route('/api/inventory/locations', methods=['POST'])
+@login_required
+@super_admin_required
+def create_inventory_location():
+    data = normalize_keys(request.get_json() or {})
+    try:
+        farm_id, site_id, facility_id = _production_scope_values(
+            data, 'an inventory location'
+        )
+        location_code = _optional_text(data, 'location_code', 30)
+        name = _optional_text(data, 'name', 100)
+        if not location_code or not name:
+            raise ValueError('location_code and name are required')
+        actor_user_id = _production_actor(data)[1]
+        with db.transaction() as cursor:
+            _assert_production_location(cursor, farm_id, site_id, facility_id)
+            cursor.execute(
+                """
+                INSERT INTO inventory_locations (
+                    location_code, name, farm_id, site_id, facility_id,
+                    created_by_user_id
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, location_code, name, status, farm_id, site_id,
+                          facility_id, created_at
+                """,
+                (location_code, name, farm_id, site_id, facility_id, actor_user_id),
+            )
+            location = cursor.fetchone()
+        return jsonify({'success': True, 'data': location}), 201
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        if getattr(exc, 'pgcode', None) == '23505':
+            return jsonify({
+                'success': False,
+                'message': 'This location code already exists in the facility',
+            }), 409
+        logger.exception('Error creating inventory location')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+@app.route('/api/inventory', methods=['GET'])
+@login_required
+def get_inventory_stock():
+    """Stock on hand by product, lot and location, derived from the ledger."""
+    try:
+        visibility, visibility_params = _scope_visibility_clause('il')
+        filters, filter_params = _optional_scope_filters('il')
+        product_type = request.args.get('product_type')
+        if product_type:
+            filters.append('pl.product_type = %s')
+            filter_params.append(product_type)
+        rows = db.fetch_all(
+            f"""
+            WITH {INVENTORY_LEDGER_CTE}
+            SELECT pl.product_type, pl.id AS product_lot_id, pl.business_id,
+                   pl.lot_code,
+                   CASE WHEN {PRODUCT_LOT_RELEASABLE_SQL}
+                        THEN 'AVAILABLE' ELSE 'BLOCKED' END AS lot_status,
+                   il.id AS location_id, il.location_code,
+                   il.name AS location_name, fa.name AS facility_name,
+                   f.name AS farm_name, il.farm_id,
+                   SUM(ledger.delta) AS quantity_kg, 'kg' AS unit,
+                   MAX(ledger.occurred_at) AS last_movement_at
+            FROM ledger
+            JOIN product_lots AS pl ON pl.id = ledger.product_lot_id
+            JOIN inventory_locations AS il ON il.id = ledger.location_id
+            JOIN facilities AS fa ON fa.id = il.facility_id
+            JOIN farms AS f ON f.id = il.farm_id
+            WHERE {' AND '.join([visibility, *filters])}
+            GROUP BY pl.id, il.id, fa.name, f.name
+            HAVING SUM(ledger.delta) <> 0
+            ORDER BY pl.product_type, pl.business_id, il.name
+            """,
+            (*visibility_params, *filter_params),
+        )
+        totals = {}
+        for row in rows:
+            entry = totals.setdefault(row['product_type'], {
+                'product_type': row['product_type'],
+                'quantity_kg': Decimal('0'),
+                'available_kg': Decimal('0'),
+            })
+            quantity = Decimal(str(row['quantity_kg']))
+            entry['quantity_kg'] += quantity
+            if row['lot_status'] == 'AVAILABLE':
+                entry['available_kg'] += quantity
+        return jsonify({
+            'success': True,
+            'data': rows,
+            'totals': sorted(totals.values(), key=lambda item: item['product_type']),
+        }), 200
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception:
+        logger.exception('Error loading inventory stock')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+@app.route('/api/product-lots', methods=['GET'])
+@login_required
+def list_product_lots():
+    try:
+        visibility, visibility_params = _scope_visibility_clause('batch')
+        filters = []
+        filter_params = []
+        if request.args.get('farm_id') not in (None, ''):
+            filters.append('pl.farm_id = %s')
+            filter_params.append(_parse_positive_integer(request.args['farm_id'], 'farm_id'))
+        rows = db.fetch_all(
+            f"""
+            WITH {INVENTORY_LEDGER_CTE}
+            SELECT pl.id, pl.business_id, pl.lot_code, pl.product_type,
+                   pl.quantity_kg, pl.unit, pl.production_date,
+                   pl.farm_id, f.name AS farm_name,
+                   batch.business_id AS drying_batch_business_id,
+                   CASE WHEN {PRODUCT_LOT_RELEASABLE_SQL}
+                        THEN 'AVAILABLE' ELSE 'BLOCKED' END AS status,
+                   COALESCE((
+                       SELECT SUM(ledger.delta) FROM ledger
+                       WHERE ledger.product_lot_id = pl.id
+                   ), 0) AS on_hand_kg
+            FROM product_lots AS pl
+            JOIN drying_outputs AS output ON output.id = pl.drying_output_id
+            JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+            JOIN farms AS f ON f.id = pl.farm_id
+            WHERE {' AND '.join([visibility, *filters])}
+            ORDER BY pl.production_date DESC, pl.id DESC
+            LIMIT 500
+            """,
+            (*visibility_params, *filter_params),
+        )
+        return jsonify({'success': True, 'data': rows}), 200
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception:
+        logger.exception('Error listing Product Lots')
         return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
 
 
@@ -3650,6 +4203,20 @@ def _release_product_lot(data):
         if batch['status'] != 'COMPLETED':
             raise ValueError('A Product Lot can only be released from a completed Drying Batch')
 
+        # A released lot is received into stock in the same transaction, so
+        # every available canonical lot has exactly one RECEIPT in the ledger.
+        if data.get('inventory_location_id') in (None, ''):
+            raise ValueError('inventory_location_id is required to receive the lot into stock')
+        receipt_location = _inventory_location_row(
+            cursor, data['inventory_location_id'], 'to'
+        )
+        if receipt_location['farm_id'] != batch['farm_id']:
+            raise ValueError(
+                f"Inventory location {receipt_location['location_code']} belongs to a "
+                'different farm than the Drying Batch'
+            )
+        storage_location = storage_location or receipt_location['name']
+
         if lot_code:
             cursor.execute(
                 "SELECT EXISTS (SELECT 1 FROM product_lots WHERE lot_code = %s) AS exists",
@@ -3683,6 +4250,18 @@ def _release_product_lot(data):
             ),
         )
         created = cursor.fetchone()
+        _insert_inventory_movement(
+            cursor,
+            {'id': created['id'], 'farm_id': batch['farm_id']},
+            'RECEIPT',
+            quantity_kg,
+            data,
+            to_location=receipt_location,
+            occurred_at=None,
+            notes='Received on Product Lot release',
+            reference_type='quality_approval',
+            reference_id=approval['id'],
+        )
         return _product_lot_detail(cursor, created['id'])
 
 
@@ -3794,6 +4373,7 @@ def _product_lot_detail(cursor, lot_ref):
         'batch_code': lot['drying_batch_code'],
         'status': lot['drying_batch_status'],
     }
+    result['inventory'] = _inventory_summary(cursor, lot['id'])
     return result
 
 

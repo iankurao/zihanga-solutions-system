@@ -35,6 +35,33 @@
       <p id="lotMessage" class="lot-message" role="status" aria-live="polite"></p>
     </section>
 
+    <section class="trace-panel stock-panel" aria-labelledby="stock-title">
+      <div class="trace-heading">
+        <div>
+          <p class="lot-eyebrow">INVENTORY LEDGER</p>
+          <h2 id="stock-title">Stock on hand</h2>
+        </div>
+        <p>Calculated from posted inventory movements at locations you can access. Select a lot for its history.</p>
+      </div>
+      <div id="stockTotals" class="stock-totals"></div>
+      <div class="trace-table-wrap">
+        <table class="trace-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Product Lot</th>
+              <th>Location</th>
+              <th>On hand</th>
+              <th>Lot status</th>
+              <th>Last movement</th>
+            </tr>
+          </thead>
+          <tbody id="stockRows"></tbody>
+        </table>
+      </div>
+      <p id="stockEmpty" class="trace-empty" hidden>No stock on hand at locations you can access.</p>
+    </section>
+
     <section id="lotContent" hidden>
       <div class="lot-summary-panel">
         <div class="lot-summary-heading">
@@ -56,6 +83,68 @@
           <div class="lot-fact"><span>Approved by</span><strong id="lotReleasedBy">—</strong></div>
         </div>
       </div>
+
+      <section class="trace-panel inventory-panel" aria-labelledby="inventory-title">
+        <div class="trace-heading">
+          <div>
+            <p class="lot-eyebrow">LOT INVENTORY</p>
+            <h2 id="inventory-title">Current stock and movements</h2>
+          </div>
+          <p id="lotOnHand" class="lot-on-hand">—</p>
+        </div>
+        <div class="trace-table-wrap">
+          <table class="trace-table">
+            <thead>
+              <tr><th>Location</th><th>Facility</th><th>On hand</th><th>Last movement</th></tr>
+            </thead>
+            <tbody id="lotBalanceRows"></tbody>
+          </table>
+        </div>
+        <p id="lotBalanceEmpty" class="trace-empty" hidden>This lot has no stock on hand.</p>
+
+        <h3 class="inventory-subheading">Movement history</h3>
+        <div class="trace-table-wrap">
+          <table class="trace-table">
+            <thead>
+              <tr>
+                <th>Movement</th><th>Type</th><th>Quantity</th><th>From</th>
+                <th>To</th><th>When</th><th>By</th><th>Reason / notes</th>
+              </tr>
+            </thead>
+            <tbody id="lotMovementRows"></tbody>
+          </table>
+        </div>
+        <p id="lotMovementEmpty" class="trace-empty" hidden>
+          No ledger movements. Lots released before the inventory ledger existed have not been received.
+        </p>
+
+        <h3 class="inventory-subheading">Record a movement</h3>
+        <form id="movementForm" class="movement-form">
+          <label>Type
+            <select id="movementType" name="movementType" required>
+              <option value="TRANSFER">Transfer between locations</option>
+              <option value="WASTAGE">Wastage / write-off (admin)</option>
+              <option value="ADJUSTMENT_OUT">Adjustment out (admin)</option>
+              <option value="ADJUSTMENT_IN">Adjustment in (admin)</option>
+            </select>
+          </label>
+          <label id="movementFromField">From location
+            <select id="movementFrom" name="fromLocationId"></select>
+          </label>
+          <label id="movementToField">To location
+            <select id="movementTo" name="toLocationId"></select>
+          </label>
+          <label>Quantity (kg)
+            <input id="movementQuantity" name="quantityKg" type="number" min="0.001" step="0.001" required>
+          </label>
+          <label class="movement-reason">Reason
+            <input id="movementReason" name="reason" type="text" maxlength="500"
+                   placeholder="Required for adjustments and wastage">
+          </label>
+          <button type="submit"><i class="fas fa-exchange-alt"></i> Post movement</button>
+        </form>
+        <p id="movementMessage" class="movement-message" role="status" aria-live="polite"></p>
+      </section>
 
       <section class="trace-panel" aria-labelledby="trace-title">
         <div class="trace-heading">

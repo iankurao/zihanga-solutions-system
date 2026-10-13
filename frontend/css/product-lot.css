@@ -304,3 +304,120 @@
     padding: 0.7rem;
   }
 }
+.stock-panel,
+.inventory-panel {
+  margin-bottom: 1.25rem;
+}
+
+.stock-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.stock-total {
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  background: #f1f7f3;
+}
+
+.stock-total span {
+  display: block;
+  color: #60716a;
+  font-size: 0.75rem;
+}
+
+.stock-total strong {
+  color: #17392b;
+  font-size: 1.1rem;
+}
+
+.lot-link {
+  padding: 0;
+  border: 0;
+  color: #19804b;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.lot-on-hand {
+  color: #17392b !important;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.inventory-subheading {
+  margin: 1.5rem 0 0.5rem;
+  color: #17392b;
+  font-size: 1rem;
+}
+
+.movement-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.movement-form label {
+  display: grid;
+  gap: 0.3rem;
+  color: #60716a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.movement-form label[hidden] {
+  display: none;
+}
+
+.movement-form input,
+.movement-form select {
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid #cad8ce;
+  border-radius: 8px;
+  color: #183128;
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+}
+
+.movement-form .movement-reason {
+  grid-column: span 2;
+}
+
+.movement-form button {
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: #19804b;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.movement-message {
+  min-height: 1.3rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+}
+
+.movement-message.is-error {
+  color: #a13b30;
+}
+
+.movement-message.is-success {
+  color: #19804b;
+}
+
+@media (max-width: 620px) {
+  .movement-form .movement-reason {
+    grid-column: auto;
+  }
+}
