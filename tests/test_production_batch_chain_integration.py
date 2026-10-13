@@ -201,6 +201,23 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         conn = db.get_connection()
         try:
             with conn.cursor() as cursor:
+                for statement in (
+                    """DELETE FROM customer_delivery_lines WHERE delivery_id IN (
+                        SELECT d.id FROM customer_deliveries AS d
+                        JOIN customer_orders AS o ON o.id = d.order_id
+                        WHERE o.farm_id = %s)""",
+                    """DELETE FROM customer_deliveries WHERE order_id IN (
+                        SELECT id FROM customer_orders WHERE farm_id = %s)""",
+                    """DELETE FROM order_allocations WHERE order_line_id IN (
+                        SELECT l.id FROM customer_order_lines AS l
+                        JOIN customer_orders AS o ON o.id = l.order_id
+                        WHERE o.farm_id = %s)""",
+                    """DELETE FROM customer_order_lines WHERE order_id IN (
+                        SELECT id FROM customer_orders WHERE farm_id = %s)""",
+                    "DELETE FROM customer_orders WHERE farm_id = %s",
+                ):
+                    cursor.execute(statement, (self.farm_id,))
+                cursor.execute("DELETE FROM customers WHERE name = %s", (self.marker,))
                 cursor.execute(
                     "DELETE FROM inventory_movements WHERE farm_id = %s",
                     (self.farm_id,),
@@ -1578,7 +1595,10 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             [p["business_id"] for p in data["traceability"]["downstream"]["product_lots"]],
             [lot["business_id"]],
         )
-        self.assertIsNone(data["traceability"]["downstream"]["commercial"])
+        self.assertEqual(
+            data["traceability"]["downstream"]["commercial"],
+            {"restricted": False, "orders": [], "deliveries": []},
+        )
 
         titles = [entry["title"] for entry in data["audit"]]
         self.assertIn("Batch created as PLANNED", titles)
@@ -1724,7 +1744,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         stock_edge = next(e for e in data["edges"] if e["to"].startswith("inventory_location:"))
         self.assertAlmostEqual(stock_edge["quantity"], 0.6)
         self.assertEqual(data["counts"]["restricted"], 0)
-        self.assertFalse(data["commercial"]["linked"])
+        self.assertTrue(data["commercial"]["linked"])
 
         waste_ref = db.fetch_one(
             "SELECT business_id FROM waste_lots WHERE id = %s", (self.waste_lot_id,)
@@ -1803,6 +1823,289 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(data["counts"]["restricted"], 1)
         remote_edge = next(e for e in data["edges"] if e["to"] == f"inventory_location:{remote}")
         self.assertIsNone(remote_edge["quantity"])
+
+    # ---- Customer orders and deliveries ----------------------------------------
+
+    def _customer(self):
+        row = db.execute_returning(
+            "INSERT INTO customers (name, contact) VALUES (%s, 'test') RETURNING id",
+            (self.marker,),
+        )
+        return row["id"]
+
+    def _order(self, *quantities, product_type="dried_larvae"):
+        response = self.client.post(
+            "/api/orders",
+            json={
+                "customer_id": self._customer(),
+                "farm_id": self.farm_id,
+                "requested_delivery_date": "2026-10-30",
+                "lines": [
+                    {"product_type": product_type, "quantity_kg": quantity}
+                    for quantity in quantities
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+        return response.get_json()["data"]
+
+    def _allocate(self, order, lot, quantity, *, line_index=0, location_id=None):
+        return self.client.post(
+            f"/api/orders/{order['business_id']}/allocations",
+            json={
+                "order_line_id": order["lines"][line_index]["id"],
+                "product_lot_id": lot["id"],
+                "location_id": location_id or self.inventory_location_id,
+                "quantity_kg": quantity,
+            },
+        )
+
+    def _dispatch(self, order, allocation_id, quantity):
+        return self.client.post(
+            f"/api/orders/{order['business_id']}/deliveries",
+            json={
+                "lines": [{"allocation_id": allocation_id, "quantity_kg": quantity}],
+                "vehicle": "KDA 123A",
+                "driver": "Test driver",
+            },
+        )
+
+    def _free_and_reserved(self, lot):
+        _balances, inventory = self._balances(lot)
+        row = next(
+            (b for b in inventory["balances"] if b["location_id"] == self.inventory_location_id),
+            None,
+        )
+        if not row:
+            return 0.0, 0.0
+        return float(row["free_kg"]), float(row["reserved_kg"])
+
+    def test_order_to_delivery_reserves_dispatches_and_traces_to_waste(self):
+        lot = self._release_lot()
+        order = self._order("0.500")
+        self.assertRegex(order["business_id"], r"^ORD-\d{4}-\d+$")
+        self.assertEqual(order["status"], "OPEN")
+
+        stock = self.client.get(
+            f"/api/orders/{order['business_id']}/available-stock?line_id={order['lines'][0]['id']}"
+        )
+        self.assertEqual(stock.status_code, 200, stock.get_json())
+        self.assertAlmostEqual(
+            next(r for r in stock.get_json()["data"] if r["product_lot_id"] == lot["id"])["free_kg"],
+            0.6,
+        )
+
+        allocated = self._allocate(order, lot, "0.400")
+        self.assertEqual(allocated.status_code, 201, allocated.get_json())
+        order = allocated.get_json()["data"]
+        allocation_id = order["allocations"][0]["id"]
+        self.assertAlmostEqual(order["lines"][0]["remaining_to_allocate_kg"], 0.1)
+        self.assertEqual(self._free_and_reserved(lot), (0.2, 0.4))
+
+        # Reserved stock cannot leave by a manual movement.
+        blocked = self._move(
+            lot, "WASTAGE", "0.300", from_location_id=self.inventory_location_id, reason="spill",
+        )
+        self.assertEqual(blocked.status_code, 400, blocked.get_json())
+        self.assertIn("reserved for customer orders", blocked.get_json()["message"])
+        wasted = self._move(
+            lot, "WASTAGE", "0.200", from_location_id=self.inventory_location_id, reason="spill",
+        )
+        self.assertEqual(wasted.status_code, 201, wasted.get_json())
+        no_stock = self._allocate(order, lot, "0.100")
+        self.assertEqual(no_stock.status_code, 400, no_stock.get_json())
+        self.assertIn("free to allocate", no_stock.get_json()["message"])
+
+        too_much = self._dispatch(order, allocation_id, "0.401")
+        self.assertEqual(too_much.status_code, 400, too_much.get_json())
+        first = self._dispatch(order, allocation_id, "0.250")
+        self.assertEqual(first.status_code, 201, first.get_json())
+        delivery_ref = first.get_json()["data"]["created_delivery"]
+        self.assertRegex(delivery_ref, r"^DEL-\d{4}-\d+$")
+        self.assertEqual(self._free_and_reserved(lot), (0.0, 0.15))
+        second = self._dispatch(order, allocation_id, "0.150")
+        self.assertEqual(second.status_code, 201, second.get_json())
+        order = second.get_json()["data"]
+        self.assertEqual(order["status"], "OPEN")  # 0.4 of 0.5 kg dispatched
+        self.assertAlmostEqual(order["totals"]["dispatched_kg"], 0.4)
+        _balances, inventory = self._balances(lot)
+        self.assertEqual(inventory["balances"], [])
+        self.assertEqual(
+            [m["movement_type"] for m in inventory["movements"]],
+            ["RECEIPT", "WASTAGE", "DISPATCH", "DISPATCH"],
+        )
+
+        confirmed = self.client.post(
+            f"/api/deliveries/{delivery_ref}/confirm", json={"received_by": "Store keeper"}
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        delivered = next(d for d in confirmed.get_json()["data"]["deliveries"]
+                         if d["business_id"] == delivery_ref)
+        self.assertEqual(delivered["status"], "DELIVERED")
+        again = self.client.post(
+            f"/api/deliveries/{delivery_ref}/confirm", json={"received_by": "Store keeper"}
+        )
+        self.assertEqual(again.status_code, 409, again.get_json())
+
+        # "Which waste lots ultimately contributed to this delivery?"
+        trace = self._trace(delivery_ref).get_json()["data"]
+        upstream = self._trace_nodes(trace, "upstream")
+        self.assertIn(("waste_lot", self.waste_lot_id), upstream)
+        self.assertIn(("product_lot", lot["id"]), upstream)
+        self.assertIn(("customer_order", order["id"]), upstream)
+        downstream = self._trace_nodes(self._trace(lot["business_id"]).get_json()["data"], "downstream")
+        self.assertIn(("customer_order", order["id"]), downstream)
+        self.assertEqual(
+            sum(1 for kind, _ in downstream if kind == "delivery"), 2
+        )
+
+    def test_cancel_release_and_fulfilment_rules(self):
+        lot = self._release_lot()
+        cancelled = self._order("0.300")
+        self.assertEqual(self._allocate(cancelled, lot, "0.300").status_code, 201)
+        self.assertEqual(self._free_and_reserved(lot), (0.3, 0.3))
+        no_reason = self.client.post(f"/api/orders/{cancelled['business_id']}/cancel", json={})
+        self.assertEqual(no_reason.status_code, 400)
+        cancel = self.client.post(
+            f"/api/orders/{cancelled['business_id']}/cancel", json={"reason": "Customer withdrew"}
+        )
+        self.assertEqual(cancel.status_code, 200, cancel.get_json())
+        self.assertEqual(cancel.get_json()["data"]["status"], "CANCELLED")
+        self.assertEqual(self._free_and_reserved(lot), (0.6, 0.0))
+        self.assertEqual(self._allocate(cancelled, lot, "0.100").status_code, 400)
+
+        fulfilled = self._order("0.200")
+        allocation = self._allocate(fulfilled, lot, "0.200").get_json()["data"]["allocations"][0]
+        dispatched = self._dispatch(fulfilled, allocation["id"], "0.200")
+        self.assertEqual(dispatched.get_json()["data"]["status"], "FULFILLED")
+        late_cancel = self.client.post(
+            f"/api/orders/{fulfilled['business_id']}/cancel", json={"reason": "too late"}
+        )
+        self.assertEqual(late_cancel.status_code, 400, late_cancel.get_json())
+
+        partial = self._order("0.300")
+        allocation = self._allocate(partial, lot, "0.300").get_json()["data"]["allocations"][0]
+        self.assertEqual(self._dispatch(partial, allocation["id"], "0.100").status_code, 201)
+        refused = self.client.post(
+            f"/api/orders/{partial['business_id']}/cancel", json={"reason": "stop"}
+        )
+        self.assertEqual(refused.status_code, 400, refused.get_json())
+        release = self.client.post(
+            f"/api/orders/{partial['business_id']}/allocations/{allocation['id']}/release",
+            json={"reason": "Short shipment agreed"},
+        )
+        self.assertEqual(release.status_code, 200, release.get_json())
+        released = release.get_json()["data"]["allocations"][0]
+        self.assertAlmostEqual(released["outstanding_kg"], 0.0)
+        self.assertAlmostEqual(released["released_kg"], 0.2)
+        self.assertEqual(self._free_and_reserved(lot), (0.3, 0.0))
+        twice = self.client.post(
+            f"/api/orders/{partial['business_id']}/allocations/{allocation['id']}/release",
+            json={"reason": "again"},
+        )
+        self.assertEqual(twice.status_code, 400, twice.get_json())
+
+    def test_order_validation_and_qc_blocking(self):
+        lot = self._release_lot()
+        missing_lines = self.client.post(
+            "/api/orders", json={"customer_id": self._customer(), "farm_id": self.farm_id, "lines": []}
+        )
+        self.assertEqual(missing_lines.status_code, 400)
+        negative = self.client.post(
+            "/api/orders",
+            json={"customer_id": self._customer(), "farm_id": self.farm_id,
+                  "lines": [{"product_type": "dried_larvae", "quantity_kg": "-1"}]},
+        )
+        self.assertEqual(negative.status_code, 400)
+
+        frass = self._order("0.100", product_type="frass")
+        mismatch = self._allocate(frass, lot, "0.100")
+        self.assertEqual(mismatch.status_code, 400, mismatch.get_json())
+        self.assertIn("order line is for frass", mismatch.get_json()["message"])
+
+        order = self._order("0.200")
+        over_line = self._allocate(order, lot, "0.300")
+        self.assertEqual(over_line.status_code, 400, over_line.get_json())
+        self.assertIn("left to allocate", over_line.get_json()["message"])
+        allocation = self._allocate(order, lot, "0.200").get_json()["data"]["allocations"][0]
+
+        db.execute_query(
+            """
+            INSERT INTO quality_approvals (quality_check_id, decision, rationale, approver)
+            SELECT quality_check_id, 'revoked', 'Recall', %s FROM quality_approvals WHERE id = %s
+            """,
+            (self.actor, lot_release_approval_id(lot)),
+        )
+        blocked = self._dispatch(order, allocation["id"], "0.100")
+        self.assertEqual(blocked.status_code, 400, blocked.get_json())
+        self.assertIn("blocked by QC", blocked.get_json()["message"])
+        self.assertEqual(
+            db.fetch_one(
+                "SELECT COUNT(*) AS n FROM customer_deliveries WHERE order_id = %s", (order["id"],)
+            )["n"],
+            0,
+        )
+        another = self._order("0.100")
+        self.assertEqual(self._allocate(another, lot, "0.100").status_code, 400)
+
+    def test_orders_need_farm_level_access(self):
+        lot = self._release_lot()
+        order = self._order("0.100")
+        allocation = self._allocate(order, lot, "0.100").get_json()["data"]["allocations"][0]
+        self.assertEqual(self._dispatch(order, allocation["id"], "0.100").status_code, 201)
+
+        facility_only = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (facility_only.id, self.facility_id),
+        )
+        farm_user = self._create_db_user()
+        with self._as(facility_only):
+            detail = self.client.get(f"/api/orders/{order['business_id']}")
+            listing = self.client.get("/api/orders")
+            create = self.client.post(
+                "/api/orders",
+                json={"customer_id": self._customer(), "farm_id": self.farm_id,
+                      "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.1"}]},
+            )
+            trace = self._trace(lot["business_id"])
+            batch360 = self._get_360(
+                trace.get_json()["data"]["stages"][2]["nodes"][0]["ref"]
+            )
+        self.assertEqual(detail.status_code, 403)
+        self.assertNotIn(order["id"], [row["id"] for row in listing.get_json()["data"]])
+        self.assertEqual(create.status_code, 403)
+        commercial = [
+            node for stage in trace.get_json()["data"]["stages"]
+            if stage["type"] in ("customer_order", "delivery") for node in stage["nodes"]
+        ]
+        self.assertTrue(commercial)
+        self.assertTrue(all(node["restricted"] and "ref" not in node for node in commercial))
+        self.assertTrue(batch360.get_json()["data"]["traceability"]["downstream"]["commercial"]["restricted"])
+
+        with self._as(farm_user):
+            self.assertEqual(self.client.get(f"/api/orders/{order['business_id']}").status_code, 200)
+        self.assertEqual(self.client.get("/orders").status_code, 200)
+
+    def test_concurrent_allocations_cannot_over_reserve_a_lot(self):
+        lot = self._release_lot()
+        orders = [self._order("0.400"), self._order("0.400")]
+
+        def allocate(order):
+            return app.test_client().post(
+                f"/api/orders/{order['business_id']}/allocations",
+                json={
+                    "order_line_id": order["lines"][0]["id"],
+                    "product_lot_id": lot["id"],
+                    "location_id": self.inventory_location_id,
+                    "quantity_kg": "0.400",
+                },
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(allocate, orders))
+        self.assertEqual(sorted(r.status_code for r in responses), [201, 400])
+        self.assertEqual(self._free_and_reserved(lot), (0.2, 0.4))
 
 
 def lot_release_approval_id(lot):

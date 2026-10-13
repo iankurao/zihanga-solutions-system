@@ -103,11 +103,6 @@ document.addEventListener('DOMContentLoaded', function () {
       flow.appendChild(column);
     });
 
-    var commercial = el('section', 'trace-column');
-    var heading = el('h4');
-    heading.append(el('span', null, 'Orders & delivery'), el('span', null, '—'));
-    commercial.append(heading, el('p', 'trace-none', 'Not linked yet (Phase One Step 15)'));
-    flow.appendChild(commercial);
   }
 
   function nodeCard(node, edgesIn, nodesByKey) {

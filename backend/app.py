@@ -2764,6 +2764,51 @@ def _jsonable(value):
     return value
 
 
+def _batch_commercial(cursor, farm_id, product_lots):
+    """Orders and deliveries that drew on these lots, if the caller may see them."""
+    if not _farm_access_allowed(cursor, farm_id):
+        return {'restricted': True, 'orders': [], 'deliveries': []}
+    lot_ids = [lot['id'] for lot in product_lots]
+    if not lot_ids:
+        return {'restricted': False, 'orders': [], 'deliveries': []}
+    cursor.execute(
+        """
+        SELECT o.business_id, o.status, c.name AS customer_name,
+               SUM(a.quantity_kg - a.released_kg) AS committed_kg
+        FROM order_allocations AS a
+        JOIN customer_order_lines AS l ON l.id = a.order_line_id
+        JOIN customer_orders AS o ON o.id = l.order_id
+        JOIN customers AS c ON c.id = o.customer_id
+        WHERE a.product_lot_id = ANY(%s)
+        GROUP BY o.id, c.name
+        HAVING SUM(a.quantity_kg - a.released_kg) > 0
+        ORDER BY o.id
+        """,
+        (lot_ids,),
+    )
+    orders = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT d.business_id, d.status, o.business_id AS order_business_id,
+               c.name AS customer_name, SUM(dl.quantity_kg) AS quantity_kg
+        FROM customer_delivery_lines AS dl
+        JOIN order_allocations AS a ON a.id = dl.allocation_id
+        JOIN customer_deliveries AS d ON d.id = dl.delivery_id
+        JOIN customer_orders AS o ON o.id = d.order_id
+        JOIN customers AS c ON c.id = o.customer_id
+        WHERE a.product_lot_id = ANY(%s)
+        GROUP BY d.id, o.business_id, c.name
+        ORDER BY d.id
+        """,
+        (lot_ids,),
+    )
+    return {
+        'restricted': False,
+        'orders': orders,
+        'deliveries': [dict(row) for row in cursor.fetchall()],
+    }
+
+
 def _batch_360(cursor, batch_ref):
     """Assemble one production batch's full upstream and downstream record.
 
@@ -3183,7 +3228,7 @@ def _batch_360(cursor, batch_ref):
             'locations': sorted({
                 f"{row['location_name']} ({row['location_code']})" for row in inventory_balances
             }),
-            'commercial': None,
+            'commercial': _batch_commercial(cursor, batch['farm_id'], product_lots),
         },
     }
 
@@ -3336,6 +3381,34 @@ INVENTORY_LEDGER_CTE = """
 """
 
 
+# Outstanding (still reserved) quantity per allocation: allocated minus what
+# has been dispatched and what was released back to stock.
+ALLOCATION_STATE_CTE = """
+    allocation_state AS (
+        SELECT a.id, a.order_line_id, a.product_lot_id, a.location_id,
+               a.quantity_kg, a.released_kg,
+               COALESCE((
+                   SELECT SUM(dl.quantity_kg) FROM customer_delivery_lines AS dl
+                   WHERE dl.allocation_id = a.id
+               ), 0) AS dispatched_kg
+        FROM order_allocations AS a
+    )
+"""
+
+
+def _reserved_kg(cursor, lot_id, location_id):
+    cursor.execute(
+        f"""
+        WITH {ALLOCATION_STATE_CTE}
+        SELECT COALESCE(SUM(quantity_kg - released_kg - dispatched_kg), 0) AS reserved
+        FROM allocation_state
+        WHERE product_lot_id = %s AND location_id = %s
+        """,
+        (lot_id, location_id),
+    )
+    return Decimal(str(cursor.fetchone()['reserved']))
+
+
 class RecordNotFoundError(ValueError):
     """Raised when a requested record does not exist or is not visible."""
 
@@ -3404,10 +3477,15 @@ def _inventory_lot_row(cursor, lot_ref):
 def _inventory_balances(cursor, lot_id):
     cursor.execute(
         f"""
-        WITH {INVENTORY_LEDGER_CTE}
+        WITH {INVENTORY_LEDGER_CTE}, {ALLOCATION_STATE_CTE}
         SELECT il.id AS location_id, il.location_code, il.name AS location_name,
                fa.name AS facility_name, SUM(ledger.delta) AS quantity_kg,
-               MAX(ledger.occurred_at) AS last_movement_at
+               MAX(ledger.occurred_at) AS last_movement_at,
+               COALESCE((
+                   SELECT SUM(s.quantity_kg - s.released_kg - s.dispatched_kg)
+                   FROM allocation_state AS s
+                   WHERE s.product_lot_id = %s AND s.location_id = il.id
+               ), 0) AS reserved_kg
         FROM ledger
         JOIN inventory_locations AS il ON il.id = ledger.location_id
         JOIN facilities AS fa ON fa.id = il.facility_id
@@ -3416,9 +3494,12 @@ def _inventory_balances(cursor, lot_id):
         HAVING SUM(ledger.delta) <> 0
         ORDER BY il.name, il.id
         """,
-        (lot_id,),
+        (lot_id, lot_id),
     )
-    return [dict(row) for row in cursor.fetchall()]
+    rows = [dict(row) for row in cursor.fetchall()]
+    for row in rows:
+        row['free_kg'] = Decimal(str(row['quantity_kg'])) - Decimal(str(row['reserved_kg']))
+    return rows
 
 
 def _inventory_movement_history(cursor, lot_id):
@@ -3610,8 +3691,17 @@ def _record_inventory_movement(data):
                     f'{on_hand:.3f} kg is already on hand'
                 )
         if source:
-            available = _location_balance(cursor, lot['id'], source['id'])
+            on_hand = _location_balance(cursor, lot['id'], source['id'])
+            # Stock allocated to customer orders can only leave by dispatch.
+            reserved = _reserved_kg(cursor, lot['id'], source['id'])
+            available = on_hand - reserved
             if quantity > available:
+                if reserved:
+                    raise ValueError(
+                        f"Only {available:.3f} kg of {lot['business_id']} at "
+                        f"{source['location_code']} is free; {reserved:.3f} kg is "
+                        'reserved for customer orders'
+                    )
                 raise ValueError(
                     f"Only {available:.3f} kg of {lot['business_id']} is at "
                     f"{source['location_code']}"
@@ -3744,7 +3834,7 @@ def get_inventory_stock():
             filter_params.append(product_type)
         rows = db.fetch_all(
             f"""
-            WITH {INVENTORY_LEDGER_CTE}
+            WITH {INVENTORY_LEDGER_CTE}, {ALLOCATION_STATE_CTE}
             SELECT pl.product_type, pl.id AS product_lot_id, pl.business_id,
                    pl.lot_code,
                    CASE WHEN {PRODUCT_LOT_RELEASABLE_SQL}
@@ -3753,7 +3843,12 @@ def get_inventory_stock():
                    il.name AS location_name, fa.name AS facility_name,
                    f.name AS farm_name, il.farm_id,
                    SUM(ledger.delta) AS quantity_kg, 'kg' AS unit,
-                   MAX(ledger.occurred_at) AS last_movement_at
+                   MAX(ledger.occurred_at) AS last_movement_at,
+                   COALESCE((
+                       SELECT SUM(s.quantity_kg - s.released_kg - s.dispatched_kg)
+                       FROM allocation_state AS s
+                       WHERE s.product_lot_id = pl.id AND s.location_id = il.id
+                   ), 0) AS reserved_kg
             FROM ledger
             JOIN product_lots AS pl ON pl.id = ledger.product_lot_id
             JOIN inventory_locations AS il ON il.id = ledger.location_id
@@ -3771,12 +3866,17 @@ def get_inventory_stock():
             entry = totals.setdefault(row['product_type'], {
                 'product_type': row['product_type'],
                 'quantity_kg': Decimal('0'),
+                'reserved_kg': Decimal('0'),
                 'available_kg': Decimal('0'),
             })
             quantity = Decimal(str(row['quantity_kg']))
+            reserved = Decimal(str(row['reserved_kg']))
+            # Free stock: on hand, not reserved for an order, and QC released.
+            row['free_kg'] = quantity - reserved
             entry['quantity_kg'] += quantity
+            entry['reserved_kg'] += reserved
             if row['lot_status'] == 'AVAILABLE':
-                entry['available_kg'] += quantity
+                entry['available_kg'] += quantity - reserved
         return jsonify({
             'success': True,
             'data': rows,
@@ -3840,7 +3940,8 @@ def list_product_lots():
 
 TRACE_STAGES = (
     'waste_lot', 'substrate_batch', 'production_batch', 'harvest',
-    'drying_batch', 'product_lot', 'inventory_location',
+    'drying_batch', 'product_lot', 'inventory_location', 'customer_order',
+    'delivery',
 )
 TRACE_LABELS = {
     'waste_lot': 'Waste Lot',
@@ -3850,8 +3951,14 @@ TRACE_LABELS = {
     'drying_batch': 'Drying Batch',
     'product_lot': 'Product Lot',
     'inventory_location': 'Inventory Location',
+    'customer_order': 'Customer Order',
+    'delivery': 'Delivery',
 }
-TRACE_ROOT_TYPES = TRACE_STAGES[:-1]
+TRACE_ROOT_TYPES = tuple(kind for kind in TRACE_STAGES if kind != 'inventory_location')
+# Commercial records need farm-level access; walks stop at these node types
+# unless the trace starts from one, so an order never pulls in other lots.
+TRACE_COMMERCIAL = {'customer_order', 'delivery'}
+TRACE_TERMINAL = {'inventory_location'} | TRACE_COMMERCIAL
 # Lookup by numeric database ID (only when the caller names the type).
 TRACE_ID_SQL = {
     'waste_lot': "SELECT id FROM waste_lots WHERE id = %s",
@@ -3860,6 +3967,8 @@ TRACE_ID_SQL = {
     'harvest': "SELECT id FROM harvests WHERE id = %s",
     'drying_batch': "SELECT id FROM drying_batches WHERE id = %s",
     'product_lot': "SELECT id FROM product_lots WHERE id = %s AND drying_output_id IS NOT NULL",
+    'customer_order': "SELECT id FROM customer_orders WHERE id = %s",
+    'delivery': "SELECT id FROM customer_deliveries WHERE id = %s",
 }
 TRACE_NODE_LIMIT = 300
 
@@ -3886,6 +3995,12 @@ TRACE_REF_SQL = {
     'product_lot': (
         "SELECT id FROM product_lots WHERE drying_output_id IS NOT NULL "
         "AND (UPPER(business_id) = UPPER(%s) OR UPPER(lot_code) = UPPER(%s))", 2,
+    ),
+    'customer_order': (
+        "SELECT id FROM customer_orders WHERE UPPER(business_id) = UPPER(%s)", 1,
+    ),
+    'delivery': (
+        "SELECT id FROM customer_deliveries WHERE UPPER(business_id) = UPPER(%s)", 1,
     ),
 }
 
@@ -3968,6 +4083,36 @@ TRACE_NODE_SQL = {
                '{}'::json AS details
         FROM inventory_locations AS il WHERE il.id = ANY(%s)
     """,
+    'customer_order': """
+        SELECT o.id, o.business_id AS ref, c.name AS title, o.status,
+               o.order_date AS occurred,
+               (SELECT SUM(quantity_kg) FROM customer_order_lines
+                 WHERE order_id = o.id) AS quantity,
+               'kg' AS unit, o.created_by AS actor,
+               o.farm_id, NULL::int AS site_id, NULL::int AS facility_id,
+               json_build_object('farm_name', f.name,
+                                 'requested_delivery_date', o.requested_delivery_date) AS details
+        FROM customer_orders AS o
+        JOIN customers AS c ON c.id = o.customer_id
+        JOIN farms AS f ON f.id = o.farm_id
+        WHERE o.id = ANY(%s)
+    """,
+    'delivery': """
+        SELECT d.id, d.business_id AS ref, c.name AS title, d.status,
+               d.dispatched_at AS occurred,
+               (SELECT SUM(quantity_kg) FROM customer_delivery_lines
+                 WHERE delivery_id = d.id) AS quantity,
+               'kg' AS unit, d.created_by AS actor,
+               o.farm_id, NULL::int AS site_id, NULL::int AS facility_id,
+               json_build_object('farm_name', f.name, 'order_ref', o.business_id,
+                                 'received_by', d.received_by,
+                                 'delivered_at', d.delivered_at) AS details
+        FROM customer_deliveries AS d
+        JOIN customer_orders AS o ON o.id = d.order_id
+        JOIN customers AS c ON c.id = o.customer_id
+        JOIN farms AS f ON f.id = o.farm_id
+        WHERE d.id = ANY(%s)
+    """,
 }
 
 # (from_type, to_type, SQL returning from_id, to_id, quantity, unit)
@@ -4012,6 +4157,31 @@ TRACE_EDGE_SQL = [
         GROUP BY ledger.product_lot_id, ledger.location_id
         HAVING SUM(ledger.delta) <> 0
     """, ('ledger.product_lot_id', None)),
+    # Quantity still committed to the order (allocated minus released).
+    ('product_lot', 'customer_order', """
+        SELECT a.product_lot_id AS from_id, l.order_id AS to_id,
+               SUM(a.quantity_kg - a.released_kg) AS quantity, 'kg' AS unit
+        FROM order_allocations AS a
+        JOIN customer_order_lines AS l ON l.id = a.order_line_id
+        WHERE {side} = ANY(%s)
+        GROUP BY a.product_lot_id, l.order_id
+        HAVING SUM(a.quantity_kg - a.released_kg) > 0
+    """, ('a.product_lot_id', 'l.order_id')),
+    ('product_lot', 'delivery', """
+        SELECT a.product_lot_id AS from_id, dl.delivery_id AS to_id,
+               SUM(dl.quantity_kg) AS quantity, 'kg' AS unit
+        FROM customer_delivery_lines AS dl
+        JOIN order_allocations AS a ON a.id = dl.allocation_id
+        WHERE {side} = ANY(%s)
+        GROUP BY a.product_lot_id, dl.delivery_id
+    """, ('a.product_lot_id', 'dl.delivery_id')),
+    ('customer_order', 'delivery', """
+        SELECT d.order_id AS from_id, d.id AS to_id,
+               (SELECT SUM(quantity_kg) FROM customer_delivery_lines
+                 WHERE delivery_id = d.id) AS quantity, 'kg' AS unit
+        FROM customer_deliveries AS d
+        WHERE {side} = ANY(%s)
+    """, ('d.order_id', 'd.id')),
 ]
 
 
@@ -4075,7 +4245,7 @@ def _trace_walk(cursor, root, direction):
                         truncated = True
                         continue
                     seen.add(neighbour)
-                    if neighbour[0] != 'inventory_location':
+                    if neighbour[0] not in TRACE_TERMINAL:
                         next_frontier.add(neighbour)
         frontier = next_frontier
     return seen - {root}, edges, truncated
@@ -4100,7 +4270,11 @@ def _trace_nodes(cursor, keys, root):
             key = f"{kind}:{row['id']}"
             node = {'key': key, 'type': kind, 'type_label': TRACE_LABELS[kind], **dict(row)}
             node['is_root'] = (kind, row['id']) == root
-            if not _trace_can_access(cursor, row['farm_id'], row['site_id'], row['facility_id']):
+            if kind in TRACE_COMMERCIAL:
+                allowed = _farm_access_allowed(cursor, row['farm_id'])
+            else:
+                allowed = _trace_can_access(cursor, row['farm_id'], row['site_id'], row['facility_id'])
+            if not allowed:
                 # Show that a link exists without disclosing another
                 # location's record.
                 node = {
@@ -4113,6 +4287,12 @@ def _trace_nodes(cursor, keys, root):
                     node['href'] = f"/batch-360?ref={row['ref']}"
                 elif kind == 'product_lot':
                     node['href'] = f"/product-lot?ref={row['ref']}"
+                elif kind == 'customer_order':
+                    node['href'] = f"/orders?ref={row['ref']}"
+                    node['location'] = row['details'].get('farm_name')
+                elif kind == 'delivery':
+                    node['href'] = f"/orders?ref={row['details'].get('order_ref')}"
+                    node['location'] = row['details'].get('farm_name')
             nodes[key] = node
     names = {}
     scope_ids = {
@@ -4182,8 +4362,7 @@ def _traceability(cursor, ref, record_type=None):
             'restricted': sum(1 for node in nodes.values() if node['restricted']),
         },
         'truncated': up_truncated or down_truncated,
-        # Sales are not yet linked to Product Lots (Phase One Step 15).
-        'commercial': {'linked': False},
+        'commercial': {'linked': True},
     })
 
 
@@ -4228,11 +4407,17 @@ def search_traceability():
          'product_lots AS p JOIN drying_outputs AS o ON o.id = p.drying_output_id '
          'JOIN drying_batches AS t ON t.id = o.drying_batch_id',
          'p.business_id', 't'),
+        ('customer_order', 'customer_orders AS t', 't.business_id', 't'),
+        ('delivery', 'customer_deliveries AS d JOIN customer_orders AS t ON t.id = d.order_id',
+         'd.business_id', 't'),
     ]
     try:
         results = []
         for kind, source, column_sql, alias in sources:
-            visibility, params = _scope_visibility_clause(alias)
+            visibility, params = (
+                _farm_visibility_clause(alias) if kind in TRACE_COMMERCIAL
+                else _scope_visibility_clause(alias)
+            )
             rows = db.fetch_all(
                 f"SELECT {column_sql} AS ref FROM {source} "
                 f"WHERE {column_sql} ILIKE %s AND {visibility} "
@@ -4253,6 +4438,712 @@ def search_traceability():
 @login_required
 def traceability_page():
     return render_template('traceability.html')
+
+
+# ---- Customer orders, allocations and deliveries -------------------------
+#
+# Commercial records are farm-scoped and visible only to users with farm or
+# organization access (or super admins); facility-only operators do not see
+# customers or order quantities.
+
+def _farm_access_allowed(cursor, farm_id):
+    if app.config.get('LOGIN_DISABLED') or (
+        getattr(current_user, 'is_authenticated', False)
+        and current_user.role == 'super_admin'
+    ):
+        return True
+    if not getattr(current_user, 'is_authenticated', False) or farm_id is None:
+        return False
+    cursor.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM user_farm_access WHERE user_id = %s AND farm_id = %s
+        ) OR EXISTS (
+            SELECT 1 FROM user_organization_access AS uoa
+            JOIN farms AS f ON f.organization_id = uoa.organization_id
+            WHERE uoa.user_id = %s AND f.id = %s
+        ) AS allowed
+        """,
+        (current_user.id, farm_id, current_user.id, farm_id),
+    )
+    return bool(cursor.fetchone()['allowed'])
+
+
+def _assert_farm_access(cursor, farm_id):
+    if not _farm_access_allowed(cursor, farm_id):
+        raise ProductionEventPermissionError(
+            "You are not authorized for this farm's customer orders"
+        )
+
+
+def _farm_visibility_clause(alias):
+    if app.config.get('LOGIN_DISABLED') or (
+        getattr(current_user, 'is_authenticated', False)
+        and current_user.role == 'super_admin'
+    ):
+        return 'TRUE', ()
+    if not getattr(current_user, 'is_authenticated', False):
+        return 'FALSE', ()
+    return (
+        f"""
+        (EXISTS (SELECT 1 FROM user_farm_access AS ufa
+                 WHERE ufa.user_id = %s AND ufa.farm_id = {alias}.farm_id)
+         OR EXISTS (SELECT 1 FROM user_organization_access AS uoa
+                    JOIN farms AS vf ON vf.organization_id = uoa.organization_id
+                    WHERE uoa.user_id = %s AND vf.id = {alias}.farm_id))
+        """,
+        (current_user.id, current_user.id),
+    )
+
+
+def _order_row(cursor, order_ref, *, for_update=False):
+    lookup_id = int(order_ref) if str(order_ref).isdigit() else -1
+    cursor.execute(
+        f"""
+        SELECT o.*, c.name AS customer_name, c.contact AS customer_contact,
+               f.name AS farm_name
+        FROM customer_orders AS o
+        JOIN customers AS c ON c.id = o.customer_id
+        JOIN farms AS f ON f.id = o.farm_id
+        WHERE o.id = %s OR UPPER(o.business_id) = UPPER(%s)
+        {'FOR UPDATE OF o' if for_update else ''}
+        """,
+        (lookup_id, str(order_ref)),
+    )
+    order = cursor.fetchone()
+    if not order:
+        raise RecordNotFoundError('Customer order not found')
+    _assert_farm_access(cursor, order['farm_id'])
+    return dict(order)
+
+
+def _order_detail(cursor, order):
+    order_id = order['id']
+    cursor.execute(
+        """
+        SELECT id, line_no, product_type, quantity_kg, unit, notes
+        FROM customer_order_lines WHERE order_id = %s ORDER BY line_no
+        """,
+        (order_id,),
+    )
+    lines = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        f"""
+        WITH {ALLOCATION_STATE_CTE}
+        SELECT s.id, s.order_line_id, s.product_lot_id, s.location_id,
+               s.quantity_kg, s.released_kg, s.dispatched_kg,
+               s.quantity_kg - s.released_kg - s.dispatched_kg AS outstanding_kg,
+               a.created_at, a.created_by, a.released_at, a.release_reason,
+               pl.business_id AS product_lot_business_id, pl.product_type,
+               il.location_code, il.name AS location_name
+        FROM allocation_state AS s
+        JOIN order_allocations AS a ON a.id = s.id
+        JOIN customer_order_lines AS l ON l.id = s.order_line_id
+        JOIN product_lots AS pl ON pl.id = s.product_lot_id
+        JOIN inventory_locations AS il ON il.id = s.location_id
+        WHERE l.order_id = %s
+        ORDER BY s.id
+        """,
+        (order_id,),
+    )
+    allocations = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT d.id, d.business_id, d.status, d.dispatched_at, d.delivered_at,
+               d.received_by, d.vehicle, d.driver, d.notes, d.created_by
+        FROM customer_deliveries AS d WHERE d.order_id = %s ORDER BY d.id
+        """,
+        (order_id,),
+    )
+    deliveries = [dict(row) for row in cursor.fetchall()]
+    if deliveries:
+        cursor.execute(
+            """
+            SELECT dl.delivery_id, dl.allocation_id, dl.quantity_kg,
+                   im.business_id AS movement_business_id,
+                   pl.business_id AS product_lot_business_id,
+                   il.location_code
+            FROM customer_delivery_lines AS dl
+            JOIN order_allocations AS a ON a.id = dl.allocation_id
+            JOIN product_lots AS pl ON pl.id = a.product_lot_id
+            JOIN inventory_locations AS il ON il.id = a.location_id
+            JOIN inventory_movements AS im ON im.id = dl.inventory_movement_id
+            WHERE dl.delivery_id = ANY(%s)
+            ORDER BY dl.id
+            """,
+            ([d['id'] for d in deliveries],),
+        )
+        delivery_lines = {}
+        for row in cursor.fetchall():
+            delivery_lines.setdefault(row['delivery_id'], []).append(dict(row))
+        for delivery in deliveries:
+            delivery['lines'] = delivery_lines.get(delivery['id'], [])
+            delivery['quantity_kg'] = sum(
+                (Decimal(str(line['quantity_kg'])) for line in delivery['lines']), Decimal('0')
+            )
+
+    zero = Decimal('0')
+    for line in lines:
+        mine = [a for a in allocations if a['order_line_id'] == line['id']]
+        line['allocations'] = mine
+        line['outstanding_allocated_kg'] = sum((Decimal(str(a['outstanding_kg'])) for a in mine), zero)
+        line['dispatched_kg'] = sum((Decimal(str(a['dispatched_kg'])) for a in mine), zero)
+        line['remaining_to_allocate_kg'] = max(
+            Decimal(str(line['quantity_kg'])) - line['dispatched_kg'] - line['outstanding_allocated_kg'],
+            zero,
+        )
+    totals = {
+        'ordered_kg': sum((Decimal(str(line['quantity_kg'])) for line in lines), zero),
+        'allocated_kg': sum((line['outstanding_allocated_kg'] for line in lines), zero),
+        'dispatched_kg': sum((line['dispatched_kg'] for line in lines), zero),
+        'delivered_kg': sum(
+            (d['quantity_kg'] for d in deliveries if d['status'] == 'DELIVERED'), zero
+        ),
+    }
+    return _jsonable({
+        **order,
+        'lines': lines,
+        'allocations': allocations,
+        'deliveries': deliveries,
+        'totals': totals,
+    })
+
+
+def _order_line(cursor, order_id, line_ref):
+    line_id = _parse_positive_integer(line_ref, 'order_line_id')
+    cursor.execute(
+        "SELECT * FROM customer_order_lines WHERE id = %s AND order_id = %s",
+        (line_id, order_id),
+    )
+    line = cursor.fetchone()
+    if not line:
+        raise ValueError('The order line does not belong to this order')
+    return dict(line)
+
+
+def _line_commitments(cursor, line_id):
+    """Dispatched plus still-reserved quantity for one order line."""
+    cursor.execute(
+        f"""
+        WITH {ALLOCATION_STATE_CTE}
+        SELECT COALESCE(SUM(quantity_kg - released_kg), 0) AS committed
+        FROM allocation_state WHERE order_line_id = %s
+        """,
+        (line_id,),
+    )
+    return Decimal(str(cursor.fetchone()['committed']))
+
+
+def _refresh_order_status(cursor, order_id):
+    cursor.execute(
+        f"""
+        WITH {ALLOCATION_STATE_CTE}
+        SELECT bool_and(
+            COALESCE((SELECT SUM(s.dispatched_kg) FROM allocation_state AS s
+                      WHERE s.order_line_id = l.id), 0) >= l.quantity_kg
+        ) AS fulfilled
+        FROM customer_order_lines AS l WHERE l.order_id = %s
+        """,
+        (order_id,),
+    )
+    if cursor.fetchone()['fulfilled']:
+        cursor.execute(
+            """
+            UPDATE customer_orders SET status = 'FULFILLED', updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND status = 'OPEN'
+            """,
+            (order_id,),
+        )
+
+
+def _optional_date(data, field):
+    value = data.get(field)
+    if value in (None, ''):
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        raise ValueError(f'{field} must be a valid date (YYYY-MM-DD)')
+
+
+def _create_order(data):
+    customer_id = _parse_positive_integer(data.get('customer_id'), 'customer_id')
+    farm_id = _parse_positive_integer(data.get('farm_id'), 'farm_id')
+    order_date = _optional_date(data, 'order_date') or date.today()
+    requested = _optional_date(data, 'requested_delivery_date')
+    if requested and requested < order_date:
+        raise ValueError('requested_delivery_date cannot be before the order date')
+    lines = data.get('lines')
+    if not isinstance(lines, list) or not lines:
+        raise ValueError('Add at least one order line')
+    if len(lines) > 50:
+        raise ValueError('An order can have at most 50 lines')
+    parsed_lines = []
+    for index, line in enumerate(lines, start=1):
+        if not isinstance(line, dict):
+            raise ValueError('Each order line must be an object')
+        product_type = str(line.get('product_type') or '').strip()
+        if not product_type or len(product_type) > 50:
+            raise ValueError(f'Line {index}: product_type is required (max 50 characters)')
+        if str(line.get('unit') or 'kg').strip().lower() != 'kg':
+            raise ValueError(f'Line {index}: quantities must be in kg')
+        parsed_lines.append((
+            index, product_type,
+            _parse_chain_quantity(line.get('quantity_kg'), f'Line {index} quantity_kg'),
+            _optional_text(line, 'notes', 500),
+        ))
+    customer_reference = _optional_text(data, 'customer_reference', 60)
+    notes = _optional_text(data, 'notes', 2000)
+    actor, actor_user_id = _production_actor(data)
+    with db.transaction() as cursor:
+        cursor.execute("SELECT status FROM farms WHERE id = %s", (farm_id,))
+        farm = cursor.fetchone()
+        if not farm or farm['status'] != 'active':
+            raise ValueError('Select an active farm')
+        _assert_farm_access(cursor, farm_id)
+        cursor.execute("SELECT id FROM customers WHERE id = %s", (customer_id,))
+        if not cursor.fetchone():
+            raise ValueError('Customer not found')
+        cursor.execute(
+            """
+            INSERT INTO customer_orders (
+                customer_id, farm_id, order_date, requested_delivery_date,
+                customer_reference, notes, created_by, created_by_user_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (customer_id, farm_id, order_date, requested, customer_reference, notes,
+             actor, actor_user_id),
+        )
+        order_id = cursor.fetchone()['id']
+        for line_no, product_type, quantity, line_notes in parsed_lines:
+            cursor.execute(
+                """
+                INSERT INTO customer_order_lines (order_id, line_no, product_type, quantity_kg, notes)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (order_id, line_no, product_type, quantity, line_notes),
+            )
+        return _order_detail(cursor, _order_row(cursor, order_id))
+
+
+def _available_stock_for_line(cursor, order, line):
+    """Free, QC-released stock of the line's product on the order's farm."""
+    visibility, params = _scope_visibility_clause('il')
+    cursor.execute(
+        f"""
+        WITH {INVENTORY_LEDGER_CTE}, {ALLOCATION_STATE_CTE},
+        balances AS (
+            SELECT ledger.product_lot_id, ledger.location_id,
+                   SUM(ledger.delta) AS on_hand_kg
+            FROM ledger GROUP BY ledger.product_lot_id, ledger.location_id
+        )
+        SELECT pl.id AS product_lot_id, pl.business_id AS product_lot_business_id,
+               pl.product_type, pl.production_date,
+               il.id AS location_id, il.location_code, il.name AS location_name,
+               fa.name AS facility_name, b.on_hand_kg,
+               COALESCE((
+                   SELECT SUM(s.quantity_kg - s.released_kg - s.dispatched_kg)
+                   FROM allocation_state AS s
+                   WHERE s.product_lot_id = pl.id AND s.location_id = il.id
+               ), 0) AS reserved_kg
+        FROM balances AS b
+        JOIN product_lots AS pl ON pl.id = b.product_lot_id
+        JOIN inventory_locations AS il ON il.id = b.location_id
+        JOIN facilities AS fa ON fa.id = il.facility_id
+        WHERE pl.farm_id = %s AND LOWER(pl.product_type) = LOWER(%s)
+          AND il.status = 'active' AND {PRODUCT_LOT_RELEASABLE_SQL}
+          AND {visibility}
+        ORDER BY pl.production_date, pl.id, il.name
+        """,
+        (order['farm_id'], line['product_type'], *params),
+    )
+    rows = []
+    for row in cursor.fetchall():
+        row = dict(row)
+        row['free_kg'] = Decimal(str(row['on_hand_kg'])) - Decimal(str(row['reserved_kg']))
+        if row['free_kg'] > 0:
+            rows.append(row)
+    return rows
+
+
+def _allocate(order_ref, data):
+    quantity = _parse_chain_quantity(data.get('quantity_kg'), 'quantity_kg')
+    with db.transaction() as cursor:
+        order = _order_row(cursor, order_ref, for_update=True)
+        if order['status'] != 'OPEN':
+            raise ValueError(f"Order {order['business_id']} is {order['status']} and cannot be allocated")
+        line = _order_line(cursor, order['id'], data.get('order_line_id'))
+        for field in ('product_lot_id', 'location_id'):
+            if data.get(field) in (None, ''):
+                raise ValueError(f'{field} is required')
+        lot = _inventory_lot_row(cursor, data.get('product_lot_id'))
+        location = _inventory_location_row(cursor, data.get('location_id'), 'allocation')
+        if lot['farm_id'] != order['farm_id'] or location['farm_id'] != order['farm_id']:
+            raise ValueError('Allocated stock must be on the same farm as the order')
+        if lot['product_type'].lower() != line['product_type'].lower():
+            raise ValueError(
+                f"Product Lot {lot['business_id']} is {lot['product_type']}, "
+                f"but the order line is for {line['product_type']}"
+            )
+        if not lot['releasable']:
+            raise ValueError(f"Product Lot {lot['business_id']} is blocked by QC and cannot be allocated")
+        remaining = Decimal(str(line['quantity_kg'])) - _line_commitments(cursor, line['id'])
+        if quantity > remaining:
+            raise ValueError(f'Only {max(remaining, Decimal("0")):.3f} kg of this order line is left to allocate')
+        free = _location_balance(cursor, lot['id'], location['id']) - _reserved_kg(
+            cursor, lot['id'], location['id']
+        )
+        if quantity > free:
+            raise ValueError(
+                f"Only {max(free, Decimal('0')):.3f} kg of {lot['business_id']} at "
+                f"{location['location_code']} is free to allocate"
+            )
+        actor, actor_user_id = _production_actor(data)
+        cursor.execute(
+            """
+            INSERT INTO order_allocations (
+                order_line_id, product_lot_id, location_id, quantity_kg,
+                created_by, created_by_user_id
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (line['id'], lot['id'], location['id'], quantity, actor, actor_user_id),
+        )
+        cursor.execute(
+            "UPDATE customer_orders SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (order['id'],),
+        )
+        return _order_detail(cursor, order)
+
+
+def _release_outstanding(cursor, allocation_ids, reason):
+    if not allocation_ids:
+        return
+    cursor.execute(
+        f"""
+        WITH {ALLOCATION_STATE_CTE}
+        UPDATE order_allocations AS a
+        SET released_kg = a.released_kg + (s.quantity_kg - s.released_kg - s.dispatched_kg),
+            released_at = CURRENT_TIMESTAMP,
+            release_reason = %s
+        FROM allocation_state AS s
+        WHERE s.id = a.id AND a.id = ANY(%s)
+          AND s.quantity_kg - s.released_kg - s.dispatched_kg > 0
+        """,
+        (reason, allocation_ids),
+    )
+
+
+def _release_allocation(order_ref, allocation_id, data):
+    reason = _optional_text(data, 'reason', 500)
+    if not reason:
+        raise ValueError('A reason is required to release an allocation')
+    with db.transaction() as cursor:
+        order = _order_row(cursor, order_ref, for_update=True)
+        cursor.execute(
+            f"""
+            WITH {ALLOCATION_STATE_CTE}
+            SELECT s.*, s.quantity_kg - s.released_kg - s.dispatched_kg AS outstanding
+            FROM allocation_state AS s
+            JOIN customer_order_lines AS l ON l.id = s.order_line_id
+            WHERE s.id = %s AND l.order_id = %s
+            """,
+            (allocation_id, order['id']),
+        )
+        allocation = cursor.fetchone()
+        if not allocation:
+            raise RecordNotFoundError('Allocation not found on this order')
+        if allocation['outstanding'] <= 0:
+            raise ValueError('This allocation has nothing left to release')
+        _release_outstanding(cursor, [allocation['id']], reason)
+        return _order_detail(cursor, order)
+
+
+def _cancel_order(order_ref, data):
+    reason = _optional_text(data, 'reason', 500)
+    if not reason:
+        raise ValueError('A reason is required to cancel an order')
+    with db.transaction() as cursor:
+        order = _order_row(cursor, order_ref, for_update=True)
+        if order['status'] != 'OPEN':
+            raise ValueError(f"Order {order['business_id']} is already {order['status']}")
+        cursor.execute(
+            "SELECT 1 FROM customer_deliveries WHERE order_id = %s LIMIT 1", (order['id'],)
+        )
+        if cursor.fetchone():
+            raise ValueError(
+                'This order already has dispatched deliveries and cannot be cancelled; '
+                'release the remaining allocations instead'
+            )
+        cursor.execute(
+            """
+            SELECT a.id FROM order_allocations AS a
+            JOIN customer_order_lines AS l ON l.id = a.order_line_id
+            WHERE l.order_id = %s
+            """,
+            (order['id'],),
+        )
+        _release_outstanding(cursor, [row['id'] for row in cursor.fetchall()], f'Order cancelled: {reason}')
+        cursor.execute(
+            """
+            UPDATE customer_orders
+            SET status = 'CANCELLED', cancel_reason = %s, cancelled_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (reason, order['id']),
+        )
+        return _order_detail(cursor, _order_row(cursor, order['id']))
+
+
+def _dispatch(order_ref, data):
+    requested = data.get('lines')
+    if not isinstance(requested, list) or not requested:
+        raise ValueError('Choose at least one allocation to dispatch')
+    parsed = {}
+    for item in requested:
+        if not isinstance(item, dict):
+            raise ValueError('Each dispatch line must be an object')
+        allocation_id = _parse_positive_integer(item.get('allocation_id'), 'allocation_id')
+        if allocation_id in parsed:
+            raise ValueError('Each allocation can appear only once per delivery')
+        parsed[allocation_id] = _parse_chain_quantity(item.get('quantity_kg'), 'quantity_kg')
+    vehicle = _optional_text(data, 'vehicle', 60)
+    driver = _optional_text(data, 'driver', 100)
+    notes = _optional_text(data, 'notes', 2000)
+    dispatched_at = None
+    if data.get('dispatched_at') not in (None, ''):
+        dispatched_at = _event_occurred_at({'occurred_at': data['dispatched_at']}, ())
+    actor, actor_user_id = _production_actor(data)
+
+    with db.transaction() as cursor:
+        order = _order_row(cursor, order_ref, for_update=True)
+        if order['status'] != 'OPEN':
+            raise ValueError(f"Order {order['business_id']} is {order['status']} and cannot be dispatched")
+        cursor.execute(
+            f"""
+            WITH {ALLOCATION_STATE_CTE}
+            SELECT s.*, s.quantity_kg - s.released_kg - s.dispatched_kg AS outstanding
+            FROM allocation_state AS s
+            JOIN customer_order_lines AS l ON l.id = s.order_line_id
+            WHERE l.order_id = %s AND s.id = ANY(%s)
+            ORDER BY s.product_lot_id, s.id
+            """,
+            (order['id'], list(parsed)),
+        )
+        allocations = {row['id']: dict(row) for row in cursor.fetchall()}
+        missing = set(parsed) - set(allocations)
+        if missing:
+            raise ValueError('One or more allocations do not belong to this order')
+
+        cursor.execute(
+            """
+            INSERT INTO customer_deliveries (
+                order_id, dispatched_at, vehicle, driver, notes, created_by, created_by_user_id
+            ) VALUES (%s, COALESCE(%s, CURRENT_TIMESTAMP), %s, %s, %s, %s, %s)
+            RETURNING id, business_id
+            """,
+            (order['id'], dispatched_at, vehicle, driver, notes, actor, actor_user_id),
+        )
+        delivery = cursor.fetchone()
+        # Lock lots in a stable order so concurrent dispatches cannot deadlock.
+        for allocation_id in sorted(allocations, key=lambda key: (allocations[key]['product_lot_id'], key)):
+            allocation = allocations[allocation_id]
+            quantity = parsed[allocation_id]
+            lot = _inventory_lot_row(cursor, allocation['product_lot_id'])
+            if not lot['releasable']:
+                raise ValueError(f"Product Lot {lot['business_id']} is blocked by QC and cannot be dispatched")
+            location = _inventory_location_row(cursor, allocation['location_id'], 'dispatch')
+            if quantity > Decimal(str(allocation['outstanding'])):
+                raise ValueError(
+                    f"Only {Decimal(str(allocation['outstanding'])):.3f} kg of the "
+                    f"{lot['business_id']} allocation is left to dispatch"
+                )
+            on_hand = _location_balance(cursor, lot['id'], location['id'])
+            if quantity > on_hand:
+                raise ValueError(
+                    f"Only {on_hand:.3f} kg of {lot['business_id']} is at {location['location_code']}"
+                )
+            movement = _insert_inventory_movement(
+                cursor, lot, 'DISPATCH', quantity, data,
+                from_location=location, occurred_at=dispatched_at,
+                notes=f"{delivery['business_id']} for {order['business_id']}",
+                reference_type='customer_delivery', reference_id=delivery['id'],
+            )
+            cursor.execute(
+                """
+                INSERT INTO customer_delivery_lines (
+                    delivery_id, allocation_id, quantity_kg, inventory_movement_id
+                ) VALUES (%s, %s, %s, %s)
+                """,
+                (delivery['id'], allocation_id, quantity, movement['id']),
+            )
+        _refresh_order_status(cursor, order['id'])
+        detail = _order_detail(cursor, _order_row(cursor, order['id']))
+        detail['created_delivery'] = delivery['business_id']
+        return detail
+
+
+def _confirm_delivery(delivery_ref, data):
+    received_by = _optional_text(data, 'received_by', 100)
+    if not received_by:
+        raise ValueError('received_by is required to confirm a delivery')
+    delivered_at = None
+    if data.get('delivered_at') not in (None, ''):
+        delivered_at = _event_occurred_at({'occurred_at': data['delivered_at']}, ())
+    lookup_id = int(delivery_ref) if str(delivery_ref).isdigit() else -1
+    with db.transaction() as cursor:
+        cursor.execute(
+            """
+            SELECT id, order_id, status, dispatched_at FROM customer_deliveries
+            WHERE id = %s OR UPPER(business_id) = UPPER(%s)
+            FOR UPDATE
+            """,
+            (lookup_id, str(delivery_ref)),
+        )
+        delivery = cursor.fetchone()
+        if not delivery:
+            raise RecordNotFoundError('Delivery not found')
+        order = _order_row(cursor, delivery['order_id'])
+        if delivery['status'] != 'DISPATCHED':
+            raise InventoryConflictError('This delivery has already been confirmed')
+        cursor.execute(
+            """
+            UPDATE customer_deliveries
+            SET status = 'DELIVERED', received_by = %s,
+                delivered_at = COALESCE(%s, CURRENT_TIMESTAMP)
+            WHERE id = %s AND COALESCE(%s, CURRENT_TIMESTAMP) >= dispatched_at
+            RETURNING id
+            """,
+            (received_by, delivered_at, delivery['id'], delivered_at),
+        )
+        if not cursor.fetchone():
+            raise ValueError('delivered_at cannot be before the dispatch time')
+        return _order_detail(cursor, order)
+
+
+def _order_response(handler, *args, status=200):
+    try:
+        return jsonify({'success': True, 'data': handler(*args)}), status
+    except ProductionEventPermissionError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 403
+    except RecordNotFoundError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 404
+    except InventoryConflictError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 409
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception:
+        logger.exception('Error processing customer order request')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+@app.route('/api/orders', methods=['POST'])
+@login_required
+def create_customer_order():
+    return _order_response(_create_order, normalize_keys(request.get_json() or {}), status=201)
+
+
+@app.route('/api/orders', methods=['GET'])
+@login_required
+def list_customer_orders():
+    def handler():
+        visibility, params = _farm_visibility_clause('o')
+        filters = [visibility]
+        filter_params = list(params)
+        status = str(request.args.get('status') or '').strip().upper()
+        if status:
+            if status not in {'OPEN', 'FULFILLED', 'CANCELLED'}:
+                raise ValueError('Unknown order status')
+            filters.append('o.status = %s')
+            filter_params.append(status)
+        if request.args.get('farm_id') not in (None, ''):
+            filters.append('o.farm_id = %s')
+            filter_params.append(_parse_positive_integer(request.args['farm_id'], 'farm_id'))
+        rows = db.fetch_all(
+            f"""
+            WITH {ALLOCATION_STATE_CTE}
+            SELECT o.id, o.business_id, o.status, o.order_date,
+                   o.requested_delivery_date, o.customer_reference,
+                   c.name AS customer_name, f.name AS farm_name, o.farm_id,
+                   (SELECT SUM(l.quantity_kg) FROM customer_order_lines AS l
+                     WHERE l.order_id = o.id) AS ordered_kg,
+                   COALESCE((SELECT SUM(s.dispatched_kg) FROM allocation_state AS s
+                     JOIN customer_order_lines AS l ON l.id = s.order_line_id
+                     WHERE l.order_id = o.id), 0) AS dispatched_kg,
+                   COALESCE((SELECT SUM(s.quantity_kg - s.released_kg - s.dispatched_kg)
+                     FROM allocation_state AS s
+                     JOIN customer_order_lines AS l ON l.id = s.order_line_id
+                     WHERE l.order_id = o.id), 0) AS allocated_kg
+            FROM customer_orders AS o
+            JOIN customers AS c ON c.id = o.customer_id
+            JOIN farms AS f ON f.id = o.farm_id
+            WHERE {' AND '.join(filters)}
+            ORDER BY o.order_date DESC, o.id DESC
+            LIMIT 500
+            """,
+            tuple(filter_params),
+        )
+        return _jsonable(rows)
+    return _order_response(handler)
+
+
+@app.route('/api/orders/<string:order_ref>', methods=['GET'])
+@login_required
+def get_customer_order(order_ref):
+    def handler():
+        with db.transaction() as cursor:
+            return _order_detail(cursor, _order_row(cursor, order_ref))
+    return _order_response(handler)
+
+
+@app.route('/api/orders/<string:order_ref>/available-stock', methods=['GET'])
+@login_required
+def get_order_available_stock(order_ref):
+    def handler():
+        with db.transaction() as cursor:
+            order = _order_row(cursor, order_ref)
+            line = _order_line(cursor, order['id'], request.args.get('line_id'))
+            return _jsonable(_available_stock_for_line(cursor, order, line))
+    return _order_response(handler)
+
+
+@app.route('/api/orders/<string:order_ref>/allocations', methods=['POST'])
+@login_required
+def allocate_customer_order(order_ref):
+    return _order_response(_allocate, order_ref, normalize_keys(request.get_json() or {}), status=201)
+
+
+@app.route('/api/orders/<string:order_ref>/allocations/<int:allocation_id>/release', methods=['POST'])
+@login_required
+def release_order_allocation(order_ref, allocation_id):
+    return _order_response(
+        _release_allocation, order_ref, allocation_id, normalize_keys(request.get_json() or {})
+    )
+
+
+@app.route('/api/orders/<string:order_ref>/cancel', methods=['POST'])
+@login_required
+def cancel_customer_order(order_ref):
+    return _order_response(_cancel_order, order_ref, normalize_keys(request.get_json() or {}))
+
+
+@app.route('/api/orders/<string:order_ref>/deliveries', methods=['POST'])
+@login_required
+def dispatch_customer_order(order_ref):
+    return _order_response(_dispatch, order_ref, normalize_keys(request.get_json() or {}), status=201)
+
+
+@app.route('/api/deliveries/<string:delivery_ref>/confirm', methods=['POST'])
+@login_required
+def confirm_customer_delivery(delivery_ref):
+    return _order_response(_confirm_delivery, delivery_ref, normalize_keys(request.get_json() or {}))
+
+
+@app.route('/orders')
+@login_required
+def orders_page():
+    return render_template('orders.html')
 
 
 @app.route('/api/waste-monitoring', methods=['POST'])

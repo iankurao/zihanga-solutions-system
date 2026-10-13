@@ -385,6 +385,19 @@ document.addEventListener('DOMContentLoaded', function () {
       return box;
     }
 
+    function commercialNode(commercial) {
+      if (!commercial || commercial.restricted) {
+        var hidden = node('Customers', [], 'is-missing');
+        hidden.querySelector('li').textContent = 'Visible to farm-level users only';
+        return hidden;
+      }
+      return node('Customers', commercial.orders.map(function (o) {
+        return o.business_id + ' · ' + o.customer_name + ' · ' + kg(o.committed_kg);
+      }).concat(commercial.deliveries.map(function (d) {
+        return d.business_id + ' · ' + label(d.status) + ' · ' + kg(d.quantity_kg);
+      })));
+    }
+
     var nodes = [
       node('Waste lots', up.waste_lots.map(function (w) { return w.business_id + ' · ' + w.source_name; })),
       node('Substrate', up.substrate_batches.map(function (s) { return s.business_id + ' · ' + kg(s.quantity_issued); })),
@@ -393,9 +406,8 @@ document.addEventListener('DOMContentLoaded', function () {
       node('Drying', down.drying_batches.map(function (d) { return (d.business_id || '—') + ' · ' + kg(d.output_kg); })),
       node('Product lots', down.product_lots.map(function (p) { return p.business_id + ' · ' + label(p.status); })),
       node('Inventory', down.locations),
-      node('Orders & delivery', [], 'is-missing')
+      commercialNode(down.commercial)
     ];
-    nodes[nodes.length - 1].querySelector('li').textContent = 'Not linked yet (Phase One Step 15)';
     nodes.forEach(function (item, index) {
       if (index) {
         var arrow = el('span', 'b360-arrow');

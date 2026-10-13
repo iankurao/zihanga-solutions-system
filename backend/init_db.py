@@ -650,6 +650,8 @@ def create_tables(cursor):
     cursor.execute(waste_lot_scope_migration_path.read_text(encoding="utf-8"))
     inventory_ledger_migration_path = Path(__file__).parent / "migrations" / "inventory_ledger.sql"
     cursor.execute(inventory_ledger_migration_path.read_text(encoding="utf-8"))
+    orders_migration_path = Path(__file__).parent / "migrations" / "orders_deliveries.sql"
+    cursor.execute(orders_migration_path.read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     init_database()

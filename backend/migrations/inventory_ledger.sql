@@ -96,21 +96,22 @@ BEGIN
     -- Every located (ledger) movement must use a known type with the
     -- matching source/destination combination.  Unlocated legacy rows are
     -- outside the ledger and exempt.
-    BEGIN
-        ALTER TABLE inventory_movements
-            ADD CONSTRAINT inventory_movements_type_locations_check
-            CHECK (
-                (from_location_id IS NULL AND to_location_id IS NULL)
-                OR (movement_type IN ('RECEIPT', 'ADJUSTMENT_IN')
-                    AND from_location_id IS NULL AND to_location_id IS NOT NULL)
-                OR (movement_type IN ('ADJUSTMENT_OUT', 'WASTAGE')
-                    AND from_location_id IS NOT NULL AND to_location_id IS NULL)
-                OR (movement_type = 'TRANSFER'
-                    AND from_location_id IS NOT NULL AND to_location_id IS NOT NULL
-                    AND from_location_id <> to_location_id)
-            ) NOT VALID;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
+    -- Replaced on every run so new movement types (e.g. DISPATCH for
+    -- customer deliveries) reach existing databases.
+    ALTER TABLE inventory_movements
+        DROP CONSTRAINT IF EXISTS inventory_movements_type_locations_check;
+    ALTER TABLE inventory_movements
+        ADD CONSTRAINT inventory_movements_type_locations_check
+        CHECK (
+            (from_location_id IS NULL AND to_location_id IS NULL)
+            OR (movement_type IN ('RECEIPT', 'ADJUSTMENT_IN')
+                AND from_location_id IS NULL AND to_location_id IS NOT NULL)
+            OR (movement_type IN ('ADJUSTMENT_OUT', 'WASTAGE', 'DISPATCH')
+                AND from_location_id IS NOT NULL AND to_location_id IS NULL)
+            OR (movement_type = 'TRANSFER'
+                AND from_location_id IS NOT NULL AND to_location_id IS NOT NULL
+                AND from_location_id <> to_location_id)
+        ) NOT VALID;
     BEGIN
         ALTER TABLE inventory_movements
             ADD CONSTRAINT inventory_movements_ledger_fields_check

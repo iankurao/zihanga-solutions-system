@@ -23,7 +23,7 @@
         <div class="trace-field trace-field-ref">
           <label for="traceRef">Record ID</label>
           <input id="traceRef" name="ref" type="text" list="traceSuggestions" autocomplete="off"
-                 placeholder="WL-2026-00001, BSF-2026-00001, LOT-2026-00001…" required>
+                 placeholder="WL-2026-00001, BSF-2026-00001, LOT-2026-00001, DEL-2026-00001…" required>
           <datalist id="traceSuggestions"></datalist>
         </div>
         <div class="trace-field">
@@ -36,6 +36,8 @@
             <option value="harvest">Harvest</option>
             <option value="drying_batch">Drying Batch</option>
             <option value="product_lot">Product Lot</option>
+            <option value="customer_order">Customer Order</option>
+            <option value="delivery">Delivery</option>
           </select>
         </div>
         <button type="submit"><i class="fas fa-route"></i> Trace</button>

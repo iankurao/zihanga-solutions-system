@@ -103,6 +103,15 @@ instead of scanning `hatchery_feeding`.
   stock per inventory location. Linked records at locations the caller cannot
   access are returned as `restricted` with no identifiers or quantities.
   Do not use the legacy `traceability_nodes/edges` tables.
+- **Customer orders** (`/orders`, `migrations/orders_deliveries.sql`): Customer
+  Order → lines → allocations (a Product Lot at an inventory location) →
+  deliveries. An allocation reserves stock without moving it; manual
+  movements cannot take reserved stock. Dispatching posts one `DISPATCH`
+  inventory movement per delivery line; confirming a delivery only records
+  receipt. Cancelling (only before any dispatch) or releasing an allocation
+  returns the undelivered quantity. Orders are visible to farm/organization
+  users only. The legacy `sales` and `deliveries` tables are history and are
+  not linked to stock — do not build on them.
 
 ### 1. Python Environment
 Replit manages Python packages via `uv` and the `.pythonlibs/` environment. All required packages are declared in `pyproject.toml`. On a fresh import, install them before starting the workflow; `run.sh` adds `.pythonlibs/bin/` to PATH for the server.

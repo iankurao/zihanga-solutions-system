@@ -82,7 +82,7 @@ document.addEventListener('DOMContentLoaded', function () {
     text('lotOnHand', kg(inventory.on_hand_kg) + ' on hand');
     fillTable('lotBalanceRows', 'lotBalanceEmpty', inventory.balances, function (item) {
       return [place(item.location_code, item.location_name), item.facility_name,
-        kg(item.quantity_kg), when(item.last_movement_at)];
+        kg(item.quantity_kg), kg(item.reserved_kg), kg(item.free_kg), when(item.last_movement_at)];
     });
     fillTable('lotMovementRows', 'lotMovementEmpty', inventory.movements, function (item) {
       return [item.business_id, item.movement_type, kg(item.quantity_kg),
