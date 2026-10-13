@@ -363,3 +363,11 @@ gunicorn \
   `/api/locations/record-links` is super-admin only.
 - Drying may happen at another facility or site of the same farm as the
   harvest; cross-farm drying is rejected.
+- **Operations dashboard** (`/operations`, `GET /api/dashboard?days=7|30|90&farm_id=&facility_id=`):
+  live KPIs (batches, harvested, dried, QC pending, free/reserved/blocked
+  stock, open/overdue orders, deliveries, alerts), material flow, daily or
+  weekly output trend, production pipeline and top open alerts. Uses the
+  report scoping (`_ReportQuery`); `commercial` is `null` for users without
+  farm-level access. Charts are plain SVG drawn at container width; colours
+  validated with the dataviz palette checker, with legends, direct labels
+  and table views.

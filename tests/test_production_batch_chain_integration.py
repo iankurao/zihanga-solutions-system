@@ -2765,6 +2765,81 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(len(catalog), 12)
         self.assertEqual(self.client.get("/analytics").status_code, 200)
 
+    # ---- Operations dashboard ----------------------------------------------------
+
+    def _make_chain_recent(self):
+        """The chain fixtures use fixed dates; move them into the last week."""
+        for statement in (
+            "UPDATE waste_lots SET collection_date = CURRENT_DATE - 2 WHERE farm_id = %s",
+            "UPDATE substrate_batches SET preparation_date = CURRENT_DATE - 2 WHERE farm_id = %s",
+            "UPDATE production_events SET occurred_at = now() - interval '1 day' WHERE farm_id = %s",
+            """UPDATE drying_outputs SET output_date = now() - interval '1 day'
+               WHERE drying_batch_id IN (SELECT id FROM drying_batches WHERE farm_id = %s)""",
+            "UPDATE drying_batches SET drying_date = CURRENT_DATE - 1 WHERE farm_id = %s",
+            "UPDATE product_lots SET production_date = CURRENT_DATE - 1 WHERE farm_id = %s",
+            "UPDATE inventory_movements SET occurred_at = now() - interval '1 hour' WHERE farm_id = %s",
+        ):
+            db.execute_query(statement, (self.farm_id,))
+
+    def _dashboard(self, **params):
+        params.setdefault("days", 7)
+        params.setdefault("farm_id", self.farm_id)
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        response = self.client.get(f"/api/dashboard?{query}")
+        self.assertEqual(response.status_code, 200, response.get_json())
+        return response.get_json()["data"]
+
+    def test_dashboard_reflects_the_chain(self):
+        lot, order = self._sold_lot()
+        self._make_chain_recent()
+        data = self._dashboard()
+        k = data["kpis"]
+        self.assertAlmostEqual(k["harvested_kg"], 1.5)
+        self.assertAlmostEqual(k["dried_kg"], 0.6)
+        self.assertAlmostEqual(k["released_kg"], 0.6)
+        self.assertAlmostEqual(k["stock_on_hand_kg"], 0.4)
+        self.assertAlmostEqual(k["stock_available_kg"], 0.4)
+        self.assertAlmostEqual(k["substrate_available_kg"], 4.0)
+        self.assertEqual(k["ready_for_harvest"], 1)
+        flow = {f["stage"]: f["kg"] for f in data["flow"]}
+        self.assertAlmostEqual(flow["Waste received"], 10.0)
+        self.assertAlmostEqual(flow["Dispatched"], 0.2)
+        self.assertEqual(len(data["trend"]["buckets"]), 7)
+        self.assertFalse(data["trend"]["weekly"])
+        sums = {s["name"]: sum(s["values"]) for s in data["trend"]["series"]}
+        self.assertAlmostEqual(sums["Harvested (wet)"], 1.5)
+        self.assertAlmostEqual(sums["Dispatched"], 0.2)
+        commercial = data["commercial"]
+        self.assertEqual(commercial["open_orders"], 1)
+        self.assertAlmostEqual(commercial["outstanding_kg"], 0.1)
+        self.assertEqual(commercial["in_transit"], 1)
+        self.assertTrue(self._dashboard(days=90)["trend"]["weekly"])
+
+        by_facility = self._dashboard(days=7, facility_id=self.facility_id)
+        self.assertAlmostEqual(by_facility["kpis"]["harvested_kg"], 1.5)
+
+    def test_dashboard_scope_and_validation(self):
+        self._sold_lot()
+        self._make_chain_recent()
+        outsider = self._create_db_user(farm_access=False)
+        facility_only = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (facility_only.id, self.facility_id),
+        )
+        with self._as(outsider):
+            nothing = self._dashboard()
+        with self._as(facility_only):
+            ops_only = self._dashboard()
+        self.assertEqual(nothing["kpis"]["harvested_kg"], 0)
+        self.assertEqual(nothing["kpis"]["stock_on_hand_kg"], 0)
+        self.assertIsNone(nothing["commercial"])
+        self.assertAlmostEqual(ops_only["kpis"]["harvested_kg"], 1.5)
+        self.assertIsNone(ops_only["commercial"])
+        self.assertEqual(self.client.get("/api/dashboard?days=12").status_code, 400)
+        self.assertEqual(self.client.get("/api/dashboard?farm_id=abc").status_code, 400)
+        self.assertEqual(self.client.get("/operations").status_code, 200)
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(
