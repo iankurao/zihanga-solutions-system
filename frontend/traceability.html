@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traceability | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/batch-360.css">
+  <link rel="stylesheet" href="/css/traceability.css">
+</head>
+<body class="b360-page">
+  <header class="b360-topbar">
+    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
+    <div class="b360-topbar-title">
+      <p class="b360-eyebrow">PHASE ONE · TRACEABILITY</p>
+      <h1>Trace any record</h1>
+    </div>
+  </header>
+
+  <main class="b360-main">
+    <section class="b360-card trace-search">
+      <form id="traceForm" class="trace-form">
+        <div class="trace-field trace-field-ref">
+          <label for="traceRef">Record ID</label>
+          <input id="traceRef" name="ref" type="text" list="traceSuggestions" autocomplete="off"
+                 placeholder="WL-2026-00001, BSF-2026-00001, LOT-2026-00001…" required>
+          <datalist id="traceSuggestions"></datalist>
+        </div>
+        <div class="trace-field">
+          <label for="traceType">Record type</label>
+          <select id="traceType" name="type">
+            <option value="">Any type</option>
+            <option value="waste_lot">Waste Lot</option>
+            <option value="substrate_batch">Substrate Batch</option>
+            <option value="production_batch">Production Batch</option>
+            <option value="harvest">Harvest</option>
+            <option value="drying_batch">Drying Batch</option>
+            <option value="product_lot">Product Lot</option>
+          </select>
+        </div>
+        <button type="submit"><i class="fas fa-route"></i> Trace</button>
+      </form>
+      <p class="trace-hint">Search by business ID or batch code. Choose a type to trace a numeric database ID.</p>
+      <p id="traceMessage" class="b360-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="traceResult" hidden>
+      <section class="b360-card trace-summary" aria-labelledby="traceRootRef">
+        <div class="trace-summary-head">
+          <div>
+            <p class="b360-eyebrow" id="traceRootType">—</p>
+            <h2 id="traceRootRef">—</h2>
+            <p id="traceRootTitle" class="trace-root-title">—</p>
+          </div>
+          <div class="trace-summary-side">
+            <span id="traceRootStatus" class="b360-pill">—</span>
+            <a id="traceRootLink" class="trace-open" hidden>Open record <i class="fas fa-arrow-right"></i></a>
+          </div>
+        </div>
+        <dl id="traceRootFacts" class="b360-facts"></dl>
+        <p id="traceCounts" class="trace-counts"></p>
+      </section>
+
+      <section class="b360-card">
+        <div class="trace-flow-head">
+          <h3><span><i class="fas fa-diagram-project"></i></span> Chain of custody</h3>
+          <ul class="trace-legend" aria-label="Legend">
+            <li><i class="trace-swatch is-upstream"></i> Upstream source</li>
+            <li><i class="trace-swatch is-root"></i> Selected record</li>
+            <li><i class="trace-swatch is-downstream"></i> Downstream output</li>
+          </ul>
+        </div>
+        <p id="traceTruncated" class="b360-note" hidden>
+          This record links to a very large number of others; only the first 300 are shown.
+        </p>
+        <div id="traceFlow" class="trace-flow"></div>
+        <p class="trace-hint">Select any card to trace from that record. Links come only from stored database relationships.</p>
+      </section>
+
+      <section class="b360-card">
+        <h3><span><i class="fas fa-link"></i></span> Recorded links</h3>
+        <div id="traceEdges"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/traceability.js"></script>
+</body>
+</html>

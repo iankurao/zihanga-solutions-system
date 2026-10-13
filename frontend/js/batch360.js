@@ -405,6 +405,11 @@ document.addEventListener('DOMContentLoaded', function () {
       chain.appendChild(item);
     });
     target.appendChild(chain);
+    var full = el('a', 'b360-link', 'Open full traceability for ' + data.batch.business_id + ' →');
+    full.href = '/traceability?ref=' + encodeURIComponent(data.batch.business_id) + '&type=production_batch';
+    var line = el('p', 'b360-direction');
+    line.appendChild(full);
+    target.appendChild(line);
   }
 
   function renderAudit(data) {

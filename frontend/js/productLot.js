@@ -174,6 +174,8 @@ document.addEventListener('DOMContentLoaded', function () {
     status.textContent = lot.status;
     status.className = 'lot-status lot-status-' + String(lot.status).toLowerCase();
     renderTrace(lot);
+    document.getElementById('lotTraceLink').href =
+      '/traceability?ref=' + encodeURIComponent(lot.business_id) + '&type=product_lot';
     renderInventory(lot);
     loadMovementLocations(lot);
     content.hidden = false;

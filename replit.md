@@ -96,6 +96,13 @@ instead of scanning `hatchery_feeding`.
   audit trail — built only from stored relationships. A drying batch fed by
   several production batches is flagged as shared; its output is never split
   or estimated per batch.
+- **Traceability** (`/traceability`, `GET /api/traceability?ref=…&type=…`,
+  `GET /api/traceability/search?q=…`): trace any Waste Lot, Substrate Batch,
+  Production Batch, Harvest, Drying Batch or Product Lot. Upstream follows
+  stored edges backwards only and downstream forwards only, ending at current
+  stock per inventory location. Linked records at locations the caller cannot
+  access are returned as `restricted` with no identifiers or quantities.
+  Do not use the legacy `traceability_nodes/edges` tables.
 
 ### 1. Python Environment
 Replit manages Python packages via `uv` and the `.pythonlibs/` environment. All required packages are declared in `pyproject.toml`. On a fresh import, install them before starting the workflow; `run.sh` adds `.pythonlibs/bin/` to PATH for the server.

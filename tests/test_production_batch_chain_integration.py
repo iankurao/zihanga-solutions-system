@@ -408,7 +408,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                     (self.marker,),
                 )
                 cursor.execute("DELETE FROM inventory_locations WHERE farm_id = %s", (self.farm_id,))
-                cursor.execute("DELETE FROM facilities WHERE id = %s", (self.facility_id,))
+                cursor.execute("DELETE FROM facilities WHERE site_id = %s", (self.site_id,))
                 cursor.execute("DELETE FROM sites WHERE id = %s", (self.site_id,))
                 cursor.execute("DELETE FROM farms WHERE id = %s", (self.farm_id,))
                 cursor.execute(
@@ -1625,37 +1625,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/batch-360").status_code, 200)
 
     def test_shared_drying_batch_is_flagged_not_split(self):
-        first_substrate = self._create_substrate(quantity="4.000")
-        second_substrate = self._create_substrate(quantity="4.000")
-        batches = []
-        for substrate_id in (first_substrate, second_substrate):
-            created = self._create_production(
-                substrate_id, quantity="2.000", harvest_limit_kg="2.000"
-            )
-            self.assertEqual(created.status_code, 201, created.get_json())
-            batch = created.get_json()["record"]
-            self._move_to_harvest_ready(batch)
-            harvest = self._harvest(batch, wet_weight="1.000")
-            self.assertEqual(harvest.status_code, 201, harvest.get_json())
-            batches.append((batch, harvest.get_json()["harvest"]["id"]))
-
-        drying = self.client.post(
-            "/api/drying/batches",
-            json={
-                "batch_code": f"shared-{uuid4().hex[:15]}",
-                "drying_date": "2026-09-25",
-                "drying_method": "sun_drying",
-                "personnel": self.actor,
-                "farm_id": self.farm_id,
-                "site_id": self.site_id,
-                "facility_id": self.facility_id,
-                "inputs": [
-                    {"harvest_id": batches[0][1], "quantity": "0.800", "unit": "kg"},
-                    {"harvest_id": batches[1][1], "quantity": "0.400", "unit": "kg"},
-                ],
-            },
-        )
-        self.assertEqual(drying.status_code, 201, drying.get_json())
+        batches, _drying = self._shared_drying()
 
         data = self._get_360(batches[0][0]["business_id"]).get_json()["data"]
         row = data["processing"]["drying_batches"][0]
@@ -1688,6 +1658,151 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         )
         self.assertEqual([None if r["larvae_weight"] is None else float(r["larvae_weight"])
                           for r in weights], [31.0, None])
+
+    # ---- Traceability ---------------------------------------------------------
+
+    def _trace(self, ref, record_type=None):
+        url = f"/api/traceability?ref={ref}"
+        if record_type:
+            url += f"&type={record_type}"
+        return self.client.get(url)
+
+    @staticmethod
+    def _trace_nodes(data, direction=None):
+        return {
+            (node["type"], node.get("id")): node
+            for stage in data["stages"] for node in stage["nodes"]
+            if direction is None or node.get("direction") == direction
+        }
+
+    def _shared_drying(self):
+        batches = []
+        for _ in range(2):
+            substrate_id = self._create_substrate(quantity="4.000")
+            created = self._create_production(
+                substrate_id, quantity="2.000", harvest_limit_kg="2.000"
+            )
+            self.assertEqual(created.status_code, 201, created.get_json())
+            batch = created.get_json()["record"]
+            self._move_to_harvest_ready(batch)
+            harvest = self._harvest(batch, wet_weight="1.000")
+            self.assertEqual(harvest.status_code, 201, harvest.get_json())
+            batches.append((batch, harvest.get_json()["harvest"]["id"]))
+        drying = self.client.post(
+            "/api/drying/batches",
+            json={
+                "batch_code": f"shared-{uuid4().hex[:15]}",
+                "drying_date": "2026-09-25",
+                "drying_method": "sun_drying",
+                "personnel": self.actor,
+                "farm_id": self.farm_id,
+                "site_id": self.site_id,
+                "facility_id": self.facility_id,
+                "inputs": [
+                    {"harvest_id": batches[0][1], "quantity": "0.800", "unit": "kg"},
+                    {"harvest_id": batches[1][1], "quantity": "0.400", "unit": "kg"},
+                ],
+            },
+        )
+        self.assertEqual(drying.status_code, 201, drying.get_json())
+        return batches, drying.get_json()["data"]
+
+    def test_trace_reaches_waste_from_product_and_stock_from_waste(self):
+        lot = self._release_lot()
+        response = self._trace(lot["business_id"].lower())
+        self.assertEqual(response.status_code, 200, response.get_json())
+        data = response.get_json()["data"]
+        self.assertEqual((data["root"]["type"], data["root"]["id"]), ("product_lot", lot["id"]))
+        upstream = self._trace_nodes(data, "upstream")
+        self.assertIn(("waste_lot", self.waste_lot_id), upstream)
+        self.assertEqual(
+            {kind for kind, _ in upstream},
+            {"waste_lot", "substrate_batch", "production_batch", "harvest", "drying_batch"},
+        )
+        downstream = self._trace_nodes(data, "downstream")
+        self.assertEqual(list(downstream), [("inventory_location", self.inventory_location_id)])
+        stock_edge = next(e for e in data["edges"] if e["to"].startswith("inventory_location:"))
+        self.assertAlmostEqual(stock_edge["quantity"], 0.6)
+        self.assertEqual(data["counts"]["restricted"], 0)
+        self.assertFalse(data["commercial"]["linked"])
+
+        waste_ref = db.fetch_one(
+            "SELECT business_id FROM waste_lots WHERE id = %s", (self.waste_lot_id,)
+        )["business_id"]
+        from_waste = self._trace(waste_ref).get_json()["data"]
+        self.assertEqual(from_waste["counts"]["upstream"], 0)
+        downstream = self._trace_nodes(from_waste, "downstream")
+        self.assertIn(("product_lot", lot["id"]), downstream)
+        self.assertIn(("inventory_location", self.inventory_location_id), downstream)
+
+    def test_trace_follows_direction_without_pulling_in_sibling_batches(self):
+        batches, drying = self._shared_drying()
+        (first, _), (second, _) = batches
+        data = self._trace(first["business_id"]).get_json()["data"]
+        nodes = self._trace_nodes(data)
+        self.assertIn(("drying_batch", drying["id"]), nodes)
+        self.assertNotIn(("production_batch", second["id"]), nodes)
+
+        from_drying = self._trace(drying["business_id"], "drying_batch").get_json()["data"]
+        upstream = self._trace_nodes(from_drying, "upstream")
+        self.assertIn(("production_batch", first["id"]), upstream)
+        self.assertIn(("production_batch", second["id"]), upstream)
+
+    def test_trace_errors_scope_and_search(self):
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        self.assertEqual(self._trace("NOPE-0000-1").status_code, 404)
+        self.assertEqual(self._trace(str(batch["id"])).status_code, 400)
+        self.assertEqual(self._trace(str(batch["id"]), "production_batch").status_code, 200)
+        self.assertEqual(self._trace(batch["business_id"], "warehouse").status_code, 400)
+        self.assertEqual(self.client.get("/traceability").status_code, 200)
+
+        outsider = self._create_db_user(farm_access=False)
+        member = self._create_db_user()
+        prefix = batch["business_id"][:9]
+        with self._as(outsider):
+            denied = self._trace(batch["business_id"])
+            outsider_search = self.client.get(f"/api/traceability/search?q={prefix}")
+        with self._as(member):
+            allowed = self._trace(batch["business_id"])
+            member_search = self.client.get(f"/api/traceability/search?q={prefix}")
+        self.assertEqual(denied.status_code, 403, denied.get_json())
+        self.assertEqual(allowed.status_code, 200, allowed.get_json())
+        self.assertNotIn(batch["business_id"], [r["ref"] for r in outsider_search.get_json()["data"]])
+        self.assertIn(batch["business_id"], [r["ref"] for r in member_search.get_json()["data"]])
+
+    def test_trace_redacts_records_at_locations_the_user_cannot_access(self):
+        lot = self._release_lot()
+        other_facility = db.execute_returning(
+            """
+            INSERT INTO facilities (site_id, facility_code, name, facility_type)
+            VALUES (%s, %s, 'Remote store', 'warehouse') RETURNING id
+            """,
+            (self.site_id, f"r{uuid4().hex[:10]}"),
+        )["id"]
+        remote = self._add_inventory_location("REMOTE", facility_id=other_facility)
+        moved = self._move(
+            lot, "TRANSFER", "0.200",
+            from_location_id=self.inventory_location_id, to_location_id=remote,
+        )
+        self.assertEqual(moved.status_code, 201, moved.get_json())
+
+        user = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (user.id, self.facility_id),
+        )
+        with self._as(user):
+            response = self._trace(lot["business_id"])
+        self.assertEqual(response.status_code, 200, response.get_json())
+        data = response.get_json()["data"]
+        hidden = self._trace_nodes(data).get(("inventory_location", None))
+        self.assertIsNotNone(hidden)
+        self.assertTrue(hidden["restricted"])
+        self.assertNotIn("ref", hidden)
+        self.assertEqual(data["counts"]["restricted"], 1)
+        remote_edge = next(e for e in data["edges"] if e["to"] == f"inventory_location:{remote}")
+        self.assertIsNone(remote_edge["quantity"])
 
 
 def lot_release_approval_id(lot):
