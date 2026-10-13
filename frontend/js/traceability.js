@@ -48,6 +48,11 @@ document.addEventListener('DOMContentLoaded', function () {
     var link = document.getElementById('traceRootLink');
     link.hidden = !root.href;
     if (root.href) link.href = root.href;
+    // Orders and deliveries are not physical items, so they get no label.
+    var labelLink = document.getElementById('traceLabelLink');
+    var labelled = ['customer_order', 'delivery'].indexOf(root.type) === -1;
+    labelLink.hidden = !labelled;
+    if (labelled) labelLink.href = '/labels?type=' + root.type + '&ref=' + encodeURIComponent(root.ref);
 
     var facts = document.getElementById('traceRootFacts');
     facts.textContent = '';

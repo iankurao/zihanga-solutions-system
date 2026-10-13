@@ -385,3 +385,15 @@ gunicorn \
   harvest forms that post to the existing production-event APIs. The landing
   page's Farmer Portal button signs in to `/login?next=/farmer`; `next` only
   accepts same-site paths.
+- **QR labels** (`/labels`, `GET /api/labels`, `GET /api/labels/<type>?q=|refs=`,
+  `/scan/<type>/<ID>`): printable 50×30 mm or 100×60 mm labels for waste
+  lots, substrate batches, production batches, harvests, drying batches,
+  product lots and production units. The QR encodes only the scan link
+  (`PUBLIC_BASE_URL` + `/scan/...`, falling back to the request host), never
+  customer or price data. Scanning requires sign-in and the normal scope
+  check; hidden and unknown IDs get the same "label not available" page
+  (404). Production batches open Batch 360, product lots open the lot page,
+  units open their current batch (or the farmer portal when empty), other
+  types open Traceability. QR codes are drawn in the browser with
+  qrcode-generator 1.4.4 (cdnjs). "Print QR label" links are on Batch 360,
+  Product Lot and Traceability.

@@ -2971,6 +2971,96 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertTrue(to_evil.headers["Location"].endswith("/dashboard"))
         self.assertTrue(to_backslash.headers["Location"].endswith("/dashboard"))
 
+    # ---- QR labels and scanning ----------------------------------------------------
+
+    def _chain_refs(self):
+        lot = self._release_lot()
+        detail = self.client.get(f"/api/product-lots/{lot['business_id']}").get_json()["data"]
+        line = detail["source_chain"][0]
+        return {
+            "product_lot": lot["business_id"],
+            "production_batch": line["production_batch_business_id"],
+            "substrate_batch": line["substrate_batch_business_id"],
+            "waste_lot": line["waste_lot_business_id"],
+            "harvest": line["harvest_code"],
+            "drying_batch": detail["source_drying_batch"]["business_id"],
+        }
+
+    def test_scanning_opens_the_right_page(self):
+        refs = self._chain_refs()
+        expected = {
+            "production_batch": f"/batch-360?ref={refs['production_batch']}",
+            "product_lot": f"/product-lot?ref={refs['product_lot']}",
+            "waste_lot": f"/traceability?ref={refs['waste_lot']}&type=waste_lot",
+            "substrate_batch": f"/traceability?ref={refs['substrate_batch']}&type=substrate_batch",
+            "harvest": f"/traceability?ref={refs['harvest']}&type=harvest",
+            "drying_batch": f"/traceability?ref={refs['drying_batch']}&type=drying_batch",
+        }
+        for kind, target in expected.items():
+            response = self.client.get(f"/scan/{kind}/{refs[kind].lower()}")
+            self.assertEqual(response.status_code, 302, kind)
+            self.assertTrue(response.headers["Location"].endswith(target), (kind, response.headers["Location"]))
+
+        occupied = self._unit("POD-Q").get_json()["data"]
+        empty = self._unit("POD-E").get_json()["data"]
+        batch_ref = refs["production_batch"]
+        db.execute_query(
+            "UPDATE production_batches SET status = 'ACTIVE' WHERE business_id = %s", (batch_ref,)
+        )
+        assigned = self.client.post(f"/api/production/batches/{batch_ref}/units",
+                                    json={"unit_ids": [occupied["id"]]})
+        self.assertEqual(assigned.status_code, 201, assigned.get_json())
+        self.assertTrue(self.client.get("/scan/production_unit/POD-Q").headers["Location"]
+                        .endswith(f"/batch-360?ref={batch_ref}"))
+        self.assertTrue(self.client.get(f"/scan/production_unit/{empty['unit_code']}").headers["Location"]
+                        .endswith("/farmer"))
+
+        missing = self.client.get("/scan/product_lot/<script>alert(1)</script>")
+        self.assertEqual(missing.status_code, 404)
+        body = missing.get_data(as_text=True)
+        self.assertIn("&lt;script&gt;", body)
+        self.assertNotIn("<script>alert(1)</script>", body)
+        self.assertEqual(self.client.get("/scan/customer/abc").status_code, 404)
+
+    def test_scanning_needs_sign_in_and_access(self):
+        refs = self._chain_refs()
+        outsider = self._create_db_user(farm_access=False)
+        with self._as(outsider):
+            hidden = self.client.get(f"/scan/production_batch/{refs['production_batch']}")
+            unknown = self.client.get("/scan/production_batch/BSF-0000-99999")
+        self.assertEqual((hidden.status_code, unknown.status_code), (404, 404))
+        # Same page whether the record is hidden or missing.
+        self.assertEqual(
+            hidden.get_data(as_text=True).replace(refs["production_batch"], "X"),
+            unknown.get_data(as_text=True).replace("BSF-0000-99999", "X"),
+        )
+        anonymous = SimpleNamespace(is_authenticated=False, is_active=False, is_anonymous=True,
+                                    get_id=lambda: None)
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), \
+                patch("flask_login.utils._get_user", lambda: anonymous):
+            signed_out = self.client.get(f"/scan/product_lot/{refs['product_lot']}")
+        self.assertEqual(signed_out.status_code, 302)
+        self.assertIn("/login?next=", signed_out.headers["Location"])
+        self.assertIn("scan", signed_out.headers["Location"])
+
+    def test_label_data_is_scoped_and_holds_only_links(self):
+        refs = self._chain_refs()
+        with patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://farm.example"}):
+            data = self.client.get(f"/api/labels/product_lot?refs={refs['product_lot']}").get_json()["data"]
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["scan_url"], f"https://farm.example/scan/product_lot/{refs['product_lot']}")
+        # Labels carry only identity text and the scan link - no customer or order details.
+        self.assertEqual(set(data[0]), {"id", "ref", "kind", "line1", "line2", "farm", "sort_date", "scan_url"})
+        searched = self.client.get(f"/api/labels/production_batch?q={refs['production_batch'][:8]}").get_json()["data"]
+        self.assertIn(refs["production_batch"], [row["ref"] for row in searched])
+        outsider = self._create_db_user(farm_access=False)
+        with self._as(outsider):
+            self.assertEqual(
+                self.client.get(f"/api/labels/product_lot?refs={refs['product_lot']}").get_json()["data"], [])
+        self.assertEqual(self.client.get("/api/labels/customer").status_code, 404)
+        self.assertEqual(len(self.client.get("/api/labels").get_json()["data"]), 7)
+        self.assertEqual(self.client.get("/labels").status_code, 200)
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(

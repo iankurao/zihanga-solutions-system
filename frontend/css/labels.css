@@ -1,0 +1,153 @@
+/* QR label printing. Sizes are physical (mm) so prints match label stock. */
+
+.label-choices {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 260px;
+  margin-top: 0.8rem;
+  overflow-y: auto;
+}
+
+.label-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.label-choice strong {
+  white-space: nowrap;
+}
+
+.label-choice small {
+  color: var(--muted);
+}
+
+.label-sheet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4mm;
+  margin-top: 1.1rem;
+}
+
+.qr-label {
+  display: flex;
+  gap: 2.5mm;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 2mm;
+  border: 0.3mm solid #222;
+  border-radius: 1.5mm;
+  color: #000;
+  background: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.qr-label svg {
+  flex: none;
+}
+
+.qr-label-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.qr-label-text strong {
+  font-size: 9pt;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.qr-label-text span {
+  overflow: hidden;
+  font-size: 6.5pt;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.qr-label-text .qr-kind {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.qr-label.is-small {
+  width: 50mm;
+  height: 30mm;
+}
+
+.qr-label.is-small svg {
+  width: 22mm;
+  height: 22mm;
+  align-self: center;
+}
+
+.qr-label.is-small .qr-label-text strong {
+  font-size: 7.5pt;
+  letter-spacing: 0;
+}
+
+.qr-label.is-small .qr-label-text span {
+  display: -webkit-box;
+  font-size: 5.8pt;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.qr-label.is-small .qr-label-text .qr-kind {
+  display: block;
+}
+
+.qr-label.is-large {
+  width: 100mm;
+  height: 60mm;
+  padding: 4mm;
+  gap: 5mm;
+}
+
+.qr-label.is-large svg {
+  width: 52mm;
+  height: 52mm;
+}
+
+.qr-label.is-large .qr-label-text strong {
+  font-size: 15pt;
+}
+
+.qr-label.is-large .qr-label-text span {
+  font-size: 9.5pt;
+  white-space: normal;
+}
+
+@media print {
+  @page {
+    margin: 8mm;
+  }
+
+  .no-print,
+  .znc-bell,
+  .znc-panel {
+    display: none !important;
+  }
+
+  .b360-page {
+    background: #fff;
+  }
+
+  .b360-main {
+    width: auto;
+    margin: 0;
+  }
+
+  .label-sheet {
+    margin: 0;
+  }
+}

@@ -126,6 +126,8 @@ document.addEventListener('DOMContentLoaded', function () {
     setText('b360Started', day(batch.started_at || batch.start_date));
     setText('b360Age', batch.age_days == null ? '—' : batch.age_days + (batch.age_days === 1 ? ' day' : ' days'));
     document.title = (batch.business_id || 'Batch') + ' · Batch 360 | Zehunger';
+    document.getElementById('b360LabelLink').href =
+      '/labels?type=production_batch&ref=' + encodeURIComponent(batch.business_id || batch.id);
     document.getElementById('b360OperationalLink').href =
       '/production_batch.html?batch=' + encodeURIComponent(batch.business_id || batch.id);
 
