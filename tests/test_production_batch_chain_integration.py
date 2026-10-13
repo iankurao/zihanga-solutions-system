@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - dependency supplied by the app
     psycopg2 = None
 
 from backend.database import DatabaseConnection
+from backend import notifications
 
 with patch.object(
     DatabaseConnection,
@@ -2347,6 +2348,201 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertGreaterEqual(summary["open"], 1)
         self.assertEqual(self.client.get("/alerts").status_code, 200)
 
+    # ---- Notifications -----------------------------------------------------------
+
+    def _notifications_for(self, user):
+        return db.fetch_all(
+            "SELECT kind, severity, title, read_at FROM notifications WHERE user_id = %s ORDER BY id",
+            (user.id,),
+        )
+
+    def _overdue_batch(self, days):
+        created = self._create_production(self._create_substrate()).get_json()["record"]
+        self._set_expected(created, days)
+        return created
+
+    def _set_expected(self, batch, days_ago):
+        db.execute_query(
+            "UPDATE production_batches SET expected_harvest_at = now() - make_interval(days => %s) WHERE id = %s",
+            (days_ago, batch["id"]),
+        )
+
+    def test_alert_notifications_reach_the_right_people_once(self):
+        farm_user = self._create_db_user()
+        facility_user = self._create_db_user(farm_access=False)
+        db.execute_query(
+            "INSERT INTO user_facility_access (user_id, facility_id) VALUES (%s, %s)",
+            (facility_user.id, self.facility_id),
+        )
+        outsider = self._create_db_user(farm_access=False)
+        critical_only = self._create_db_user()
+        db.execute_query(
+            "INSERT INTO notification_preferences (user_id, in_app_min_severity) VALUES (%s, 'critical')",
+            (critical_only.id,),
+        )
+        batch = self._overdue_batch(1)
+        self._alerts()
+
+        self.assertEqual([n["kind"] for n in self._notifications_for(farm_user)], ["alert_opened"])
+        self.assertEqual([n["severity"] for n in self._notifications_for(facility_user)], ["warning"])
+        self.assertEqual(self._notifications_for(outsider), [])
+        self.assertEqual(self._notifications_for(critical_only), [])
+
+        self._set_expected(batch, 4)
+        self._alerts()
+        self._alerts()  # re-evaluating must not repeat notifications
+        self.assertEqual(
+            [(n["kind"], n["severity"]) for n in self._notifications_for(farm_user)],
+            [("alert_opened", "warning"), ("alert_escalated", "critical")],
+        )
+        self.assertEqual(
+            [n["kind"] for n in self._notifications_for(critical_only)], ["alert_escalated"]
+        )
+
+        alert = self._by_rule(self._alerts(), "harvest_overdue")[0]
+        self.client.post(f"/api/alerts/{alert['id']}/snooze", json={"hours": 4})
+        db.execute_query(
+            "UPDATE operational_alerts SET snoozed_until = now() - interval '1 minute' WHERE id = %s",
+            (alert["id"],),
+        )
+        self._alerts()
+        self.assertEqual(self._notifications_for(farm_user)[-1]["kind"], "alert_reminder")
+
+        with self._as(farm_user):
+            inbox = self.client.get("/api/notifications").get_json()
+            count = self.client.get("/api/notifications/unread-count").get_json()
+            first_id = inbox["data"][0]["id"]
+            read = self.client.post(f"/api/notifications/{first_id}/read")
+            after = self.client.get("/api/notifications/unread-count").get_json()
+            all_read = self.client.post("/api/notifications/read-all").get_json()
+        self.assertEqual(inbox["unread"], 3)
+        self.assertTrue(inbox["data"][0]["title"].startswith("Snooze ended"))
+        self.assertEqual(inbox["data"][0]["href"], f"/batch-360?ref={batch['business_id']}")
+        self.assertEqual((count["unread"], count["critical"]), (3, 2))
+        self.assertEqual(read.status_code, 200)
+        self.assertEqual(after["unread"], 2)
+        self.assertEqual(all_read["updated"], 2)
+        with self._as(outsider):
+            stolen = self.client.post(f"/api/notifications/{first_id}/read")
+            self.assertEqual(self.client.get("/api/notifications").get_json()["data"], [])
+        self.assertEqual(stolen.status_code, 404)
+
+    def test_email_outbox_retries_and_redacts_errors(self):
+        channel = _FakeEmailChannel(fail_times=1)
+        farm_user = self._create_db_user()
+        db.execute_query(
+            "INSERT INTO notification_preferences (user_id, email_min_severity) VALUES (%s, 'warning')",
+            (farm_user.id,),
+        )
+        with patch.object(notifications, "channel_factory", lambda: channel), \
+                patch.object(notifications, "background_delivery_enabled", False):
+            self._overdue_batch(1)
+            self._alerts()
+            outbox = db.fetch_all(
+                "SELECT id, status, recipient FROM notification_outbox WHERE user_id = %s",
+                (farm_user.id,),
+            )
+            self.assertEqual(len(outbox), 1)
+            first = notifications.deliver_pending(db, channel=channel)
+            row = db.fetch_one("SELECT * FROM notification_outbox WHERE id = %s", (outbox[0]["id"],))
+            self.assertEqual((first["retry"], row["status"], row["attempts"]), (1, "PENDING", 1))
+            self.assertIn("temporary failure", row["last_error"])
+            self.assertEqual(notifications.deliver_pending(db, channel=channel)["sent"], 0)  # backing off
+            db.execute_query(
+                "UPDATE notification_outbox SET next_attempt_at = now() WHERE id = %s", (outbox[0]["id"],)
+            )
+            self.assertEqual(notifications.deliver_pending(db, channel=channel)["sent"], 1)
+        row = db.fetch_one("SELECT status, sent_at FROM notification_outbox WHERE id = %s", (outbox[0]["id"],))
+        self.assertEqual(row["status"], "SENT")
+        recipient, subject, body = channel.sent[-1]
+        self.assertEqual(recipient, outbox[0]["recipient"])
+        self.assertIn("[Zehunger WARNING]", subject)
+        self.assertIn("/batch-360?ref=", body)
+
+        broken = _FakeEmailChannel(fail_times=99, error="login failed for secret-pass-123")
+        db.execute_query(
+            """
+            INSERT INTO notification_outbox (user_id, recipient, subject, body)
+            VALUES (%s, 'nobody@example.test', 'x', 'y')
+            """,
+            (farm_user.id,),
+        )
+        with patch.object(notifications.config, "EMAIL_HOST_PASSWORD", "secret-pass-123"):
+            for _ in range(notifications.EMAIL_MAX_ATTEMPTS):
+                db.execute_query(
+                    "UPDATE notification_outbox SET next_attempt_at = now() WHERE status = 'PENDING' AND user_id = %s",
+                    (farm_user.id,),
+                )
+                notifications.deliver_pending(db, channel=broken)
+        failed = db.fetch_one(
+            "SELECT status, attempts, last_error FROM notification_outbox WHERE recipient = 'nobody@example.test'"
+        )
+        self.assertEqual((failed["status"], failed["attempts"]), ("FAILED", notifications.EMAIL_MAX_ATTEMPTS))
+        self.assertNotIn("secret-pass-123", failed["last_error"])
+        self.assertIn("***", failed["last_error"])
+
+    def test_unconfigured_email_keeps_in_app_only(self):
+        farm_user = self._create_db_user()
+        db.execute_query(
+            "INSERT INTO notification_preferences (user_id, email_min_severity) VALUES (%s, 'info')",
+            (farm_user.id,),
+        )
+        unconfigured = _FakeEmailChannel(configured=False)
+        with patch.object(notifications, "channel_factory", lambda: unconfigured):
+            self._overdue_batch(1)
+            self._alerts()
+            stats = notifications.deliver_pending(db)
+        self.assertEqual(len(self._notifications_for(farm_user)), 1)
+        self.assertEqual(
+            db.fetch_one("SELECT COUNT(*) AS n FROM notification_outbox WHERE user_id = %s", (farm_user.id,))["n"],
+            0,
+        )
+        self.assertTrue(stats["skipped_unconfigured"])
+
+    def test_notification_preferences_and_admin_endpoints(self):
+        user = self._create_db_user()
+        admin = self._create_db_user()
+        admin.role = "super_admin"
+        with self._as(user):
+            defaults = self.client.get("/api/notifications/preferences").get_json()["data"]
+            bad = self.client.put("/api/notifications/preferences",
+                                  json={"in_app_min_severity": "loud", "email_min_severity": "off"})
+            good = self.client.put("/api/notifications/preferences",
+                                   json={"in_app_min_severity": "info", "email_min_severity": "off"})
+            status_denied = self.client.get("/api/notifications/email-status")
+            test_denied = self.client.post("/api/notifications/test-email")
+        self.assertEqual((defaults["in_app_min_severity"], defaults["email_min_severity"]), ("warning", "critical"))
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(good.get_json()["data"]["in_app_min_severity"], "info")
+        self.assertEqual((status_denied.status_code, test_denied.status_code), (403, 403))
+        with self._as(admin), patch.object(
+            notifications, "channel_factory", lambda: _FakeEmailChannel(configured=False)
+        ):
+            status = self.client.get("/api/notifications/email-status")
+            test = self.client.post("/api/notifications/test-email")
+        self.assertEqual(status.status_code, 200)
+        self.assertFalse(status.get_json()["data"]["configured"])
+        self.assertEqual(test.status_code, 400)
+        self.assertIn("not configured", test.get_json()["message"])
+
+    def test_scheduled_job_evaluates_alerts_and_sends_email(self):
+        from backend import jobs
+
+        channel = _FakeEmailChannel()
+        farm_user = self._create_db_user()
+        db.execute_query(
+            "INSERT INTO notification_preferences (user_id, email_min_severity) VALUES (%s, 'warning')",
+            (farm_user.id,),
+        )
+        self._overdue_batch(1)
+        db.execute_query("UPDATE operational_alert_sync SET last_run_at = NULL")
+        with patch.object(notifications, "channel_factory", lambda: channel), \
+                patch.object(notifications, "background_delivery_enabled", False):
+            ran, stats = jobs.run_once()
+        self.assertTrue(ran)
+        self.assertGreaterEqual(stats["sent"], 1)
+        self.assertIn(farm_user.username, [r.split("@")[0] for r, _s, _b in channel.sent])
+
 
 def lot_release_approval_id(lot):
     row = db.fetch_one(
@@ -2379,3 +2575,19 @@ def _parse_iso(value):
     from datetime import datetime
 
     return datetime.fromisoformat(value)
+
+
+class _FakeEmailChannel:
+    """Records sends instead of talking to SMTP; can fail a set number of times."""
+
+    def __init__(self, *, configured=True, fail_times=0, error="temporary failure"):
+        self.configured = configured
+        self.fail_times = fail_times
+        self.error = error
+        self.sent = []
+
+    def send(self, recipient, subject, body):
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise ConnectionError(self.error)
+        self.sent.append((recipient, subject, body))

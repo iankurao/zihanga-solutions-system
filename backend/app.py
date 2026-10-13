@@ -11,6 +11,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException
 from backend.init_db import init_database
 from backend.database import DatabaseConnection
+from backend import notifications
 import logging
 from datetime import date, datetime, timedelta, timezone
 import json
@@ -5445,7 +5446,19 @@ def _alert_candidates(cursor):
 
 
 def _sync_alerts(*, force=False):
-    """Reconcile stored alerts with the rules.  Returns True if it ran."""
+    """Reconcile stored alerts with the rules and notify people.
+
+    Returns True if the rules ran.  Notifications are written in the same
+    transaction as the alert changes; queued email is sent afterwards.
+    """
+    ran = _sync_alerts_transaction(force=force)
+    if ran:
+        notifications.kick_background_delivery(db)
+    return ran
+
+
+def _sync_alerts_transaction(*, force=False):
+    email_configured = notifications.channel_factory().configured
     with db.transaction() as cursor:
         cursor.execute(
             "SELECT pg_try_advisory_xact_lock(hashtext('operational_alert_sync')) AS locked"
@@ -5479,13 +5492,19 @@ def _sync_alerts(*, force=False):
                         severity, title, message, entity_ref, href, farm_id, site_id,
                         facility_id, details, alert_key, rule, entity_type, entity_id
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                    RETURNING *
                     """,
                     payload + (key, alert['rule'], alert['entity_type'], alert['entity_id']),
+                )
+                notifications.enqueue_alert_notifications(
+                    cursor, dict(cursor.fetchone()), 'alert_opened',
+                    email_configured=email_configured,
                 )
                 continue
             status = existing['status']
             snoozed_until = existing['snoozed_until']
-            if status == 'SNOOZED' and snoozed_until <= state['now']:
+            snooze_ended = status == 'SNOOZED' and snoozed_until <= state['now']
+            if snooze_ended:
                 status = 'OPEN'
             escalated = ALERT_SEVERITY_RANK[alert['severity']] > ALERT_SEVERITY_RANK[existing['severity']]
             if escalated and status in ('ACKNOWLEDGED', 'SNOOZED'):
@@ -5502,6 +5521,12 @@ def _sync_alerts(*, force=False):
                 """,
                 payload + (status, snoozed_until, existing['id']),
             )
+            if escalated or snooze_ended:
+                notifications.enqueue_alert_notifications(
+                    cursor, {**existing, **alert, 'id': existing['id'], 'status': status},
+                    'alert_escalated' if escalated else 'alert_reminder',
+                    email_configured=email_configured,
+                )
         for existing in active.values():
             cursor.execute(
                 """
@@ -5761,6 +5786,204 @@ def delete_alert_threshold(threshold_id):
             if not cursor.fetchone():
                 raise RecordNotFoundError('Threshold not found')
         return {'data': {'id': threshold_id}}
+    return _alert_response(handler)
+
+
+def _notification_user_id():
+    if not getattr(current_user, 'is_authenticated', False):
+        raise ProductionEventPermissionError('Sign in to see your notifications')
+    return int(current_user.id)
+
+
+@app.route('/api/notifications', methods=['GET'])
+@login_required
+def list_notifications():
+    def handler():
+        user_id = _notification_user_id()
+        try:
+            limit = min(max(int(request.args.get('limit', 20)), 1), 100)
+        except ValueError:
+            raise ValueError('limit must be a number')
+        unread_only = request.args.get('unread') in ('1', 'true')
+        rows = db.fetch_all(
+            f"""
+            SELECT n.id, n.kind, n.severity, n.title, n.body, n.href, n.created_at,
+                   n.read_at, n.alert_id, a.status AS alert_status
+            FROM notifications AS n
+            LEFT JOIN operational_alerts AS a ON a.id = n.alert_id
+            WHERE n.user_id = %s {'AND n.read_at IS NULL' if unread_only else ''}
+            ORDER BY n.created_at DESC, n.id DESC
+            LIMIT %s
+            """,
+            (user_id, limit),
+        )
+        unread = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM notifications WHERE user_id = %s AND read_at IS NULL",
+            (user_id,),
+        )['n']
+        return {'data': _jsonable(rows), 'unread': unread}
+    return _alert_response(handler)
+
+
+@app.route('/api/notifications/unread-count', methods=['GET'])
+@login_required
+def unread_notification_count():
+    def handler():
+        user_id = _notification_user_id()
+        try:
+            _sync_alerts()  # throttled; keeps the bell current without a scheduler
+        except Exception:
+            logger.exception('Alert sync failed while counting notifications')
+        row = db.fetch_one(
+            """
+            SELECT COUNT(*) AS unread,
+                   COUNT(*) FILTER (WHERE severity = 'critical') AS critical
+            FROM notifications WHERE user_id = %s AND read_at IS NULL
+            """,
+            (user_id,),
+        )
+        return {'unread': row['unread'], 'critical': row['critical']}
+    return _alert_response(handler)
+
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@login_required
+def mark_notification_read(notification_id):
+    def handler():
+        row = db.execute_returning(
+            """
+            UPDATE notifications SET read_at = COALESCE(read_at, now())
+            WHERE id = %s AND user_id = %s
+            RETURNING id, read_at
+            """,
+            (notification_id, _notification_user_id()),
+        )
+        if not row:
+            raise RecordNotFoundError('Notification not found')
+        return {'data': _jsonable(dict(row))}
+    return _alert_response(handler)
+
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@login_required
+def mark_all_notifications_read():
+    def handler():
+        with db.transaction() as cursor:
+            cursor.execute(
+                "UPDATE notifications SET read_at = now() WHERE user_id = %s AND read_at IS NULL",
+                (_notification_user_id(),),
+            )
+            return {'updated': cursor.rowcount}
+    return _alert_response(handler)
+
+
+@app.route('/api/notifications/preferences', methods=['GET'])
+@login_required
+def get_notification_preferences():
+    def handler():
+        user_id = _notification_user_id()
+        row = db.fetch_one(
+            "SELECT in_app_min_severity, email_min_severity FROM notification_preferences WHERE user_id = %s",
+            (user_id,),
+        ) or {}
+        return {'data': {
+            'in_app_min_severity': row.get('in_app_min_severity', notifications.DEFAULT_IN_APP_MIN),
+            'email_min_severity': row.get('email_min_severity', notifications.DEFAULT_EMAIL_MIN),
+            'email': getattr(current_user, 'email', None),
+            'email_configured': notifications.channel_factory().configured,
+        }}
+    return _alert_response(handler)
+
+
+@app.route('/api/notifications/preferences', methods=['PUT'])
+@login_required
+def set_notification_preferences():
+    def handler(data):
+        user_id = _notification_user_id()
+        values = {}
+        for field in ('in_app_min_severity', 'email_min_severity'):
+            value = str(data.get(field) or '').strip().lower()
+            if value not in notifications.PREFERENCE_LEVELS:
+                raise ValueError(f"{field} must be one of: {', '.join(notifications.PREFERENCE_LEVELS)}")
+            values[field] = value
+        row = db.execute_returning(
+            """
+            INSERT INTO notification_preferences (user_id, in_app_min_severity, email_min_severity)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET
+                in_app_min_severity = EXCLUDED.in_app_min_severity,
+                email_min_severity = EXCLUDED.email_min_severity,
+                updated_at = now()
+            RETURNING in_app_min_severity, email_min_severity
+            """,
+            (user_id, values['in_app_min_severity'], values['email_min_severity']),
+        )
+        return {'data': dict(row)}
+    return _alert_response(handler, normalize_keys(request.get_json() or {}))
+
+
+@app.route('/api/notifications/email-status', methods=['GET'])
+@login_required
+@super_admin_required
+def notification_email_status():
+    def handler():
+        counts = db.fetch_one(
+            """
+            SELECT COUNT(*) FILTER (WHERE status = 'PENDING') AS pending,
+                   COUNT(*) FILTER (WHERE status = 'SENT') AS sent,
+                   COUNT(*) FILTER (WHERE status = 'FAILED') AS failed,
+                   MAX(sent_at) AS last_sent_at
+            FROM notification_outbox
+            """
+        )
+        failures = db.fetch_all(
+            """
+            SELECT id, recipient, subject, attempts, last_error, status, next_attempt_at
+            FROM notification_outbox
+            WHERE last_error IS NOT NULL AND status <> 'SENT'
+            ORDER BY id DESC LIMIT 10
+            """
+        )
+        return {'data': _jsonable({
+            'configured': notifications.channel_factory().configured,
+            **dict(counts),
+            'recent_failures': failures,
+        })}
+    return _alert_response(handler)
+
+
+@app.route('/api/notifications/test-email', methods=['POST'])
+@login_required
+@super_admin_required
+def send_test_notification():
+    def handler():
+        user_id = _notification_user_id()
+        if not notifications.channel_factory().configured:
+            raise ValueError('Email is not configured: set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD')
+        with db.transaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO notifications (user_id, kind, severity, title, body, href)
+                VALUES (%s, 'test', 'info', 'Test notification',
+                        'Email notifications are working for this account.', '/alerts')
+                RETURNING id
+                """,
+                (user_id,),
+            )
+            notification_id = cursor.fetchone()['id']
+            cursor.execute(
+                """
+                INSERT INTO notification_outbox (notification_id, user_id, recipient, subject, body)
+                SELECT %s, user_id, email, '[Zehunger] Test notification',
+                       'Email notifications are working for this account.'
+                FROM users WHERE user_id = %s
+                RETURNING id
+                """,
+                (notification_id, user_id),
+            )
+            outbox_id = cursor.fetchone()['id']
+        notifications.kick_background_delivery(db)
+        return {'data': {'outbox_id': outbox_id}}
     return _alert_response(handler)
 
 

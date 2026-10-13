@@ -44,6 +44,37 @@
 
     <section id="alertList" class="alert-list" aria-label="Alerts"></section>
 
+    <section class="b360-card" id="notification-settings">
+      <h3><span><i class="fas fa-bell"></i></span> Your notifications</h3>
+      <p class="trace-hint">You are notified when an alert you can see opens, gets worse, or comes back after a snooze.</p>
+      <form id="preferenceForm" class="inline-form">
+        <label for="prefInApp">In the app for</label>
+        <select id="prefInApp">
+          <option value="info">All alerts</option>
+          <option value="warning">Warnings and critical</option>
+          <option value="critical">Critical only</option>
+          <option value="off">Nothing</option>
+        </select>
+        <label for="prefEmail">By email for</label>
+        <select id="prefEmail">
+          <option value="info">All alerts</option>
+          <option value="warning">Warnings and critical</option>
+          <option value="critical">Critical only</option>
+          <option value="off">Nothing</option>
+        </select>
+        <button type="submit" class="orders-primary">Save</button>
+      </form>
+      <p id="preferenceNote" class="trace-hint"></p>
+    </section>
+
+    <section class="b360-card" id="emailStatusCard" hidden>
+      <h3><span><i class="fas fa-envelope"></i></span> Email delivery (administrators)</h3>
+      <div id="emailStatus"></div>
+      <div class="inline-form">
+        <button type="button" id="testEmailButton" class="orders-secondary">Send me a test email</button>
+      </div>
+    </section>
+
     <section class="b360-card">
       <h3><span><i class="fas fa-scale-balanced"></i></span> Low-stock minimums</h3>
       <p class="trace-hint">A warning is raised when free, QC-released stock of a product on a farm falls below its minimum.</p>
@@ -58,5 +89,6 @@
   </main>
 
   <script src="/js/alerts.js"></script>
+  <script src="/js/notificationCenter.js" defer></script>
 </body>
 </html>

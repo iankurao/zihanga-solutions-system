@@ -123,6 +123,23 @@ instead of scanning `hatchery_feeding`.
   never deleted. Production/QC/stock alerts follow facility access; order,
   delivery and low-stock alerts need farm access. Thresholds are super-admin
   only.
+- **Notifications** (`backend/notifications.py`, `migrations/notifications.sql`):
+  when `_sync_alerts` opens or escalates an alert, or a snooze ends, it writes
+  in-app `notifications` for every user who can see that alert (per their
+  `notification_preferences`) and queues email in `notification_outbox` in
+  the same transaction. Email is sent later by `deliver_pending` (claim with
+  a lease, SMTP outside any transaction, retry 1/5/15/60 min, FAILED after 5
+  attempts, secrets redacted), so mail failures never affect ERP writes. The
+  bell (`js/notificationCenter.js`) is on every main page; settings are on
+  `/alerts`. Do not call the legacy `send_email` for alerts.
+  - Email settings: `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`,
+    `EMAIL_HOST_PASSWORD`, optional `EMAIL_FROM`; set `PUBLIC_BASE_URL`
+    (e.g. `https://your-app.replit.app`) so emailed links are absolute.
+    Without SMTP settings only in-app notifications are created.
+  - Schedule `python -m backend.jobs` every 5 minutes (Replit Scheduled
+    Deployment or cron) so alerts and email go out when nobody is using the
+    app; or run `python -m backend.jobs --loop 300` as a worker. Web traffic
+    also triggers evaluation (at most once a minute) and delivery.
 
 ### 1. Python Environment
 Replit manages Python packages via `uv` and the `.pythonlibs/` environment. All required packages are declared in `pyproject.toml`. On a fresh import, install them before starting the workflow; `run.sh` adds `.pythonlibs/bin/` to PATH for the server.

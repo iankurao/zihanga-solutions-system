@@ -654,6 +654,8 @@ def create_tables(cursor):
     cursor.execute(orders_migration_path.read_text(encoding="utf-8"))
     alerts_migration_path = Path(__file__).parent / "migrations" / "operational_alerts.sql"
     cursor.execute(alerts_migration_path.read_text(encoding="utf-8"))
+    notifications_migration_path = Path(__file__).parent / "migrations" / "notifications.sql"
+    cursor.execute(notifications_migration_path.read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     init_database()

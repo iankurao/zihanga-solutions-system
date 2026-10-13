@@ -228,6 +228,64 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  async function setupPreferences() {
+    var inApp = document.getElementById('prefInApp');
+    var email = document.getElementById('prefEmail');
+    var note = document.getElementById('preferenceNote');
+    try {
+      var payload = await api('/api/notifications/preferences');
+      inApp.value = payload.data.in_app_min_severity;
+      email.value = payload.data.email_min_severity;
+      note.textContent = payload.data.email_configured
+        ? 'Email goes to ' + (payload.data.email || 'your account address') + '.'
+        : 'Email is not configured on this server yet, so only in-app notifications are sent.';
+    } catch (error) {
+      note.textContent = error.message;
+    }
+    document.getElementById('preferenceForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+      send('/api/notifications/preferences', 'PUT', {
+        in_app_min_severity: inApp.value, email_min_severity: email.value
+      }).then(function () { say('Notification settings saved.'); })
+        .catch(function (error) { say(error.message, true); });
+    });
+  }
+
+  async function loadEmailStatus() {
+    var card = document.getElementById('emailStatusCard');
+    if (!isAdmin) return;
+    card.hidden = false;
+    var target = document.getElementById('emailStatus');
+    try {
+      var data = (await api('/api/notifications/email-status')).data;
+      target.textContent = '';
+      var facts = el('dl', 'b360-facts');
+      [['SMTP configured', data.configured ? 'Yes' : 'No — set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD'],
+        ['Waiting to send', data.pending], ['Sent', data.sent], ['Failed', data.failed],
+        ['Last sent', data.last_sent_at ? when(data.last_sent_at) : '—']].forEach(function (pair) {
+        var item = el('div');
+        item.append(el('dt', null, pair[0]), el('dd', null, String(pair[1])));
+        facts.appendChild(item);
+      });
+      target.appendChild(facts);
+      (data.recent_failures || []).forEach(function (row) {
+        target.appendChild(el('p', 'alert-meta',
+          row.recipient + ' · attempt ' + row.attempts + ' · ' + row.status.toLowerCase() + ': ' + row.last_error));
+      });
+    } catch (error) {
+      target.textContent = error.message;
+    }
+  }
+
+  document.getElementById('testEmailButton').addEventListener('click', function () {
+    var button = this;
+    button.disabled = true;
+    send('/api/notifications/test-email', 'POST')
+      .then(function () { say('Test email queued. Check your inbox in a minute.'); setTimeout(loadEmailStatus, 3000); })
+      .catch(function (error) { say(error.message, true); })
+      .finally(function () { button.disabled = false; });
+  });
+
   document.getElementById('alertRefresh').addEventListener('click', function () {
     var refresh = this;
     refresh.disabled = true;
@@ -243,5 +301,9 @@ document.addEventListener('DOMContentLoaded', function () {
   severitySelect.addEventListener('change', load);
 
   load();
-  setupThresholdForm().then(loadThresholds);
+  setupPreferences();
+  setupThresholdForm().then(function () {
+    loadThresholds();
+    loadEmailStatus();
+  });
 });
