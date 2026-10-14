@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Log | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/batch-360.css">
+  <link rel="stylesheet" href="/css/traceability.css">
+  <link rel="stylesheet" href="/css/orders.css">
+  <link rel="stylesheet" href="/css/audit.css">
+</head>
+<body class="b360-page">
+  <header class="b360-topbar">
+    <a class="b360-back" href="/zehunger"><i class="fas fa-arrow-left"></i> Admin portal</a>
+    <div class="b360-topbar-title">
+      <p class="b360-eyebrow">SECURITY</p>
+      <h1>Audit log</h1>
+    </div>
+  </header>
+
+  <main class="b360-main">
+    <section class="b360-card">
+      <form id="auditForm" class="trace-form audit-form">
+        <div class="trace-field">
+          <label for="auditType">Record type</label>
+          <select id="auditType"><option value="">All</option></select>
+        </div>
+        <div class="trace-field">
+          <label for="auditRecord">Record ID</label>
+          <input id="auditRecord" type="text" maxlength="100" placeholder="e.g. BSF-2026-00002" autocomplete="off">
+        </div>
+        <div class="trace-field">
+          <label for="auditActor">User</label>
+          <input id="auditActor" type="text" maxlength="100" placeholder="username" autocomplete="off">
+        </div>
+        <div class="trace-field">
+          <label for="auditAction">Action starts with</label>
+          <input id="auditAction" type="text" maxlength="80" list="auditActionHints" placeholder="e.g. auth." autocomplete="off">
+          <datalist id="auditActionHints">
+            <option value="auth."></option>
+            <option value="security."></option>
+            <option value="users."></option>
+            <option value="production_batches."></option>
+            <option value="inventory_movements."></option>
+            <option value="quality_approvals."></option>
+            <option value="customer_orders."></option>
+            <option value="customer_deliveries."></option>
+          </datalist>
+        </div>
+        <div class="trace-field">
+          <label for="auditFrom">From</label>
+          <input id="auditFrom" type="date">
+        </div>
+        <div class="trace-field">
+          <label for="auditTo">To</label>
+          <input id="auditTo" type="date">
+        </div>
+        <button type="submit"><i class="fas fa-magnifying-glass"></i> Search</button>
+      </form>
+      <p class="trace-hint">Every change to key records and every sign-in or refused request is kept here.
+        Entries cannot be edited or deleted. Passwords are never recorded.</p>
+      <p id="auditMessage" class="b360-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="b360-card">
+      <div class="audit-table-wrap">
+        <table class="audit-table">
+          <thead>
+            <tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Change</th></tr>
+          </thead>
+          <tbody id="auditRows"></tbody>
+        </table>
+      </div>
+      <div class="orders-actions">
+        <button type="button" id="auditMore" class="orders-secondary" hidden>Load older entries</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/audit.js"></script>
+  <script src="/js/notificationCenter.js" defer></script>
+</body>
+</html>

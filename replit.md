@@ -425,3 +425,28 @@ gunicorn \
   - Passwords: at least 10 characters, not a common password, not containing
     the username or email name - the same rule for registration, admin
     resets and the super-admin script.
+- **Audit log (Step 23)** (`migrations/audit_log.sql`, `/audit`, `GET /api/audit`):
+  - Database triggers record every create, change and delete on users and
+    their location access, organizations/farms/sites/facilities, production
+    units and allocations, waste lots, substrate and production batches,
+    harvests, drying batches and outputs, quality checks and approvals,
+    product lots, inventory locations and movements, stock thresholds,
+    customers, orders, order lines, allocations and deliveries. Updates
+    store only the changed fields (old and new); password hashes are never
+    copied (a change shows as "[changed]"). Order cancellations and stock
+    adjustments carry their required reason.
+  - Each database connection used during a request is tagged with the
+    signed-in user, role, IP address, browser and a request id
+    (`DatabaseConnection.audit_actor`), so the triggers know who acted.
+    Changes made outside a request (migrations, `backend.jobs`) show as
+    "system".
+  - The app also records sign-in, failed sign-in (with the reason),
+    throttled sign-in, sign-out, refused permissions and refused cross-site
+    writes.
+  - Entries cannot be updated, deleted or truncated (triggers). The app's
+    database account owns the table, so someone with direct owner access
+    could still disable the triggers; for stronger guarantees give the app a
+    separate, non-owner database role.
+  - Super admins read the log at `/audit` (Admin portal → Audit Log),
+    filtered by record type, record ID, user, action prefix and dates,
+    newest first, 100 at a time.

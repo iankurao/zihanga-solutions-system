@@ -1,4 +1,4 @@
-from flask import Flask, Response, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort
+from flask import Flask, Response, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort, g, has_request_context
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_session import Session
@@ -211,6 +211,8 @@ def requires(permission):
             if not getattr(current_user, 'is_authenticated', False) and not app.config.get('LOGIN_DISABLED'):
                 return jsonify({'success': False, 'message': 'Please sign in'}), 401
             if not _can(permission):
+                audit_event('security.permission_denied', 'route', request.endpoint,
+                            new_value={'permission': permission, 'method': request.method})
                 return jsonify({
                     'success': False,
                     'message': f'Your role does not allow this ({PERMISSION_LABELS[permission].lower()})',
@@ -226,6 +228,9 @@ def super_admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or current_user.role != 'super_admin':
+            if current_user.is_authenticated:
+                audit_event('security.permission_denied', 'route', request.endpoint,
+                            new_value={'permission': 'super_admin', 'method': request.method})
             abort(403)
         return f(*args, **kwargs)
     decorated_function.required_permission = 'super_admin'
@@ -389,11 +394,18 @@ def _authenticate(email, password):
     """
     email = (email or '').lower().strip()
     if _login_blocked(email):
+        audit_event('auth.sign_in_throttled', 'user', entity_ref=email[:100])
         raise LoginThrottled()
     user = get_user_by_email(email) if email else None
     valid = check_password_hash(user.password_hash if user else _DUMMY_PASSWORD_HASH, password or '')
     succeeded = bool(user and valid and user.is_active)
     _record_login_attempt(email, succeeded)
+    if succeeded:
+        audit_event('auth.sign_in', 'user', user.id, entity_ref=user.username, user=user)
+    else:
+        reason = 'inactive account' if user and valid else 'wrong email or password'
+        audit_event('auth.sign_in_failed', 'user', user.id if user else None,
+                    entity_ref=email[:100], reason=reason)
     return user if succeeded else None
 
 
@@ -440,6 +452,78 @@ for _endpoint, _permission in _BLUEPRINT_PERMISSIONS.items():
     app.view_functions[_endpoint] = login_required(requires(_permission)(app.view_functions[_endpoint]))
 
 
+# ---- Audit trail ---------------------------------------------------------------------
+#
+# Row changes are recorded by database triggers (migrations/audit_log.sql).
+# Every connection borrowed during a request carries this description of the
+# actor, so the triggers know who made the change and from where.
+
+def _request_id():
+    if 'audit_request_id' not in g:
+        g.audit_request_id = secrets.token_hex(8)
+    return g.audit_request_id
+
+
+def _audit_actor_json():
+    if not has_request_context():
+        return None
+    actor = {
+        'ip': _client_ip(),
+        'ua': (request.headers.get('User-Agent') or '')[:200],
+        'path': request.path[:200],
+        'request_id': _request_id(),
+    }
+    # Resolving current_user may itself query the database (to load the
+    # user); that inner query is recorded without a user.
+    if not g.get('audit_resolving_user'):
+        g.audit_resolving_user = True
+        try:
+            if getattr(current_user, 'is_authenticated', False):
+                actor.update(
+                    user_id=int(current_user.id),
+                    username=current_user.username,
+                    role=current_user.role,
+                )
+        finally:
+            g.audit_resolving_user = False
+    return json.dumps(actor)
+
+
+DatabaseConnection.audit_actor = staticmethod(_audit_actor_json)
+
+
+def audit_event(action, entity_type, entity_id=None, *, entity_ref=None, new_value=None,
+                reason=None, user=None):
+    """Record an event that is not a row change (sign-in, refusal, ...).
+
+    ``user`` names the account involved when it is not the signed-in user
+    (e.g. at sign-in). Failures are logged and never break the request.
+    """
+    try:
+        actor = json.loads(_audit_actor_json() or '{}')
+        if user is not None:
+            actor.update(user_id=user.id, username=user.username, role=user.role)
+        db.execute_query(
+            """
+            INSERT INTO audit_log (
+                actor_user_id, actor_username, actor_role, action, entity_type, entity_id,
+                entity_ref, new_value, reason, ip_address, user_agent, request_id, request_path
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
+            """,
+            (
+                actor.get('user_id'),
+                actor.get('username') or ('anonymous' if actor else 'system'),
+                actor.get('role'), action, entity_type,
+                None if entity_id is None else str(entity_id),
+                entity_ref,
+                json.dumps(new_value, default=str) if new_value is not None else None,
+                reason, actor.get('ip'), actor.get('ua'), actor.get('request_id'), actor.get('path'),
+            ),
+        )
+    except Exception:
+        logger.exception('Could not write audit event %s', action)
+
+
 # ---- Cross-site request protection and security headers --------------------------
 
 _TRUSTED_ORIGINS = {o.rstrip('/') for o in _cors_origins}
@@ -480,6 +564,9 @@ def _reject_cross_site_writes():
 
 def _cross_site_refusal():
     logger.warning('Refused cross-site %s %s', request.method, request.path)
+    audit_event('security.cross_site_refused', 'route', request.endpoint,
+                new_value={'method': request.method,
+                           'origin': (request.headers.get('Origin') or request.headers.get('Referer') or '')[:200]})
     return jsonify({'success': False, 'message': 'Cross-site request refused'}), 403
 
 
@@ -555,8 +642,11 @@ def register():
 @login_required
 def logout():
     from flask import session
-    logout_user()
+    audit_event('auth.sign_out', 'user', current_user.id, entity_ref=current_user.username)
+    # Clear first: logout_user() leaves a note in the session that makes
+    # Flask-Login delete the remember-me cookie on this response.
     session.clear()
+    logout_user()
     flash('You have been logged out successfully.', 'info')
     return redirect(url_for('login'))
 
@@ -10388,6 +10478,76 @@ def scan_label(kind, ref):
 @login_required
 def labels_page():
     return render_template('labels.html')
+
+
+AUDIT_PAGE_SIZE = 100
+
+
+def _like_prefix(value):
+    """``value`` as a LIKE prefix pattern with its wildcards taken literally."""
+    return value.replace('\\', '\\\\').replace('%', r'\%').replace('_', r'\_') + '%'
+
+
+@app.route('/api/audit', methods=['GET'])
+@login_required
+@requires('audit.read')
+def audit_log_entries():
+    """Newest audit entries first, filtered; page with ?before=<id>."""
+    filters, params = [], []
+    args = request.args
+    if args.get('entity_type'):
+        filters.append('entity_type = %s')
+        params.append(args['entity_type'][:60])
+    if args.get('record'):
+        filters.append('(entity_ref ILIKE %s OR entity_id = %s)')
+        params += [_like_prefix(args['record'][:100]), args['record'][:80]]
+    if args.get('actor'):
+        filters.append('actor_username ILIKE %s')
+        params.append(_like_prefix(args['actor'][:100]))
+    if args.get('action'):
+        filters.append('action LIKE %s')
+        params.append(_like_prefix(args['action'][:80]))
+    try:
+        if args.get('from'):
+            filters.append('occurred_at >= %s::date')
+            params.append(date.fromisoformat(args['from']))
+        if args.get('to'):
+            filters.append("occurred_at < %s::date + INTERVAL '1 day'")
+            params.append(date.fromisoformat(args['to']))
+        if args.get('before'):
+            filters.append('id < %s')
+            params.append(_parse_positive_integer(args['before'], 'before'))
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Dates must be YYYY-MM-DD'}), 400
+    where = ' AND '.join(filters) or 'TRUE'
+    rows = db.fetch_all(
+        f"""
+        SELECT id, occurred_at, actor_user_id, actor_username, actor_role, action,
+               entity_type, entity_id, entity_ref, farm_id, facility_id, old_value,
+               new_value, reason, ip_address, user_agent, request_id, request_path
+        FROM audit_log
+        WHERE {where}
+        ORDER BY id DESC
+        LIMIT %s
+        """,
+        (*params, AUDIT_PAGE_SIZE + 1),
+    )
+    more = len(rows) > AUDIT_PAGE_SIZE
+    rows = rows[:AUDIT_PAGE_SIZE]
+    types = db.fetch_all('SELECT DISTINCT entity_type FROM audit_log ORDER BY entity_type')
+    return jsonify({
+        'success': True,
+        'data': _jsonable(rows),
+        'next_before': rows[-1]['id'] if more else None,
+        'entity_types': [row['entity_type'] for row in types],
+    })
+
+
+@app.route('/audit')
+@login_required
+@super_admin_required
+def audit_page():
+    return render_template('audit.html')
 
 
 @app.errorhandler(400)

@@ -3229,6 +3229,14 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             self.assertEqual(page.status_code, 302)
             self.assertIn("/login?next=/farmer", page.headers["Location"])
 
+        # Signing out also ends the remember-me cookie.
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), app.test_client() as client:
+            self.assertEqual(self._api_login(client, user.email, user.password).status_code, 200)
+            self.assertIsNotNone(client.get_cookie("bsf_remember", domain="localhost"))
+            client.get("/logout", **self.HTTPS)
+            self.assertIsNone(client.get_cookie("bsf_remember", domain="localhost"))
+            self.assertEqual(client.get("/api/me", **self.HTTPS).status_code, 401)
+
         inactive = self._login_user(active=False)
         with patch.dict(app.config, {"LOGIN_DISABLED": False}), app.test_client() as client:
             self.assertEqual(self._api_login(client, inactive.email, inactive.password).status_code, 401)
@@ -3260,6 +3268,195 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             "password": "a much longer passphrase", "confirmPassword": "a much longer passphrase",
         })
         self.assertEqual(registered.status_code, 400)
+
+    # ---- Audit log --------------------------------------------------------------------
+
+    def _audit(self, entity_type, entity_id=None, **filters):
+        clauses, params = ["entity_type = %s"], [entity_type]
+        if entity_id is not None:
+            clauses.append("entity_id = %s")
+            params.append(str(entity_id))
+        for column, value in filters.items():
+            clauses.append(f"{column} = %s")
+            params.append(value)
+        return db.fetch_all(
+            f"SELECT * FROM audit_log WHERE {' AND '.join(clauses)} ORDER BY id",
+            tuple(params),
+        )
+
+    def test_batch_changes_are_attributed_to_the_signed_in_user(self):
+        user = self._create_db_user(role="manager")
+        with self._as(user):
+            substrate_id = self._create_substrate()
+            created = self._create_production(substrate_id)
+            self.assertEqual(created.status_code, 201, created.get_json())
+            batch = created.get_json()["record"]
+            moved = self.client.post(
+                f"/api/production/batches/{batch['business_id']}/status",
+                json={"status": "ACTIVE", "recorded_by": self.actor},
+                headers={"User-Agent": "audit-test-agent"},
+            )
+            self.assertEqual(moved.status_code, 200, moved.get_json())
+        entries = self._audit("production_batches", batch["id"])
+        self.assertEqual([e["action"] for e in entries],
+                         ["production_batches.created", "production_batches.status_changed"])
+        created_entry, status_entry = entries
+        for entry in entries:
+            self.assertEqual((entry["actor_user_id"], entry["actor_role"]), (user.id, "manager"))
+            self.assertEqual(entry["actor_username"], user.username)
+            self.assertEqual(entry["entity_ref"], batch["business_id"])
+            self.assertEqual(entry["farm_id"], self.farm_id)
+            self.assertEqual(entry["facility_id"], self.facility_id)
+            self.assertEqual(entry["ip_address"], "127.0.0.1")
+            self.assertTrue(entry["request_id"])
+        self.assertEqual(created_entry["new_value"]["business_id"], batch["business_id"])
+        self.assertIsNone(created_entry["old_value"])
+        self.assertEqual(status_entry["old_value"]["status"], "PLANNED")
+        self.assertEqual(status_entry["new_value"]["status"], "ACTIVE")
+        self.assertNotIn("updated_at", status_entry["new_value"])
+        self.assertEqual(status_entry["user_agent"], "audit-test-agent")
+        self.assertIn("/status", status_entry["request_path"])
+        # Each request has its own id, so changes can be grouped by request.
+        self.assertNotEqual(created_entry["request_id"], status_entry["request_id"])
+
+    def test_stock_order_and_quality_changes_are_recorded(self):
+        lot = self._release_lot()
+        approval = self._audit("quality_approvals")
+        self.assertTrue(any(e["action"] == "quality_approvals.created" for e in approval))
+        self.assertEqual(self._audit("product_lots", lot["id"])[0]["action"], "product_lots.created")
+        adjusted = self._move(
+            lot, "ADJUSTMENT_OUT", "0.100",
+            from_location_id=self.inventory_location_id, reason="Spilled during weighing",
+        )
+        self.assertEqual(adjusted.status_code, 201, adjusted.get_json())
+        entry = self._audit("inventory_movements", adjusted.get_json()["id"])[0]
+        self.assertEqual(entry["action"], "inventory_movements.created")
+        self.assertEqual(entry["reason"], "Spilled during weighing")
+        self.assertEqual(entry["new_value"]["movement_type"], "ADJUSTMENT_OUT")
+
+        order = self._order("0.200")
+        cancelled = self.client.post(f"/api/orders/{order['business_id']}/cancel",
+                                     json={"reason": "Customer changed plans"})
+        self.assertEqual(cancelled.status_code, 200, cancelled.get_json())
+        changes = self._audit("customer_orders", order["id"])
+        self.assertEqual(changes[-1]["action"], "customer_orders.status_changed")
+        self.assertEqual(changes[-1]["new_value"]["status"], "CANCELLED")
+        self.assertEqual(changes[-1]["reason"], "Customer changed plans")
+
+    def test_user_changes_are_recorded_without_secrets(self):
+        target = self._login_user(role="viewer")
+        admin = self._create_db_user(role="super_admin", farm_access=False)
+        with self._as(admin):
+            self.client.put(f"/api/admin/users/{target.id}",
+                            json={"full_name": "Renamed", "email": target.email, "role": "operator"})
+            self.client.post(f"/api/admin/users/{target.id}/reset-password",
+                             json={"password": "another long passphrase"})
+            grant = self.client.post("/api/locations/access", json={
+                "user_id": target.id, "scope": "farm", "scope_id": self.farm_id})
+        self.assertIn(grant.status_code, (200, 201), grant.get_json())
+        entries = self._audit("users", target.id)
+        self.assertEqual(entries[0]["action"], "users.created")
+        self.assertNotIn("password_hash", entries[0]["new_value"])
+        role_change = entries[1]
+        self.assertEqual(role_change["actor_username"], admin.username)
+        self.assertEqual(role_change["old_value"]["role"], "viewer")
+        self.assertEqual(role_change["new_value"]["role"], "operator")
+        reset = entries[2]
+        self.assertEqual(reset["new_value"]["password_hash"], "[changed]")
+        self.assertEqual(reset["old_value"]["password_hash"], "[hidden]")
+        everything = db.fetch_one(
+            "SELECT string_agg(COALESCE(old_value::text, '') || COALESCE(new_value::text, ''), ' ') AS text "
+            "FROM audit_log WHERE entity_type = 'users' AND entity_id = %s",
+            (str(target.id),),
+        )
+        self.assertNotIn("scrypt", everything["text"])
+        self.assertNotIn("pbkdf2", everything["text"])
+        access = db.fetch_all(
+            "SELECT * FROM audit_log WHERE entity_type = 'user_farm_access' "
+            "AND (new_value->>'user_id')::int = %s",
+            (target.id,),
+        )
+        self.assertEqual(access[0]["action"], "user_farm_access.created")
+        self.assertEqual(access[0]["farm_id"], self.farm_id)
+
+    def test_sign_in_and_refusals_are_audited(self):
+        user = self._login_user(role="viewer")
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), app.test_client() as client:
+            self._api_login(client, user.email, "wrong password 1")
+            self._api_login(client, user.email, user.password)
+            client.post("/api/production/batches", json={}, **self.HTTPS)
+            client.post("/api/alerts/refresh", headers={"Origin": "https://evil.example"}, **self.HTTPS)
+            client.get("/logout", **self.HTTPS)
+            for _ in range(5):
+                self._api_login(client, user.email, "wrong password 1")
+        actions = [
+            e["action"] for e in db.fetch_all(
+                "SELECT action FROM audit_log WHERE entity_ref = %s OR actor_user_id = %s ORDER BY id",
+                (user.email, user.id),
+            )
+        ]
+        self.assertEqual(actions[:5], [
+            "auth.sign_in_failed", "auth.sign_in", "security.permission_denied",
+            "security.cross_site_refused", "auth.sign_out",
+        ])
+        self.assertIn("auth.sign_in_throttled", actions)
+        denied = db.fetch_one(
+            "SELECT * FROM audit_log WHERE action = 'security.permission_denied' AND actor_user_id = %s",
+            (user.id,),
+        )
+        self.assertEqual(denied["new_value"]["permission"], "production.write")
+        self.assertEqual(denied["actor_role"], "viewer")
+
+    def test_audit_entries_cannot_be_changed_or_deleted(self):
+        row = db.execute_returning(
+            "INSERT INTO audit_log (action, entity_type) VALUES ('test.entry', 'test') RETURNING id"
+        )
+        for statement in (
+            "UPDATE audit_log SET action = 'tampered' WHERE id = %s",
+            "DELETE FROM audit_log WHERE id = %s",
+        ):
+            with self.assertRaises(Exception) as caught:
+                db.execute_query(statement, (row["id"],))
+            self.assertIn("cannot be changed or deleted", str(caught.exception))
+        with self.assertRaises(Exception):
+            db.execute_query("TRUNCATE audit_log")
+        self.assertEqual(
+            db.fetch_one("SELECT action FROM audit_log WHERE id = %s", (row["id"],))["action"], "test.entry"
+        )
+
+    def test_writes_outside_requests_are_attributed_to_system(self):
+        user = self._create_db_user(role="manager")
+        with self._as(user):
+            self.assertEqual(self.client.get("/api/me").status_code, 200)
+        # A later write on a pooled connection must not inherit that user.
+        db.execute_query(
+            "UPDATE farms SET name = name || ' (renamed)' WHERE id = %s", (self.farm_id,)
+        )
+        entry = self._audit("farms", self.farm_id)[-1]
+        self.assertEqual(entry["actor_username"], "system")
+        self.assertIsNone(entry["actor_user_id"])
+
+    def test_audit_log_is_for_super_admins_and_filters(self):
+        manager = self._create_db_user(role="manager")
+        with self._as(manager):
+            self.assertEqual(self.client.get("/api/audit").status_code, 403)
+            self.assertEqual(self.client.get("/audit").status_code, 403)
+        substrate_id = self._create_substrate()
+        batch = self._create_production(substrate_id).get_json()["record"]
+        admin = SimpleNamespace(is_authenticated=True, id=0, role="super_admin", username="admin")
+        with self._as(admin):
+            page = self.client.get(f"/api/audit?record={batch['business_id']}").get_json()
+            self.assertEqual(page["data"][0]["action"], "production_batches.created")
+            self.assertTrue(all(r["entity_ref"] == batch["business_id"] for r in page["data"]))
+            self.assertIn("production_batches", page["entity_types"])
+            wildcard = self.client.get("/api/audit?record=%25&actor=_").get_json()["data"]
+            self.assertEqual(wildcard, [])
+            self.assertEqual(self.client.get("/api/audit?from=yesterday").status_code, 400)
+            first = self.client.get("/api/audit").get_json()
+            if first["next_before"]:
+                older = self.client.get(f"/api/audit?before={first['next_before']}").get_json()["data"]
+                self.assertTrue(all(r["id"] < first["next_before"] for r in older))
+            self.assertEqual(self.client.get("/audit").status_code, 200)
 
 
 def lot_release_approval_id(lot):

@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 class DatabaseConnection:
     _instance = None
     _pool = None
+    # Set by the web app to a function returning a JSON description of who is
+    # acting (user, role, IP, request), or None outside a request. Audit
+    # triggers read it from the app.audit_actor setting of each transaction.
+    audit_actor = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -40,9 +44,13 @@ class DatabaseConnection:
             conn = None
             try:
                 conn = self._pool.getconn()
-                # Properly test the connection with a simple query
+                # Health check that also tags this transaction with the actor
+                # (transaction-local, so it never leaks to the next borrower).
                 cursor = conn.cursor()
-                cursor.execute('SELECT 1')
+                cursor.execute(
+                    "SELECT set_config('app.audit_actor', %s, true)",
+                    (self._current_audit_actor(),),
+                )
                 cursor.close()
                 return conn
             except (OperationalError, Exception) as e:
@@ -62,6 +70,17 @@ class DatabaseConnection:
                 else:
                     logger.error(f"Failed to get connection after {max_retries} attempts")
                     raise
+
+    @classmethod
+    def _current_audit_actor(cls):
+        provider = cls.audit_actor
+        if provider is None:
+            return ''
+        try:
+            return provider() or ''
+        except Exception:  # never block a query because the actor is unknown
+            logger.exception("Could not describe the audit actor")
+            return ''
 
     def return_connection(self, conn, close=False):
         """Return connection to the pool or close it if it's bad"""

@@ -28,6 +28,7 @@ PERMISSION_LABELS = {
     'legacy.read': 'See legacy (pre-traceability) records and analytics',
     'legacy.write': 'Edit legacy sales, deliveries and feedback',
     'setup.manage': 'Manage locations, units, thresholds and users',
+    'audit.read': 'Read the audit log',
 }
 
 ROLE_PERMISSIONS = {
