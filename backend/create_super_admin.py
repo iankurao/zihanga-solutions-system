@@ -13,6 +13,7 @@ import getpass
 from werkzeug.security import generate_password_hash
 from backend.database import DatabaseConnection
 from backend.config import DB_CONFIG
+from backend.passwords import password_problem
 
 def main():
     print("\n=== Zehunger Solutions — Super Admin Setup ===\n")
@@ -42,8 +43,9 @@ def main():
         print("\nError: Passwords do not match.")
         sys.exit(1)
 
-    if len(password) < 8:
-        print("\nError: Password must be at least 8 characters.")
+    problem = password_problem(password, email=email, username=username)
+    if problem:
+        print(f"\nError: {problem}.")
         sys.exit(1)
 
     existing_user = db.fetch_one("SELECT user_id, username FROM users WHERE email = %s", (email,))

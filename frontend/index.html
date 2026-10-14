@@ -19,6 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   
+  <style>[data-permission][hidden] { display: none !important; }</style>
 </head>
 <body>
 
@@ -47,53 +48,53 @@
       <a class="nav-link" href="/labels" style="text-decoration:none;color:inherit;">
         <i class="fas fa-qrcode"></i><span>QR Labels</span>
       </a>
-      <a class="nav-link" href="/orders" style="text-decoration:none;color:inherit;">
+      <a data-permission="sales.read" hidden class="nav-link" href="/orders" style="text-decoration:none;color:inherit;">
         <i class="fas fa-truck"></i><span>Customer Orders</span>
       </a>
       <a class="nav-link" href="/alerts" style="text-decoration:none;color:inherit;">
         <i class="fas fa-bell"></i><span>Alerts</span>
         <span id="alertsNavCount" class="badge bg-danger ms-2" hidden></span>
       </a>
-      <a class="nav-link" id="setupNavLink" href="/setup" style="text-decoration:none;color:inherit;" hidden>
+      <a data-permission="setup.manage" hidden class="nav-link" id="setupNavLink" href="/setup" style="text-decoration:none;color:inherit;">
         <i class="fas fa-sitemap"></i><span>Farm Setup</span>
       </a>
       <a class="nav-link" href="/product-lot" style="text-decoration:none;color:inherit;">
         <i class="fas fa-box"></i><span>Product Lots</span>
       </a>
-      <div class="nav-link active" onclick="showSection('waste', this)">
+      <div data-permission="production.write" hidden class="nav-link active" onclick="showSection('waste', this)">
         <i class="fas fa-recycle"></i><span>Waste Management</span>
       </div>
-      <div class="nav-link" onclick="showSection('feeding', this)">
+      <div data-permission="production.write" hidden class="nav-link" onclick="showSection('feeding', this)">
         <i class="fas fa-utensils"></i><span>Larval Feeding</span>
       </div>
-      <div class="nav-link" onclick="showSection('drying', this)">
+      <div data-permission="production.write" hidden class="nav-link" onclick="showSection('drying', this)">
         <i class="fas fa-wind"></i><span>Drying Process</span>
       </div>
-      <div class="nav-link" onclick="showSection('hatchery', this)">
+      <div data-permission="production.write" hidden class="nav-link" onclick="showSection('hatchery', this)">
         <i class="fas fa-egg"></i><span>Hatchery</span>
       </div>
-      <div class="nav-link" onclick="showSection('facility', this)">
+      <div data-permission="production.write" hidden class="nav-link" onclick="showSection('facility', this)">
         <i class="fas fa-warehouse"></i><span>Fly Facility</span>
       </div>
-      <div class="nav-link" onclick="showSection('records', this)">
+      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('records', this)">
         <i class="fas fa-archive"></i><span>Records</span>
       </div>
-      <div class="nav-link" onclick="showSection('report', this)">
+      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('report', this)">
         <i class="fas fa-chart-pie"></i><span>Reports</span>
       </div>
     </div>
-    <div class="sidebar-section-header clickable" onclick="toggleSidebarSection('sales-links')">Sales</div>
+    <div data-permission="sales.read" hidden class="sidebar-section-header clickable" onclick="toggleSidebarSection('sales-links')">Sales</div>
     <div id="sales-links" class="sidebar-links-group" style="display:none;">
-      <div class="nav-link" onclick="showSection('customers', this)">
+      <div data-permission="sales.read" hidden class="nav-link" onclick="showSection('customers', this)">
         <i class="fas fa-users"></i><span>Customers</span>
       </div>
-      <div class="nav-link" onclick="showSection('sales', this)">
+      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('sales', this)">
         <i class="fas fa-cash-register"></i><span>Sales</span>
       </div>
-      <div class="nav-link" onclick="showSection('deliveries', this)">
+      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('deliveries', this)">
         <i class="fas fa-truck"></i><span>Deliveries</span>
       </div>
-      <div class="nav-link" onclick="showSection('feedback', this)">
+      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('feedback', this)">
         <i class="fas fa-comment-dots"></i><span>Customer Feedback</span>
       </div>
     </div>
@@ -2216,6 +2217,7 @@
 
   
 
+  <script src="js/permissions.js"></script>
   <script src="js/scripts.js"></script>
   <script src="js/dataManager.js"></script>
   <script src="js/notificationManager.js"></script>

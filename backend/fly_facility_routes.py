@@ -83,10 +83,10 @@ def cage_monitoring():
         }), 201
             
     except Exception as e:
-        print(f"Error in {API_ENDPOINTS['cage_monitoring']}: {str(e)}")
+        logger.exception('Error in %s', API_ENDPOINTS['cage_monitoring'])
         return jsonify({
             "status": "error",
-            "message": ERROR_MESSAGES['server_error'].format(str(e))
+            "message": ERROR_MESSAGES['server_error'].format('please try again')
         }), 500
 
 # Facility Maintenance
@@ -128,10 +128,10 @@ def facility_maintenance():
         }), 201
             
     except Exception as e:
-        print(f"Error in {API_ENDPOINTS['facility_maintenance']}: {str(e)}")
+        logger.exception('Error in %s', API_ENDPOINTS['facility_maintenance'])
         return jsonify({
             "status": "error",
-            "message": ERROR_MESSAGES['server_error'].format(str(e))
+            "message": ERROR_MESSAGES['server_error'].format('please try again')
         }), 500
 
 # Pupae Transition
@@ -182,10 +182,10 @@ def pupae_transition():
         }), 201
             
     except Exception as e:
-        print(f"Error in {API_ENDPOINTS['pupae_transition']}: {str(e)}")
+        logger.exception('Error in %s', API_ENDPOINTS['pupae_transition'])
         return jsonify({
             "status": "error",
-            "message": ERROR_MESSAGES['server_error'].format(str(e))
+            "message": ERROR_MESSAGES['server_error'].format('please try again')
         }), 500
 
 # Egg Collection
@@ -234,10 +234,10 @@ def egg_collection():
         }), 201
             
     except Exception as e:
-        print(f"Error in {API_ENDPOINTS['egg_collection']}: {str(e)}")
+        logger.exception('Error in %s', API_ENDPOINTS['egg_collection'])
         return jsonify({
             "status": "error",
-            "message": ERROR_MESSAGES['server_error'].format(str(e))
+            "message": ERROR_MESSAGES['server_error'].format('please try again')
         }), 500
 
 # Bait Preparation
@@ -278,8 +278,8 @@ def bait_preparation():
         }), 201
             
     except Exception as e:
-        print(f"Error in {API_ENDPOINTS['bait_preparation']}: {str(e)}")
+        logger.exception('Error in %s', API_ENDPOINTS['bait_preparation'])
         return jsonify({
             "status": "error",
-            "message": ERROR_MESSAGES['server_error'].format(str(e))
+            "message": ERROR_MESSAGES['server_error'].format('please try again')
         }), 500 

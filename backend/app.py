@@ -12,6 +12,7 @@ from werkzeug.exceptions import HTTPException
 from backend.init_db import init_database
 from backend.database import DatabaseConnection
 from backend import notifications
+from backend.passwords import password_problem
 import csv
 import io
 import logging
@@ -52,7 +53,11 @@ app.json = CustomJSONProvider(app)
 # Trust proxy headers (Replit terminates SSL at proxy level)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-CORS(app, supports_credentials=True)  # Enable CORS for all routes and allow credentials
+# Cross-origin access is off unless CORS_ORIGINS lists trusted origins
+# (comma-separated). The browser UI is served from this app and needs none.
+_cors_origins = [o.strip() for o in os.getenv('CORS_ORIGINS', '').split(',') if o.strip()]
+if _cors_origins:
+    CORS(app, origins=_cors_origins, supports_credentials=True)
 
 # Configure Flask app
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.getenv('SESSION_SECRET') or secrets.token_hex(32)
@@ -77,21 +82,31 @@ app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'bsf_'
 
-# Session cookie settings for iframe compatibility
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Allow cookies in iframe (must be string 'None')
-app.config['SESSION_COOKIE_SECURE'] = True  # Set to True (required for SameSite=None)
-app.config['SESSION_COOKIE_HTTPONLY'] = False  # Allow JavaScript access for iframe compatibility
-app.config['SESSION_COOKIE_DOMAIN'] = None  # Don't restrict cookie domain
-app.config['SESSION_COOKIE_PATH'] = '/'  # Set cookie for entire domain
-app.config['SESSION_COOKIE_NAME'] = 'bsf_session'  # Custom session cookie name
+# Session cookies: never readable by JavaScript, HTTPS-only, and SameSite=Lax
+# so other sites cannot ride on a signed-in session. EMBEDDED_PREVIEW=1 relaxes
+# SameSite to None for the Replit workspace preview iframe; the Origin check
+# in _reject_cross_site_writes still blocks cross-site writes then.
+_embedded_preview = os.getenv('EMBEDDED_PREVIEW', '').lower() in ('1', 'true', 'yes')
+_cookie_samesite = 'None' if _embedded_preview else 'Lax'
+_cookie_secure = os.getenv('SESSION_COOKIE_SECURE', '1').lower() not in ('0', 'false', 'no')
+app.config['SESSION_COOKIE_SAMESITE'] = _cookie_samesite
+app.config['SESSION_COOKIE_SECURE'] = _cookie_secure or _embedded_preview
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_DOMAIN'] = None
+app.config['SESSION_COOKIE_PATH'] = '/'
+app.config['SESSION_COOKIE_NAME'] = 'bsf_session'
 
 # Flask-Login remember cookie settings
 app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=7)
-app.config['REMEMBER_COOKIE_SAMESITE'] = 'None'  # Allow cookies in iframe (must be string 'None')
-app.config['REMEMBER_COOKIE_SECURE'] = True  # Set to True (required for SameSite=None)
-app.config['REMEMBER_COOKIE_HTTPONLY'] = False
-app.config['REMEMBER_COOKIE_NAME'] = 'bsf_remember'  # Custom remember cookie name
-app.config['WTF_CSRF_ENABLED'] = False  # Disable CSRF for API compatibility
+app.config['REMEMBER_COOKIE_SAMESITE'] = _cookie_samesite
+app.config['REMEMBER_COOKIE_SECURE'] = _cookie_secure or _embedded_preview
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_NAME'] = 'bsf_remember'
+# Form tokens are replaced by the Origin/Referer check for every write
+# (see _reject_cross_site_writes), which also covers the JSON APIs.
+app.config['WTF_CSRF_ENABLED'] = False
+if not (os.getenv('SECRET_KEY') or os.getenv('SESSION_SECRET')):
+    logger.warning('SECRET_KEY is not set; sessions will not survive a restart')
 
 # Initialize Flask-Session with SQLAlchemy instance
 sess = Session(app)
@@ -110,6 +125,19 @@ app.register_blueprint(waste_management)
 app.register_blueprint(fly_facility)
 app.register_blueprint(locations)
 
+# The legacy blueprints have no sign-in checks of their own; guard them here.
+_BLUEPRINT_PERMISSIONS = {
+    'waste_management.get_waste_sourcing': 'legacy.read',
+    'waste_management.get_storage_records': 'legacy.read',
+    'waste_management.get_processing_records': 'legacy.read',
+    'waste_management.get_environmental_monitoring': 'legacy.read',
+    'fly_facility.cage_monitoring': 'production.write',
+    'fly_facility.facility_maintenance': 'production.write',
+    'fly_facility.pupae_transition': 'production.write',
+    'fly_facility.egg_collection': 'production.write',
+    'fly_facility.bait_preparation': 'production.write',
+}
+
 # Route to serve static files
 @app.route('/<path:filename>')
 def serve_static(filename):
@@ -118,7 +146,7 @@ def serve_static(filename):
 
 # User class for Flask-Login
 class User(UserMixin):
-    def __init__(self, user_id, username, email, password_hash, full_name=None, last_login=None, is_active=True, role='viewer'):
+    def __init__(self, user_id, username, email, password_hash, full_name=None, last_login=None, is_active=True, role='viewer', auth_version=1):
         self.id = user_id
         self.username = username
         self.email = email
@@ -127,6 +155,7 @@ class User(UserMixin):
         self.last_login = last_login
         self._is_active = is_active
         self.role = role
+        self.auth_version = auth_version
 
     @property
     def is_active(self):
@@ -137,7 +166,60 @@ class User(UserMixin):
         return self.role == 'super_admin'
 
     def get_id(self):
-        return str(self.id)
+        # The version invalidates sessions after a password reset, role change
+        # or deactivation (see load_user).
+        return f'{self.id}:{self.auth_version}'
+
+# ---- Roles and permissions (definitions in backend/roles.py) ---------------------
+
+from backend.roles import (
+    ROLE_LABELS, PERMISSION_LABELS, ROLE_PERMISSIONS, ASSIGNABLE_ROLES,
+    COMMERCIAL_ALERT_ENTITIES, roles_with,
+)
+
+
+def _can(permission):
+    """True if the signed-in user's role grants ``permission``."""
+    if not getattr(current_user, 'is_authenticated', False):
+        return bool(app.config.get('LOGIN_DISABLED'))
+    return permission in ROLE_PERMISSIONS.get(getattr(current_user, 'role', None), ())
+
+
+def _permissions_for(role):
+    return sorted(ROLE_PERMISSIONS.get(role, ()))
+
+
+def _landing_page(role):
+    if role == 'super_admin':
+        return '/zehunger'
+    if role == 'operator':
+        return '/farmer'
+    if role == 'manager':
+        return '/dashboard'
+    # Read-only and specialist roles start on the live operations dashboard;
+    # /dashboard is mostly data-entry forms.
+    return '/operations'
+
+
+def requires(permission):
+    """Route guard: 401 when signed out, 403 when the role lacks ``permission``."""
+    from functools import wraps
+
+    def decorator(view):
+        @wraps(view)
+        def guarded(*args, **kwargs):
+            if not getattr(current_user, 'is_authenticated', False) and not app.config.get('LOGIN_DISABLED'):
+                return jsonify({'success': False, 'message': 'Please sign in'}), 401
+            if not _can(permission):
+                return jsonify({
+                    'success': False,
+                    'message': f'Your role does not allow this ({PERMISSION_LABELS[permission].lower()})',
+                }), 403
+            return view(*args, **kwargs)
+        guarded.required_permission = permission
+        return guarded
+    return decorator
+
 
 def super_admin_required(f):
     from functools import wraps
@@ -146,6 +228,7 @@ def super_admin_required(f):
         if not current_user.is_authenticated or current_user.role != 'super_admin':
             abort(403)
         return f(*args, **kwargs)
+    decorated_function.required_permission = 'super_admin'
     return decorated_function
 
 # Enhanced Login form with security
@@ -199,53 +282,131 @@ class RegistrationForm(FlaskForm):
 def get_user_by_email(email):
     """Get user by email from database"""
     result = db.fetch_one("""
-        SELECT user_id, username, email, password_hash, full_name, last_login, is_active, role
+        SELECT user_id, username, email, password_hash, full_name, last_login, is_active, role, auth_version
         FROM users WHERE email = %s
     """, (email,))
-    
-    if result:
-        return User(
-            user_id=result['user_id'],
-            username=result['username'],
-            email=result['email'],
-            password_hash=result['password_hash'],
-            full_name=result['full_name'],
-            last_login=result['last_login'],
-            is_active=result['is_active'],
-            role=result.get('role', 'viewer')
-        )
-    return None
+    return _user_from_row(result)
+
+
+def _user_from_row(result):
+    if not result:
+        return None
+    return User(
+        user_id=result['user_id'],
+        username=result['username'],
+        email=result['email'],
+        password_hash=result['password_hash'],
+        full_name=result['full_name'],
+        last_login=result['last_login'],
+        is_active=result['is_active'],
+        role=result.get('role') or 'viewer',
+        auth_version=result.get('auth_version') or 1,
+    )
 
 def get_user_by_id(user_id):
     """Get user by ID from database"""
     result = db.fetch_one("""
-        SELECT user_id, username, email, password_hash, full_name, last_login, is_active, role
+        SELECT user_id, username, email, password_hash, full_name, last_login, is_active, role, auth_version
         FROM users WHERE user_id = %s
     """, (user_id,))
-    
-    if result:
-        return User(
-            user_id=result['user_id'],
-            username=result['username'],
-            email=result['email'],
-            password_hash=result['password_hash'],
-            full_name=result['full_name'],
-            last_login=result['last_login'],
-            is_active=result['is_active'],
-            role=result.get('role', 'viewer')
-        )
-    return None
+    return _user_from_row(result)
 
-def create_user(username, full_name, email, password):
+def create_user(username, full_name, email, password, role='viewer'):
     """Create a new user in the database"""
+    if role not in ASSIGNABLE_ROLES:
+        raise ValueError('Unknown role')
     password_hash = generate_password_hash(password)
-    
+
     query = """
         INSERT INTO users (username, full_name, email, password_hash, role, created_at)
         VALUES (%s, %s, %s, %s, %s, NOW())
     """
-    user_id = db.execute_query(query, (username, full_name, email, password_hash, 'viewer'))
+    user_id = db.execute_query(query, (username, full_name, email, password_hash, role))
     return user_id
+
+
+_EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def _account_field_problem(username, full_name, email):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]{3,50}', username or ''):
+        return 'Username must be 3-50 letters, numbers, dots, dashes or underscores'
+    if not 2 <= len(full_name or '') <= 100:
+        return 'Full name must be between 2 and 100 characters'
+    if len(email or '') > 100 or not _EMAIL_PATTERN.match(email or ''):
+        return 'Enter a valid email address'
+    return None
+
+
+# ---- Login throttling ---------------------------------------------------------------
+
+LOGIN_WINDOW_MINUTES = 15
+LOGIN_MAX_FAILURES_PER_ACCOUNT = 5
+LOGIN_MAX_FAILURES_PER_IP = 30
+# Compared against when the email is unknown, so response time does not reveal
+# which addresses have accounts.
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_hex(16))
+
+
+def _client_ip():
+    return (request.remote_addr or '')[:64]
+
+
+def _login_blocked(email):
+    row = db.fetch_one(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE email = %s) AS account_failures,
+            COUNT(*) FILTER (WHERE ip_address = %s) AS ip_failures
+        FROM auth_login_attempts
+        WHERE NOT succeeded AND attempted_at > now() - make_interval(mins => %s)
+          AND (email = %s OR ip_address = %s)
+        """,
+        (email, _client_ip(), LOGIN_WINDOW_MINUTES, email, _client_ip()),
+    )
+    return (
+        int(row['account_failures']) >= LOGIN_MAX_FAILURES_PER_ACCOUNT
+        or int(row['ip_failures']) >= LOGIN_MAX_FAILURES_PER_IP
+    )
+
+
+def _record_login_attempt(email, succeeded):
+    db.execute_query(
+        "INSERT INTO auth_login_attempts (email, ip_address, succeeded) VALUES (%s, %s, %s)",
+        (email[:255], _client_ip(), succeeded),
+    )
+
+
+class LoginThrottled(Exception):
+    pass
+
+
+def _authenticate(email, password):
+    """Return the active user for these credentials, or None.
+
+    Raises LoginThrottled after too many recent failures for the account or
+    the client address.
+    """
+    email = (email or '').lower().strip()
+    if _login_blocked(email):
+        raise LoginThrottled()
+    user = get_user_by_email(email) if email else None
+    valid = check_password_hash(user.password_hash if user else _DUMMY_PASSWORD_HASH, password or '')
+    succeeded = bool(user and valid and user.is_active)
+    _record_login_attempt(email, succeeded)
+    return user if succeeded else None
+
+
+def _start_session(user, *, remember):
+    """Sign ``user`` in on a fresh session id (prevents session fixation)."""
+    from flask import session
+    session.clear()
+    regenerate = getattr(app.session_interface, 'regenerate', None)
+    if regenerate:
+        regenerate(session)
+    session.permanent = True
+    login_user(user, remember=remember, duration=timedelta(days=7), fresh=True)
+    update_last_login(user.id)
 
 def update_last_login(user_id):
     """Update user's last login time"""
@@ -256,7 +417,84 @@ def update_last_login(user_id):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return get_user_by_id(int(user_id))
+    # Sessions from before Step 22 store the bare id and count as version 1.
+    raw_id, _, raw_version = str(user_id).partition(':')
+    try:
+        user = get_user_by_id(int(raw_id))
+        version = int(raw_version or 1)
+    except (TypeError, ValueError):
+        return None
+    if not user or not user.is_active or user.auth_version != version:
+        return None
+    return user
+
+
+@login_manager.unauthorized_handler
+def _unauthorized():
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'message': 'Please sign in'}), 401
+    return redirect(url_for('login', next=request.full_path.rstrip('?')))
+
+
+for _endpoint, _permission in _BLUEPRINT_PERMISSIONS.items():
+    app.view_functions[_endpoint] = login_required(requires(_permission)(app.view_functions[_endpoint]))
+
+
+# ---- Cross-site request protection and security headers --------------------------
+
+_TRUSTED_ORIGINS = {o.rstrip('/') for o in _cors_origins}
+
+
+def _same_site_url(value):
+    from urllib.parse import urlsplit
+    parts = urlsplit(value)
+    if not parts.scheme or not parts.netloc:
+        return False
+    origin = f'{parts.scheme}://{parts.netloc}'
+    return origin == request.host_url.rstrip('/') or origin in _TRUSTED_ORIGINS
+
+
+@app.before_request
+def _reject_cross_site_writes():
+    """Refuse state-changing requests sent by another website (CSRF).
+
+    Browsers always send Origin (or at least Referer) on cross-site writes, so
+    a write is refused when those headers name a different site. Requests
+    without either header come from non-browser clients, which do not carry
+    the user's cookies by accident.
+    """
+    if request.method in ('GET', 'HEAD', 'OPTIONS', 'TRACE'):
+        return None
+    if request.headers.get('Sec-Fetch-Site') == 'cross-site':
+        return _cross_site_refusal()
+    origin = request.headers.get('Origin')
+    if origin and origin != 'null':
+        return None if _same_site_url(origin) else _cross_site_refusal()
+    if origin == 'null':
+        return _cross_site_refusal()
+    referer = request.headers.get('Referer')
+    if referer and not _same_site_url(referer):
+        return _cross_site_refusal()
+    return None
+
+
+def _cross_site_refusal():
+    logger.warning('Refused cross-site %s %s', request.method, request.path)
+    return jsonify({'success': False, 'message': 'Cross-site request refused'}), 403
+
+
+@app.after_request
+def _security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if not _embedded_preview:
+        response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    if request.is_secure:
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
+    if request.path.startswith('/api/'):
+        response.headers.setdefault('Cache-Control', 'no-store')
+    return response
 
 # Authentication routes
 def _safe_next(target):
@@ -273,23 +511,17 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        email = form.email.data.lower().strip()
-        password = form.password.data
-        
-        # Verify credentials
-        user = get_user_by_email(email)
-        if user and user.is_active and check_password_hash(user.password_hash, password):
-            # Successful login
-            login_user(user, remember=form.remember.data)
-            update_last_login(user.id)
-            
+        try:
+            user = _authenticate(form.email.data, form.password.data)
+        except LoginThrottled:
+            flash('Too many failed sign-in attempts. Try again in 15 minutes.', 'danger')
+            return render_template('login.html', form=form), 429
+        if user:
+            _start_session(user, remember=bool(form.remember.data))
             if user.role == 'super_admin':
                 return redirect(url_for('zehunger_portal'))
-            
-            return redirect(_safe_next(request.args.get('next')) or url_for('dashboard'))
-        else:
-            # Failed login
-            flash('Invalid email or password', 'danger')
+            return redirect(_safe_next(request.args.get('next')) or _landing_page(user.role))
+        flash('Invalid email or password', 'danger')
     
     return render_template('login.html', form=form)
 
@@ -300,6 +532,10 @@ def register():
     
     form = RegistrationForm()
     if form.validate_on_submit():
+        problem = password_problem(form.password.data, email=form.email.data, username=form.username.data)
+        if problem:
+            flash(problem, 'danger')
+            return render_template('register.html', form=form), 400
         try:
             username = form.username.data.strip()
             full_name = form.full_name.data.strip()
@@ -318,7 +554,9 @@ def register():
 @app.route('/logout')
 @login_required
 def logout():
+    from flask import session
     logout_user()
+    session.clear()
     flash('You have been logged out successfully.', 'info')
     return redirect(url_for('login'))
 
@@ -328,48 +566,52 @@ def api_login():
     """API endpoint for AJAX login requests"""
     from flask import session, make_response
     
-    data = request.get_json()
-    email = data.get('username', '').lower().strip()  # Frontend sends username field
-    password = data.get('password', '')
-    remember_me = data.get('rememberMe', False)
-    
+    data = request.get_json(silent=True) or {}
+    email = str(data.get('username') or '').lower().strip()  # Frontend sends username field
+    password = str(data.get('password') or '')
+    remember_me = bool(data.get('rememberMe', True))
+
     if not email or not password:
         return jsonify({'success': False, 'message': 'Email and password are required'}), 400
-    
-    # Verify credentials
-    user = get_user_by_email(email)
-    if user and user.is_active and check_password_hash(user.password_hash, password):
-        # Successful login
-        session.permanent = True  # Make session permanent
-        session.modified = True  # Force session to be saved
-        login_user(user, remember=True, duration=timedelta(days=7), fresh=True)  # Force remember for 7 days
-        update_last_login(user.id)
-        
-        redirect_url = '/zehunger' if user.role == 'super_admin' else '/dashboard'
-        # Create response with explicit cookie settings
-        response = make_response(jsonify({'success': True, 'message': 'Login successful', 'redirect': redirect_url, 'role': user.role}))
-        
-        logger.info(f"User {user.email} logged in successfully. Session ID: {session.get('_id', 'None')}")
-        return response
-    else:
-        # Failed login
+
+    try:
+        user = _authenticate(email, password)
+    except LoginThrottled:
+        return jsonify({
+            'success': False,
+            'message': 'Too many failed sign-in attempts. Try again in 15 minutes.',
+        }), 429
+    if not user:
         return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+    _start_session(user, remember=remember_me)
+    next_url = _safe_next(data.get('next')) if user.role != 'super_admin' else None
+    redirect_url = next_url or _landing_page(user.role)
+    logger.info('User %s signed in', user.id)
+    return make_response(jsonify({'success': True, 'message': 'Login successful', 'redirect': redirect_url, 'role': user.role}))
 
 @app.route('/api/auth/register', methods=['POST'])
 def api_register():
     """API endpoint for AJAX registration requests"""
-    data = request.get_json()
-    username = data.get('username', '').strip()
-    full_name = data.get('fullName', '').strip()
-    email = data.get('email', '').lower().strip()
-    password = data.get('password', '')
-    confirm_password = data.get('confirmPassword', '')
-    
+    data = request.get_json(silent=True) or {}
+    username = str(data.get('username') or '').strip()
+    full_name = str(data.get('fullName') or '').strip()
+    email = str(data.get('email') or '').lower().strip()
+    password = str(data.get('password') or '')
+    confirm_password = str(data.get('confirmPassword') or '')
+
     # Simple validation
     if not all([username, full_name, email, password, confirm_password]):
         return jsonify({'success': False, 'message': 'All fields are required'}), 400
+    problem = _account_field_problem(username, full_name, email)
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
     if password != confirm_password:
         return jsonify({'success': False, 'message': 'Passwords do not match'}), 400
+    problem = password_problem(password, email=email, username=username)
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
+    if db.fetch_one("SELECT 1 FROM users WHERE LOWER(username) = LOWER(%s)", (username,)):
+        return jsonify({'success': False, 'message': 'Username is already taken'}), 409
         
     # Check if user already exists
     if get_user_by_email(email):
@@ -553,7 +795,10 @@ def admin_toggle_user(user_id):
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
     new_status = not user['is_active']
-    db.execute_query("UPDATE users SET is_active = %s WHERE user_id = %s", (new_status, user_id))
+    db.execute_query(
+        "UPDATE users SET is_active = %s, auth_version = auth_version + 1 WHERE user_id = %s",
+        (new_status, user_id),
+    )
     return jsonify({'success': True, 'is_active': new_status, 'message': f"Farmer {'activated' if new_status else 'deactivated'} successfully"})
 
 @app.route('/api/admin/users', methods=['POST'])
@@ -563,20 +808,44 @@ def admin_create_farmer():
     data = request.get_json()
     if not data:
         return jsonify({'success': False, 'message': 'No data provided'}), 400
-    username = data.get('username', '').strip()
-    full_name = data.get('full_name', '').strip()
-    email = data.get('email', '').lower().strip()
-    password = data.get('password', '')
+    username = str(data.get('username') or '').strip()
+    full_name = str(data.get('full_name') or '').strip()
+    email = str(data.get('email') or '').lower().strip()
+    password = str(data.get('password') or '')
+    role = str(data.get('role') or 'operator')
     if not all([username, full_name, email, password]):
         return jsonify({'success': False, 'message': 'All fields are required'}), 400
+    if role not in ASSIGNABLE_ROLES:
+        return jsonify({'success': False, 'message': 'Choose a valid role'}), 400
+    problem = _account_field_problem(username, full_name, email) or password_problem(
+        password, email=email, username=username
+    )
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
     if get_user_by_email(email):
         return jsonify({'success': False, 'message': 'Email already registered'}), 409
+    if db.fetch_one("SELECT 1 FROM users WHERE LOWER(username) = LOWER(%s)", (username,)):
+        return jsonify({'success': False, 'message': 'Username is already taken'}), 409
     try:
-        create_user(username, full_name, email, password)
+        create_user(username, full_name, email, password, role)
         return jsonify({'success': True, 'message': f"Farmer account for {full_name} created successfully"}), 201
     except Exception as e:
         logger.error(f"Admin create farmer error: {e}")
         return jsonify({'success': False, 'message': 'Failed to create farmer account'}), 500
+
+@app.route('/api/admin/roles', methods=['GET'])
+@login_required
+@super_admin_required
+def admin_roles():
+    return jsonify({'success': True, 'data': [
+        {
+            'key': role,
+            'label': ROLE_LABELS[role],
+            'permissions': [PERMISSION_LABELS[p] for p in _permissions_for(role)],
+        }
+        for role in ASSIGNABLE_ROLES
+    ]})
+
 
 @app.route('/api/admin/me', methods=['GET'])
 @login_required
@@ -597,14 +866,22 @@ def admin_me():
 @super_admin_required
 def admin_reset_password(user_id):
     data = request.get_json() or {}
-    new_password = data.get('password', '')
-    if len(new_password) < 8:
-        return jsonify({'success': False, 'message': 'Password must be at least 8 characters'}), 400
-    user = db.fetch_one("SELECT user_id FROM users WHERE user_id = %s AND role != 'super_admin'", (user_id,))
+    new_password = str(data.get('password') or '')
+    user = db.fetch_one(
+        "SELECT user_id, username, email FROM users WHERE user_id = %s AND role != 'super_admin'",
+        (user_id,),
+    )
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
+    problem = password_problem(new_password, email=user['email'], username=user['username'])
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
     pw_hash = generate_password_hash(new_password)
-    db.execute_query("UPDATE users SET password_hash = %s WHERE user_id = %s", (pw_hash, user_id))
+    # Signs the user out everywhere.
+    db.execute_query(
+        "UPDATE users SET password_hash = %s, auth_version = auth_version + 1 WHERE user_id = %s",
+        (pw_hash, user_id),
+    )
     return jsonify({'success': True, 'message': 'Password reset successfully'})
 
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
@@ -622,16 +899,33 @@ def admin_delete_farmer(user_id):
 @super_admin_required
 def admin_edit_farmer(user_id):
     data = request.get_json() or {}
-    full_name = data.get('full_name', '').strip()
-    email = data.get('email', '').lower().strip()
+    full_name = str(data.get('full_name') or '').strip()
+    email = str(data.get('email') or '').lower().strip()
     if not full_name or not email:
         return jsonify({'success': False, 'message': 'Full name and email are required'}), 400
+    current = db.fetch_one(
+        "SELECT username, role FROM users WHERE user_id = %s AND role != 'super_admin'", (user_id,)
+    )
+    if not current:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    role = str(data.get('role') or current['role'])
+    if role not in ASSIGNABLE_ROLES:
+        return jsonify({'success': False, 'message': 'Choose a valid role'}), 400
+    problem = _account_field_problem(current['username'], full_name, email)
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
     existing = db.fetch_one("SELECT user_id FROM users WHERE email = %s AND user_id != %s", (email, user_id))
     if existing:
         return jsonify({'success': False, 'message': 'Email already registered to another account'}), 409
+    # A role change takes effect at once and ends the user's other sessions.
     db.execute_query(
-        "UPDATE users SET full_name = %s, email = %s WHERE user_id = %s AND role != 'super_admin'",
-        (full_name, email, user_id)
+        """
+        UPDATE users
+        SET full_name = %s, email = %s, role = %s,
+            auth_version = auth_version + CASE WHEN role <> %s THEN 1 ELSE 0 END
+        WHERE user_id = %s AND role != 'super_admin'
+        """,
+        (full_name, email, role, role, user_id)
     )
     return jsonify({'success': True, 'message': 'Farmer details updated successfully'})
 
@@ -1602,6 +1896,7 @@ def _production_event_rows(batch_id):
 
 @app.route('/api/waste-sourcing', methods=['POST'])
 @login_required
+@requires('production.write')
 def handle_waste_sourcing():
     data = request.get_json()
     if not data:
@@ -1719,6 +2014,7 @@ def handle_waste_sourcing():
 
 @app.route('/api/storage-records', methods=['POST'])
 @login_required
+@requires('production.write')
 def handle_storage_records():
     data = request.get_json()
     if not data:
@@ -1756,6 +2052,7 @@ def handle_storage_records():
 
 @app.route('/api/processing-records', methods=['POST'])
 @login_required
+@requires('production.write')
 def handle_processing_records():
     data = request.get_json()
     if not data:
@@ -1792,6 +2089,7 @@ def handle_processing_records():
 
 @app.route('/api/substrate-preparation', methods=['POST'])
 @login_required
+@requires('production.write')
 def handle_substrate_preparation():
     data = request.get_json()
     if not data:
@@ -2189,6 +2487,7 @@ def get_substrate_batch(batch_no):
 
 @app.route('/api/production/batches', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_production_batch():
     """Create a PLANNED production batch and issue measured substrate inputs."""
     data = normalize_keys(request.get_json() or {})
@@ -2485,6 +2784,7 @@ def get_production_batch(batch_ref):
     methods=['PUT', 'PATCH'],
 )
 @login_required
+@requires('production.write')
 def set_production_batch_harvest_limit(batch_ref):
     data = normalize_keys(request.get_json() or {})
     try:
@@ -2560,6 +2860,7 @@ def set_production_batch_harvest_limit(batch_ref):
 
 @app.route('/api/production/batches/<string:batch_ref>/status', methods=['POST', 'PATCH'])
 @login_required
+@requires('production.write')
 def change_production_batch_status(batch_ref):
     data = normalize_keys(request.get_json() or {})
     target_status = str(data.get('status', '')).strip().upper()
@@ -2687,6 +2988,7 @@ def _event_request_data(batch_ref=None):
 
 @app.route('/api/production/batches/<string:batch_ref>/events/feeding', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_production_feeding_event(batch_ref):
     try:
         result = _create_feeding_event(_event_request_data(batch_ref))
@@ -2706,6 +3008,7 @@ def create_production_feeding_event(batch_ref):
 
 @app.route('/api/production/batches/<string:batch_ref>/events/monitoring', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_production_monitoring_event(batch_ref):
     try:
         result = _create_monitoring_event(_event_request_data(batch_ref))
@@ -2725,6 +3028,7 @@ def create_production_monitoring_event(batch_ref):
 
 @app.route('/api/production/batches/<string:batch_ref>/events/health', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_production_health_event(batch_ref):
     try:
         result = _create_health_event(_event_request_data(batch_ref))
@@ -2744,6 +3048,7 @@ def create_production_health_event(batch_ref):
 
 @app.route('/api/production/batches/<string:batch_ref>/events/harvest', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_production_harvest_event(batch_ref):
     try:
         result = _create_harvest_event(_event_request_data(batch_ref))
@@ -3352,6 +3657,7 @@ def product_lot_page():
 
 @app.route('/api/product-lots', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_product_lot():
     """Release one approved Drying Output as an available Product Lot."""
     try:
@@ -3478,10 +3784,7 @@ class InventoryConflictError(ValueError):
 
 
 def _is_inventory_administrator():
-    return bool(app.config.get('LOGIN_DISABLED')) or (
-        getattr(current_user, 'is_authenticated', False)
-        and current_user.role == 'super_admin'
-    )
+    return _can('inventory.adjust')
 
 
 def _inventory_location_row(cursor, location_ref, label):
@@ -3674,7 +3977,7 @@ def _record_inventory_movement(data):
     if movement_type in INVENTORY_PRIVILEGED_TYPES:
         if not _is_inventory_administrator():
             raise ProductionEventPermissionError(
-                'Only an administrator can post inventory adjustments or wastage'
+                'Your role does not allow stock adjustments or wastage'
             )
         if not reason:
             raise ValueError(f'A reason is required for {movement_type}')
@@ -3779,6 +4082,7 @@ def _record_inventory_movement(data):
 
 @app.route('/api/inventory/movements', methods=['POST'])
 @login_required
+@requires('inventory.write')
 def create_inventory_movement():
     """Post one validated movement to the Product Lot inventory ledger."""
     try:
@@ -4547,7 +4851,12 @@ def traceability_page():
 # organization access (or super admins); facility-only operators do not see
 # customers or order quantities.
 
-def _farm_access_allowed(cursor, farm_id):
+def _farm_access_allowed(cursor, farm_id, permission='sales.read'):
+    """Farm/organization access for ``farm_id`` plus, by default, the right to
+    see commercial data. Pass ``permission=None`` for farm-level records that
+    are not commercial (stock thresholds, farm alerts)."""
+    if permission and not _can(permission):
+        return False
     if app.config.get('LOGIN_DISABLED') or (
         getattr(current_user, 'is_authenticated', False)
         and current_user.role == 'super_admin'
@@ -4577,7 +4886,9 @@ def _assert_farm_access(cursor, farm_id):
         )
 
 
-def _farm_visibility_clause(alias):
+def _farm_visibility_clause(alias, permission='sales.read'):
+    if permission and not _can(permission):
+        return 'FALSE', ()
     if app.config.get('LOGIN_DISABLED') or (
         getattr(current_user, 'is_authenticated', False)
         and current_user.role == 'super_admin'
@@ -5141,12 +5452,14 @@ def _order_response(handler, *args, status=200):
 
 @app.route('/api/orders', methods=['POST'])
 @login_required
+@requires('sales.write')
 def create_customer_order():
     return _order_response(_create_order, normalize_keys(request.get_json() or {}), status=201)
 
 
 @app.route('/api/orders', methods=['GET'])
 @login_required
+@requires('sales.read')
 def list_customer_orders():
     def handler():
         visibility, params = _farm_visibility_clause('o')
@@ -5191,6 +5504,7 @@ def list_customer_orders():
 
 @app.route('/api/orders/<string:order_ref>', methods=['GET'])
 @login_required
+@requires('sales.read')
 def get_customer_order(order_ref):
     def handler():
         with db.transaction() as cursor:
@@ -5200,6 +5514,7 @@ def get_customer_order(order_ref):
 
 @app.route('/api/orders/<string:order_ref>/available-stock', methods=['GET'])
 @login_required
+@requires('sales.read')
 def get_order_available_stock(order_ref):
     def handler():
         with db.transaction() as cursor:
@@ -5211,12 +5526,14 @@ def get_order_available_stock(order_ref):
 
 @app.route('/api/orders/<string:order_ref>/allocations', methods=['POST'])
 @login_required
+@requires('sales.write')
 def allocate_customer_order(order_ref):
     return _order_response(_allocate, order_ref, normalize_keys(request.get_json() or {}), status=201)
 
 
 @app.route('/api/orders/<string:order_ref>/allocations/<int:allocation_id>/release', methods=['POST'])
 @login_required
+@requires('sales.write')
 def release_order_allocation(order_ref, allocation_id):
     return _order_response(
         _release_allocation, order_ref, allocation_id, normalize_keys(request.get_json() or {})
@@ -5225,18 +5542,21 @@ def release_order_allocation(order_ref, allocation_id):
 
 @app.route('/api/orders/<string:order_ref>/cancel', methods=['POST'])
 @login_required
+@requires('sales.write')
 def cancel_customer_order(order_ref):
     return _order_response(_cancel_order, order_ref, normalize_keys(request.get_json() or {}))
 
 
 @app.route('/api/orders/<string:order_ref>/deliveries', methods=['POST'])
 @login_required
+@requires('sales.write')
 def dispatch_customer_order(order_ref):
     return _order_response(_dispatch, order_ref, normalize_keys(request.get_json() or {}), status=201)
 
 
 @app.route('/api/deliveries/<string:delivery_ref>/confirm', methods=['POST'])
 @login_required
+@requires('sales.write')
 def confirm_customer_delivery(delivery_ref):
     return _order_response(_confirm_delivery, delivery_ref, normalize_keys(request.get_json() or {}))
 
@@ -5613,12 +5933,16 @@ def _sync_alerts_transaction(*, force=False):
 
 
 def _alert_visibility_clause():
-    """Facility-scoped alerts follow location access; farm-level ones need farm access."""
+    """Facility-scoped alerts follow location access; farm-level ones need farm
+    access, and alerts about orders or deliveries also need sales access."""
     scope_sql, scope_params = _scope_visibility_clause('a')
-    farm_sql, farm_params = _farm_visibility_clause('a')
+    farm_sql, farm_params = _farm_visibility_clause('a', permission=None)
+    commercial_ok = _can('sales.read')
     return (
-        f"((a.facility_id IS NOT NULL AND {scope_sql}) OR (a.facility_id IS NULL AND {farm_sql}))",
-        (*scope_params, *farm_params),
+        f"""((a.facility_id IS NOT NULL AND {scope_sql})
+             OR (a.facility_id IS NULL AND {farm_sql}))
+            AND (%s OR a.entity_type <> ALL(%s))""",
+        (*scope_params, *farm_params, commercial_ok, list(COMMERCIAL_ALERT_ENTITIES)),
     )
 
 
@@ -5783,12 +6107,14 @@ def _snooze_alert(alert_id, data):
 
 @app.route('/api/alerts/<int:alert_id>/acknowledge', methods=['POST'])
 @login_required
+@requires('alerts.manage')
 def acknowledge_alert(alert_id):
     return _alert_response(_acknowledge_alert, alert_id, normalize_keys(request.get_json() or {}))
 
 
 @app.route('/api/alerts/<int:alert_id>/snooze', methods=['POST'])
 @login_required
+@requires('alerts.manage')
 def snooze_alert(alert_id):
     return _alert_response(_snooze_alert, alert_id, normalize_keys(request.get_json() or {}))
 
@@ -5797,7 +6123,7 @@ def snooze_alert(alert_id):
 @login_required
 def list_alert_thresholds():
     def handler():
-        visibility, params = _farm_visibility_clause('t')
+        visibility, params = _farm_visibility_clause('t', permission=None)
         rows = db.fetch_all(
             f"""
             SELECT t.id, t.farm_id, f.name AS farm_name, t.product_type, t.minimum_kg,
@@ -6073,6 +6399,7 @@ def setup_page():
 
 @app.route('/api/waste-monitoring', methods=['POST'])
 @login_required
+@requires('production.write')
 def handle_waste_environmental_monitoring():
     data = request.get_json()
     if not data:
@@ -6116,6 +6443,7 @@ def handle_waste_environmental_monitoring():
 # --- Statistics & Reporting ---
 @app.route('/api/statistics/waste-processing', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_waste_processing_stats():
     try:
         query = """
@@ -6143,6 +6471,7 @@ def get_waste_processing_stats():
 
 @app.route('/api/statistics/environmental', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_environmental_stats():
     try:
         query = """
@@ -6169,6 +6498,7 @@ def get_environmental_stats():
 
 @app.route('/api/statistics/larval-growth', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_larval_growth_stats():
     try:
         query = """
@@ -6195,6 +6525,7 @@ def get_larval_growth_stats():
 
 @app.route('/api/statistics/system-efficiency', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_system_efficiency():
     try:
         query_waste = """
@@ -6229,6 +6560,7 @@ def get_system_efficiency():
 
 @app.route('/api/statistics/daily-report', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_daily_report():
     today = datetime.now().date()
     try:
@@ -6260,6 +6592,7 @@ def get_daily_report():
 
 @app.route('/api/statistics/harvest-efficiency', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_harvest_efficiency():
     try:
         query = """
@@ -7140,6 +7473,7 @@ def _canonical_drying_batch_request(data):
 
 @app.route('/api/drying/batches', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_canonical_drying_batch():
     try:
         data = normalize_keys(request.get_json() or {})
@@ -7173,6 +7507,7 @@ def get_canonical_drying_batch(batch_ref):
 
 @app.route('/api/drying/batches/<string:batch_ref>/inputs', methods=['POST'])
 @login_required
+@requires('production.write')
 def add_canonical_drying_inputs(batch_ref):
     try:
         data = normalize_keys(request.get_json() or {})
@@ -7193,6 +7528,7 @@ def add_canonical_drying_inputs(batch_ref):
 
 @app.route('/api/drying/batches/<string:batch_ref>/outputs', methods=['POST'])
 @login_required
+@requires('production.write')
 def add_canonical_drying_output(batch_ref):
     try:
         data = normalize_keys(request.get_json() or {})
@@ -7299,6 +7635,7 @@ def add_canonical_drying_output(batch_ref):
 
 @app.route('/api/drying/batches/<string:batch_ref>/status', methods=['POST'])
 @login_required
+@requires('production.write')
 def update_canonical_drying_status(batch_ref):
     try:
         data = normalize_keys(request.get_json() or {})
@@ -7319,6 +7656,7 @@ def update_canonical_drying_status(batch_ref):
 
 @app.route('/api/drying/batches/<string:batch_ref>/quality-checks', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_canonical_drying_quality_check(batch_ref):
     data = normalize_keys(request.get_json() or {})
     data['drying_batch_id'] = batch_ref
@@ -7327,6 +7665,7 @@ def create_canonical_drying_quality_check(batch_ref):
 
 @app.route('/api/drying/outputs/<int:output_id>/quality-checks', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_canonical_drying_output_quality_check(output_id):
     data = normalize_keys(request.get_json() or {})
     data['drying_output_id'] = output_id
@@ -7348,6 +7687,7 @@ def _canonical_quality_check_response(data):
 
 @app.route('/api/drying/quality-approvals', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_canonical_drying_quality_approval():
     try:
         data = normalize_keys(request.get_json() or {})
@@ -7364,6 +7704,7 @@ def create_canonical_drying_quality_approval():
 
 @app.route('/api/drying/batches/<string:batch_ref>/quality-approvals', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_canonical_drying_batch_quality_approval(batch_ref):
     data = normalize_keys(request.get_json() or {})
     data['drying_batch_id'] = batch_ref
@@ -7396,6 +7737,7 @@ def create_canonical_drying_batch_quality_approval(batch_ref):
 
 @app.route('/api/drying/batch', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_drying_batch():
     data = request.get_json()
     if not data:
@@ -7440,10 +7782,12 @@ def create_drying_batch():
         }), 201
     except Exception as e:
         logger.error(f"Error creating drying batch: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
 
 @app.route('/api/drying/input', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_drying_input():
     data = request.get_json()
     data = normalize_keys(data)
@@ -7488,6 +7832,7 @@ def create_drying_input():
 
 @app.route('/api/drying/output', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_drying_output():
     data = request.get_json()
     data = normalize_keys(data)
@@ -7535,6 +7880,7 @@ def create_drying_output():
 
 @app.route('/api/drying/qc', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_drying_qc():
     data = request.get_json()
     data = normalize_keys(data)
@@ -7558,12 +7904,14 @@ def create_drying_qc():
 
 @app.route('/api/drying/quality-control', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def deprecated_create_drying_quality_control():
     # This is a deprecated route name, redirecting logic to the new one.
     return create_drying_qc()
 
 @app.route('/api/drying/remarks', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_drying_remarks():
     # This route seems to be unused based on frontend JS.
     # If it were to be used, it would likely add remarks to an existing batch.
@@ -7571,6 +7919,7 @@ def create_drying_remarks():
 
 @app.route('/api/drying/review', methods=['POST'])
 @login_required
+@requires('quality.decide')
 def create_drying_review():
     data = request.get_json()
     data = normalize_keys(data)
@@ -7591,6 +7940,7 @@ def create_drying_review():
 # --- GET ALL (for potential future table views) ---
 @app.route('/api/waste-sourcing/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_waste_sourcing():
     query = "SELECT * FROM waste_sourcing ORDER BY collection_date DESC"
     records = db.fetch_all(query)
@@ -7598,6 +7948,7 @@ def get_all_waste_sourcing():
 
 @app.route('/api/drying/input/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_drying_input():
     query = """
         SELECT di.*, db.id AS drying_batch_id_internal,
@@ -7611,6 +7962,7 @@ def get_all_drying_input():
 
 @app.route('/api/drying/output/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_drying_output():
     query = """
         SELECT dout.*, db.id AS drying_batch_id_internal,
@@ -7624,6 +7976,7 @@ def get_all_drying_output():
 
 @app.route('/api/drying/qc/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_drying_qc():
     query = "SELECT * FROM drying_quality_control ORDER BY qc_date DESC"
     records = db.fetch_all(query)
@@ -7631,11 +7984,13 @@ def get_all_drying_qc():
 
 @app.route('/api/drying/remarks/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_drying_remarks():
     return jsonify({'records': [], 'success': True})
 
 @app.route('/api/drying/review/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_drying_review():
     query = "SELECT * FROM drying_review_approval ORDER BY review_date DESC"
     records = db.fetch_all(query)
@@ -7643,6 +7998,7 @@ def get_all_drying_review():
 
 @app.route('/api/feeding/harvest/all', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_all_feeding_harvest():
     records = _harvest_report_rows()
     return jsonify({'records': records, 'success': True})
@@ -7650,18 +8006,21 @@ def get_all_feeding_harvest():
 # --- Analytics GET Endpoints ---
 @app.route('/api/analytics/waste-sourcing', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_waste_sourcing():
     records = db.fetch_all("SELECT * FROM waste_sourcing ORDER BY collection_date DESC")
     return jsonify({'records': serialize_records(records), 'success': True})
 
 @app.route('/api/analytics/storage-records', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_storage_records():
     records = db.fetch_all("SELECT * FROM storage_records ORDER BY storage_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/processing-records', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_processing_records():
     records = db.fetch_all("SELECT * FROM processing_records ORDER BY processing_date DESC")
     return jsonify({'records': records, 'success': True})
@@ -7669,114 +8028,133 @@ def analytics_processing_records():
 @app.route('/api/analytics/waste-monitoring', methods=['GET'])
 @app.route('/api/analytics/waste-env-monitoring', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_waste_monitoring():
     records = db.fetch_all("SELECT * FROM waste_monitoring ORDER BY monitoring_date DESC")
     return jsonify({'records': serialize_records(records), 'success': True})
 
 @app.route('/api/analytics/hatchery-batches', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_hatchery_batches():
     records = db.fetch_all("SELECT * FROM hatchery_batches ORDER BY batch_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/hatchery-feeding', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_hatchery_feeding():
     records = db.fetch_all("SELECT * FROM hatchery_feeding ORDER BY feeding_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/hatchery-monitoring', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_hatchery_monitoring():
     records = db.fetch_all("SELECT * FROM hatchery_monitoring ORDER BY monitoring_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/larvae-env-monitoring', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_larvae_env_monitoring():
     records = db.fetch_all("SELECT * FROM environmental_monitoring_larvaefeeding ORDER BY monitoring_date DESC")
     return jsonify({'records': serialize_records(records), 'success': True})
 
 @app.route('/api/analytics/substrate-preparation', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_substrate_preparation():
     records = db.fetch_all("SELECT * FROM substrate_preparation ORDER BY prep_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/health-intervention', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_health_intervention():
     records = db.fetch_all("SELECT * FROM health_intervention ORDER BY health_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/harvest-yield', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_harvest_yield():
     records = _harvest_report_rows()
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/feeding-schedule', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_feeding_schedule():
     records = db.fetch_all("SELECT * FROM feeding_schedule ORDER BY feeding_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/cage-monitoring', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_cage_monitoring():
     records = db.fetch_all("SELECT * FROM cage_monitoring ORDER BY monitoring_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/facility-maintenance', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_facility_maintenance():
     records = db.fetch_all("SELECT * FROM facility_maintenance ORDER BY maintenance_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/pupae-transition', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_pupae_transition():
     records = db.fetch_all("SELECT * FROM pupae_transition ORDER BY transition_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/egg-collection', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_egg_collection():
     records = db.fetch_all("SELECT * FROM egg_collection ORDER BY collection_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/bait-preparation', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_bait_preparation():
     records = db.fetch_all("SELECT * FROM bait_preparation ORDER BY start_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/drying-batches', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_drying_batches():
     records = db.fetch_all("SELECT * FROM drying_batches ORDER BY drying_date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/customers', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_customers():
     records = db.fetch_all("SELECT * FROM customers ORDER BY name")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/sales', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_sales():
     records = db.fetch_all("SELECT s.*, c.name as customer_name FROM sales s JOIN customers c ON s.customer_id = c.id ORDER BY s.date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/deliveries', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_deliveries():
     records = db.fetch_all("SELECT d.*, c.name as customer_name FROM deliveries d JOIN customers c ON d.customer_id = c.id ORDER BY d.date DESC")
     return jsonify({'records': records, 'success': True})
 
 @app.route('/api/analytics/feedback', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def analytics_feedback():
     records = db.fetch_all("SELECT f.*, c.name as customer_name FROM customer_feedback f JOIN customers c ON f.customer_id = c.id ORDER BY f.date DESC")
     return jsonify({'records': records, 'success': True})
@@ -7785,6 +8163,7 @@ def analytics_feedback():
 # --- Feeding Section ---
 @app.route('/api/feeding/environmental-monitoring', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_feeding_environmental_monitoring():
     try:
         result = _create_monitoring_event(normalize_keys(request.get_json() or {}))
@@ -7803,6 +8182,7 @@ def create_feeding_environmental_monitoring():
 
 @app.route('/api/feeding/health-intervention', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_feeding_health_intervention():
     try:
         result = _create_health_event(normalize_keys(request.get_json() or {}))
@@ -7821,6 +8201,7 @@ def create_feeding_health_intervention():
 
 @app.route('/api/feeding/harvest-yield', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_feeding_harvest_yield():
     try:
         result = _create_harvest_event(normalize_keys(request.get_json() or {}))
@@ -7839,6 +8220,7 @@ def create_feeding_harvest_yield():
 
 @app.route('/api/feeding/schedule', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_feeding_schedule():
     try:
         result = _create_feeding_event(normalize_keys(request.get_json() or {}))
@@ -7858,6 +8240,7 @@ def create_feeding_schedule():
 # --- Fly Facility Section ---
 @app.route('/api/facility/cage-monitoring', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_cage_monitoring():
     data = request.get_json()
     if not data:
@@ -7890,6 +8273,7 @@ def create_cage_monitoring():
 
 @app.route('/api/facility/maintenance', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_facility_maintenance():
     data = request.get_json()
     if not data:
@@ -7921,6 +8305,7 @@ def create_facility_maintenance():
 
 @app.route('/api/facility/pupae-transition', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_pupae_transition():
     data = request.get_json()
     if not data:
@@ -7954,6 +8339,7 @@ def create_pupae_transition():
 
 @app.route('/api/facility/egg-collection', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_egg_collection():
     data = request.get_json()
     if not data:
@@ -7985,6 +8371,7 @@ def create_egg_collection():
 
 @app.route('/api/facility/bait-preparation', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_bait_preparation():
     data = request.get_json()
     normalized_data = normalize_keys(data)
@@ -8019,6 +8406,7 @@ def create_bait_preparation():
 
 @app.route('/api/records', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_records_by_date_and_section():
     target_date_str = request.args.get('date')
     section = request.args.get('section')
@@ -8101,6 +8489,7 @@ def get_records_by_date_and_section():
 
 @app.route('/api/hatchery/batch', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_batch():
     try:
         data = request.get_json()
@@ -8134,7 +8523,8 @@ def create_hatchery_batch():
         }), 201
     except Exception as e:
         logger.error(f'Error saving hatchery batch: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/hatchery/next-batch-id', methods=['GET'])
 @login_required
@@ -8147,10 +8537,12 @@ def get_next_hatchery_batch_id():
         return jsonify({'next_batch_id': record['next_batch_id']}), 200
     except Exception as e:
         logger.error(f'Error getting next hatchery batch ID: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/hatchery/feeding', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_feeding():
     try:
         data = request.get_json()
@@ -8174,10 +8566,12 @@ def create_hatchery_feeding():
         return jsonify({'message': 'Feeding record saved successfully'}), 201
     except Exception as e:
         logger.error(f'Error saving feeding record: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/hatchery/monitoring', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_monitoring():
     try:
         data = request.get_json()
@@ -8195,10 +8589,12 @@ def create_hatchery_monitoring():
         return jsonify({'message': 'Monitoring record saved successfully'}), 201
     except Exception as e:
         logger.error(f'Error saving monitoring record: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/hatchery/cleaning', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_cleaning():
     try:
         data = request.get_json()
@@ -8216,10 +8612,12 @@ def create_hatchery_cleaning():
         return jsonify({'message': 'Cleaning record saved successfully'}), 201
     except Exception as e:
         logger.error(f'Error saving cleaning record: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/hatchery/problems', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_problem():
     try:
         data = request.get_json()
@@ -8239,11 +8637,13 @@ def create_hatchery_problem():
         return jsonify({'message': 'Problem record saved successfully'}), 201
     except Exception as e:
         logger.error(f'Error saving problem record: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 # Add missing hatchery endpoints that frontend is calling
 @app.route('/api/hatchery/health', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_health():
     try:
         # Debug: Check if request has JSON content
@@ -8271,22 +8671,26 @@ def create_hatchery_health():
         return jsonify({'message': 'Health intervention record saved successfully'}), 201
     except Exception as e:
         logger.error(f'Error saving health intervention record: {e}')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/hatchery/batch-information', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_batch_information():
     # Alias for the existing batch endpoint
     return create_hatchery_batch()
 
 @app.route('/api/hatchery/feeding-records', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_feeding_records():
     # Alias for the existing feeding endpoint
     return create_hatchery_feeding()
 
 @app.route('/api/hatchery/environmental-monitoring', methods=['POST'])
 @login_required
+@requires('production.write')
 def create_hatchery_environmental_monitoring():
     # Alias for the existing monitoring endpoint
     return create_hatchery_monitoring()
@@ -8294,12 +8698,14 @@ def create_hatchery_environmental_monitoring():
 # --- Customers CRUD ---
 @app.route('/api/customers', methods=['GET'])
 @login_required
+@requires('sales.read')
 def get_customers():
     customers = db.fetch_all("SELECT * FROM customers")
     return jsonify(customers)
 
 @app.route('/api/customers', methods=['POST'])
 @login_required
+@requires('sales.write')
 def add_customer():
     data = request.get_json()
     # Check for existing customer with same name and email
@@ -8312,6 +8718,7 @@ def add_customer():
 
 @app.route('/api/customers/<int:customer_id>', methods=['PUT'])
 @login_required
+@requires('sales.write')
 def edit_customer(customer_id):
     data = request.get_json()
     query = "UPDATE customers SET name=%s, contact=%s, email=%s, address=%s WHERE id=%s"
@@ -8321,12 +8728,14 @@ def edit_customer(customer_id):
 # --- Sales CRUD ---
 @app.route('/api/sales', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_sales():
     sales = db.fetch_all("SELECT s.*, c.name as customer_name FROM sales s JOIN customers c ON s.customer_id = c.id")
     return jsonify(sales)
 
 @app.route('/api/sales', methods=['POST'])
 @login_required
+@requires('legacy.write')
 def add_sale():
     data = request.get_json()
     if not data:
@@ -8358,6 +8767,7 @@ def add_sale():
 
 @app.route('/api/sales/<int:sale_id>', methods=['PUT'])
 @login_required
+@requires('legacy.write')
 def edit_sale(sale_id):
     data = request.get_json()
     if not data:
@@ -8372,12 +8782,14 @@ def edit_sale(sale_id):
 # --- Deliveries CRUD ---
 @app.route('/api/deliveries', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_deliveries():
     deliveries = db.fetch_all("SELECT d.*, c.name as customer_name FROM deliveries d JOIN customers c ON d.customer_id = c.id")
     return jsonify(deliveries)
 
 @app.route('/api/deliveries', methods=['POST'])
 @login_required
+@requires('legacy.write')
 def add_delivery():
     data = request.get_json()
     if not data:
@@ -8408,6 +8820,7 @@ def add_delivery():
 
 @app.route('/api/deliveries/<int:delivery_id>', methods=['PUT'])
 @login_required
+@requires('legacy.write')
 def edit_delivery(delivery_id):
     data = request.get_json()
     if not data:
@@ -8440,12 +8853,14 @@ def edit_delivery(delivery_id):
 # --- Customer Feedback CRUD ---
 @app.route('/api/feedback', methods=['GET'])
 @login_required
+@requires('legacy.read')
 def get_feedback():
     feedback = db.fetch_all("SELECT f.*, c.name as customer_name FROM customer_feedback f JOIN customers c ON f.customer_id = c.id")
     return jsonify(feedback)
 
 @app.route('/api/feedback', methods=['POST'])
 @login_required
+@requires('legacy.write')
 def add_feedback():
     data = request.get_json()
     if not data:
@@ -8464,6 +8879,7 @@ def add_feedback():
 
 @app.route('/api/feedback/<int:feedback_id>', methods=['PUT'])
 @login_required
+@requires('legacy.write')
 def edit_feedback(feedback_id):
     data = request.get_json()
     query = "UPDATE customer_feedback SET date=%s, customer_id=%s, feedback=%s, rating=%s WHERE id=%s"
@@ -9094,6 +9510,7 @@ def list_reports():
          'statuses': spec.get('statuses', []), 'commercial': spec.get('commercial', False),
          'columns': spec['columns']}
         for key, spec in REPORTS.items()
+        if not spec.get('commercial') or _can('sales.read')
     ]})
 
 
@@ -9103,6 +9520,8 @@ def run_report(report_key):
     spec = REPORTS.get(report_key)
     if not spec:
         return jsonify({'success': False, 'message': 'Unknown report'}), 404
+    if spec.get('commercial') and not _can('sales.read'):
+        return jsonify({'success': False, 'message': 'Your role does not allow sales reports'}), 403
     try:
         filters = _report_filters(spec)
         with db.transaction() as cursor:
@@ -9619,6 +10038,7 @@ def set_production_unit_status(unit_id):
 
 @app.route('/api/production/batches/<string:batch_ref>/units', methods=['POST'])
 @login_required
+@requires('production.write')
 def assign_production_units(batch_ref):
     def handler(data):
         unit_ids = data.get('unit_ids')
@@ -9639,6 +10059,7 @@ def assign_production_units(batch_ref):
 
 @app.route('/api/production/batches/<string:batch_ref>/units/<int:unit_id>/release', methods=['POST'])
 @login_required
+@requires('production.write')
 def release_production_unit(batch_ref, unit_id):
     def handler(data):
         reason = _optional_text(data, 'reason', 300) or 'Released by operator'
@@ -9743,6 +10164,9 @@ def current_user_profile():
         'username': current_user.username,
         'full_name': getattr(current_user, 'full_name', None),
         'role': current_user.role,
+        'role_label': ROLE_LABELS.get(current_user.role, current_user.role),
+        'permissions': _permissions_for(current_user.role),
+        'home': _landing_page(current_user.role),
     }})
 
 
@@ -10018,6 +10442,7 @@ def send_email(subject, body, to_emails):
 
 @app.route('/api/send-harvest-report', methods=['POST'])
 @login_required
+@requires('legacy.read')
 def send_harvest_report():
     # Perform the same analysis as /api/statistics/harvest-efficiency
     try:
@@ -10041,7 +10466,8 @@ def send_harvest_report():
         return jsonify({'success': True, 'message': 'Harvest report sent to admin.'})
     except Exception as e:
         print(f"[DEBUG] Failed to send harvest report: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.exception('Request failed')
+        return jsonify({'success': False, 'error': 'An internal error occurred.'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

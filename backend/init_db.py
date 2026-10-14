@@ -658,6 +658,8 @@ def create_tables(cursor):
     cursor.execute(notifications_migration_path.read_text(encoding="utf-8"))
     units_migration_path = Path(__file__).parent / "migrations" / "production_units.sql"
     cursor.execute(units_migration_path.read_text(encoding="utf-8"))
+    rbac_migration_path = Path(__file__).parent / "migrations" / "rbac_security.sql"
+    cursor.execute(rbac_migration_path.read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     init_database()

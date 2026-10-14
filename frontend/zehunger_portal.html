@@ -821,6 +821,12 @@
             <label style="font-size:.85rem;font-weight:600;color:var(--slate);display:block;margin-bottom:.4rem;">Email Address</label>
             <input type="email" id="editEmail" class="form-control" placeholder="Email" required>
           </div>
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="editRole" style="font-size:.85rem;font-weight:600;color:var(--slate);display:block;margin-bottom:.4rem;">Role</label>
+            <select id="editRole" class="form-control" onchange="describeRole('editRole')"></select>
+            <small id="editRoleHint" style="display:block;margin-top:.35rem;color:var(--slate-mid);font-size:.78rem;"></small>
+            <small style="display:block;margin-top:.25rem;color:var(--slate-mid);font-size:.78rem;">Changing the role signs the user out. Where they work is set on the Setup page.</small>
+          </div>
           <div style="display:flex;gap:.75rem;justify-content:flex-end;">
             <button type="button" class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
             <button type="submit" class="btn btn-green" id="editFarmerBtn"><i class="fas fa-save"></i> Save Changes</button>
@@ -842,7 +848,7 @@
         <form id="resetPasswordForm" onsubmit="submitResetPassword(event)">
           <div class="form-group" style="margin-bottom:1rem;">
             <label style="font-size:.85rem;font-weight:600;color:var(--slate);display:block;margin-bottom:.4rem;">New Password</label>
-            <input type="password" id="newPassword" class="form-control" placeholder="Min 8 characters" required>
+            <input type="password" id="newPassword" class="form-control" placeholder="At least 10 characters" required>
           </div>
           <div class="form-group" style="margin-bottom:1.25rem;">
             <label style="font-size:.85rem;font-weight:600;color:var(--slate);display:block;margin-bottom:.4rem;">Confirm Password</label>
@@ -900,9 +906,14 @@
               <label>Email Address</label>
               <input type="email" class="form-control" name="email" placeholder="farmer@example.com" required>
             </div>
+            <div class="form-group form-full">
+              <label for="addRole">Role</label>
+              <select id="addRole" class="form-control" name="role" onchange="describeRole('addRole')"></select>
+              <small id="addRoleHint" style="display:block;margin-top:.35rem;color:var(--slate-mid);font-size:.78rem;"></small>
+            </div>
             <div class="form-group">
               <label>Password</label>
-              <input type="password" class="form-control" name="password" placeholder="Min 8 characters" required>
+              <input type="password" class="form-control" name="password" placeholder="At least 10 characters" required>
             </div>
             <div class="form-group">
               <label>Confirm Password</label>

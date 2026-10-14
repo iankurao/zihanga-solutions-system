@@ -229,6 +229,7 @@
       .bsf-chart-container { max-width: 100%; }
     }
   </style>
+  <style>[data-permission][hidden] { display: none !important; }</style>
 </head>
 <body>
 
@@ -247,24 +248,24 @@
       <i class="fas fa-file-lines"></i> Operational reports
     </button>
 
-    <div class="sidebar-heading">Legacy records</div>
+    <div class="sidebar-heading" data-permission="legacy.read" hidden>Legacy records</div>
 
-    <button class="tab-btn" onclick="switchTab('waste', this)">
+    <button class="tab-btn" data-permission="legacy.read" hidden onclick="switchTab('waste', this)">
       <i class="fas fa-recycle"></i> Waste Management
     </button>
-    <button class="tab-btn" onclick="switchTab('feeding', this)">
+    <button class="tab-btn" data-permission="legacy.read" hidden onclick="switchTab('feeding', this)">
       <i class="fas fa-utensils"></i> Larval Feeding
     </button>
-    <button class="tab-btn" onclick="switchTab('drying', this)">
+    <button class="tab-btn" data-permission="legacy.read" hidden onclick="switchTab('drying', this)">
       <i class="fas fa-wind"></i> Drying Process
     </button>
-    <button class="tab-btn" onclick="switchTab('hatchery', this)">
+    <button class="tab-btn" data-permission="legacy.read" hidden onclick="switchTab('hatchery', this)">
       <i class="fas fa-egg"></i> Hatchery
     </button>
-    <button class="tab-btn" onclick="switchTab('facility', this)">
+    <button class="tab-btn" data-permission="legacy.read" hidden onclick="switchTab('facility', this)">
       <i class="fas fa-warehouse"></i> Fly Facility
     </button>
-    <button class="tab-btn" onclick="switchTab('sales-section', this)">
+    <button class="tab-btn" data-permission="legacy.read" hidden onclick="switchTab('sales-section', this)">
       <i class="fas fa-cash-register"></i> Sales
     </button>
 
@@ -284,7 +285,7 @@
         <h1><i class="fas fa-chart-line"></i> Analytics Dashboard</h1>
         <p>Live data from the database — all records from your farm operations</p>
       </div>
-      <button class="refresh-btn" onclick="refreshAll()">
+      <button class="refresh-btn" data-permission="legacy.read" hidden onclick="refreshAll()">
         <i class="fas fa-sync-alt"></i> Refresh All
       </button>
     </div>
@@ -415,6 +416,7 @@
   </main>
 
   <script src="js/exportManager.js"></script>
+  <script src="js/permissions.js"></script>
   <script src="js/reports.js"></script>
   <script src="js/analyticsManager.js"></script>
 
@@ -498,7 +500,10 @@
       document.getElementById('legacyNote').hidden = id === 'reports';
     }
 
+    // Legacy records are for super admins only; others see operational reports.
     document.addEventListener('DOMContentLoaded', async function () {
+      const profile = await window.currentUser;
+      if (!profile || profile.permissions.indexOf('legacy.read') === -1) return;
       await renderOverview();
       await renderAllPanels();
     });

@@ -13,6 +13,7 @@ import threading
 from email.mime.text import MIMEText
 
 from backend import config
+from backend.roles import COMMERCIAL_ALERT_ENTITIES, roles_with
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ channel_factory = EmailChannel.from_config
 background_delivery_enabled = True
 
 
+
 def severity_allows(threshold, severity):
     return threshold != 'off' and SEVERITY_RANK[severity] >= SEVERITY_RANK[threshold]
 
@@ -85,7 +87,8 @@ def alert_recipients(cursor, alert):
 
     Facility-scoped alerts reach anyone with organization, farm, site or
     facility access to that location; farm-level (commercial and stock
-    threshold) alerts need organization or farm access.  Super admins always
+    threshold) alerts need organization or farm access, and order/delivery
+    alerts go only to roles that may see sales data.  Super admins always
     receive alerts; records without a farm reach super admins only.
     """
     farm_id, site_id, facility_id = alert.get('farm_id'), alert.get('site_id'), alert.get('facility_id')
@@ -97,6 +100,7 @@ def alert_recipients(cursor, alert):
         FROM users AS u
         LEFT JOIN notification_preferences AS p ON p.user_id = u.user_id
         WHERE COALESCE(u.is_active, TRUE)
+          AND (%s OR u.role = ANY(%s))
           AND (
               u.role = 'super_admin'
               OR (%s::int IS NOT NULL AND (
@@ -114,7 +118,9 @@ def alert_recipients(cursor, alert):
               ))
           )
         """,
-        (DEFAULT_IN_APP_MIN, DEFAULT_EMAIL_MIN, farm_id, farm_id, farm_id,
+        (DEFAULT_IN_APP_MIN, DEFAULT_EMAIL_MIN,
+         alert.get('entity_type') not in COMMERCIAL_ALERT_ENTITIES, roles_with('sales.read'),
+         farm_id, farm_id, farm_id,
          facility_id, site_id, facility_id, facility_id),
     )
     return cursor.fetchall()

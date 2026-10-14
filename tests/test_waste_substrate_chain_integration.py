@@ -152,19 +152,19 @@ class WasteToSubstrateChainIntegrationTest(unittest.TestCase):
             scope["other_site"] = {"farm_id": farm_id, **sites[1]}
         return scope
 
-    def _create_user(self):
+    def _create_user(self, role="manager"):
         name = f"u{uuid4().hex[:12]}"
         row = db.execute_returning(
             """
             INSERT INTO users (username, full_name, email, password_hash, role)
-            VALUES (%s, %s, %s, 'not-a-real-hash', 'viewer')
+            VALUES (%s, %s, %s, 'not-a-real-hash', %s)
             RETURNING user_id
             """,
-            (name, name, f"{name}@example.test"),
+            (name, name, f"{name}@example.test", role),
         )
         self.user_ids.append(row["user_id"])
         return SimpleNamespace(
-            is_authenticated=True, id=row["user_id"], role="viewer", username=name,
+            is_authenticated=True, id=row["user_id"], role=role, username=name,
         )
 
     def _grant_farm(self, user, farm_id):

@@ -104,7 +104,7 @@ function renderInactiveAlert(farmers, days) {
   }
   el.style.display = '';
   var names = farmers.slice(0, 3).map(function (f) {
-    return '<span class="inactive-tag" onclick="openFarmerModal(\'' + esc(f.username) + '\')">' +
+    return '<span class="inactive-tag" onclick="openFarmerById(' + Number(f.user_id) + ')">' +
       esc(f.full_name || f.username) + '</span>';
   }).join('');
   var extra = farmers.length > 3 ? ' <span style="color:var(--amber);font-weight:600;">+' + (farmers.length - 3) + ' more</span>' : '';
@@ -187,7 +187,7 @@ function renderFarmersOverview(farmers) {
   }
   tbody.innerHTML = farmers.map(function (f) {
     var active = f.is_active;
-    return '<tr onclick="openFarmerModal(\'' + esc(f.username) + '\')">' +
+    return '<tr onclick="openFarmerById(' + Number(f.user_id) + ')">' +
       '<td><div class="farmer-name">' + esc(f.full_name || f.username) + '</div><div class="farmer-email">' + esc(f.email) + '</div></td>' +
       '<td>' + statusBadge(active) + '</td>' +
       '<td style="font-size:.8rem;color:var(--slate-mid);">' + relDate(f.last_activity || f.last_login) + '</td>' +
@@ -195,8 +195,8 @@ function renderFarmersOverview(farmers) {
       '<td><span class="metric-pill">' + fmt(f.total_harvest_kg) + '</span></td>' +
       '<td><span class="metric-pill">' + fmt(f.total_dried_kg) + '</span></td>' +
       '<td onclick="event.stopPropagation();" style="white-space:nowrap;">' +
-        '<button class="btn-detail" onclick="openFarmerModal(\'' + esc(f.username) + '\')">View</button> ' +
-        '<button class="toggle-btn ' + (active ? 'deactivate' : 'activate') + '" onclick="toggleFarmer(' + f.user_id + ', this)">' +
+        '<button class="btn-detail" onclick="openFarmerById(' + Number(f.user_id) + ')">View</button> ' +
+        '<button class="toggle-btn ' + (active ? 'deactivate' : 'activate') + '" onclick="toggleFarmer(' + Number(f.user_id) + ', this)">' +
           (active ? 'Deactivate' : 'Activate') +
         '</button>' +
       '</td>' +
@@ -228,8 +228,8 @@ function renderFarmersList2(farmers) {
   }
   tbody.innerHTML = farmers.map(function (f) {
     var active = f.is_active;
-    return '<tr onclick="openFarmerModal(\'' + esc(f.username) + '\')">' +
-      '<td><div class="farmer-name">' + esc(f.full_name || f.username) + '</div><div class="farmer-email">' + esc(f.email) + '</div></td>' +
+    return '<tr onclick="openFarmerById(' + Number(f.user_id) + ')">' +
+      '<td><div class="farmer-name">' + esc(f.full_name || f.username) + '</div><div class="farmer-email">' + esc(f.email) + ' · ' + esc(roleLabel(f.role)) + '</div></td>' +
       '<td>' + statusBadge(active) + '</td>' +
       '<td style="font-size:.8rem;">' + shortDate(f.created_at) + '</td>' +
       '<td style="font-size:.8rem;color:var(--slate-mid);">' + relDate(f.last_activity || f.last_login) + '</td>' +
@@ -239,11 +239,11 @@ function renderFarmersList2(farmers) {
       '<td>' + fmt(f.total_harvest_kg) + '</td>' +
       '<td>' + fmt(f.total_dried_kg) + '</td>' +
       '<td onclick="event.stopPropagation();" style="white-space:nowrap;display:flex;gap:.3rem;flex-wrap:wrap;">' +
-        '<button class="btn-detail" onclick="openFarmerModal(\'' + esc(f.username) + '\')">View</button>' +
-        '<button class="btn-edit" onclick="openEditModal(' + f.user_id + ',\'' + esc(f.full_name) + '\',\'' + esc(f.email) + '\')"><i class="fas fa-pen"></i></button>' +
-        '<button class="btn-reset" onclick="openResetModal(' + f.user_id + ',\'' + esc(f.full_name || f.username) + '\')"><i class="fas fa-key"></i></button>' +
-        '<button class="btn-delete" onclick="openDeleteModal(' + f.user_id + ',\'' + esc(f.full_name || f.username) + '\')"><i class="fas fa-trash"></i></button>' +
-        '<button class="toggle-btn ' + (active ? 'deactivate' : 'activate') + '" onclick="toggleFarmer(' + f.user_id + ', this)">' +
+        '<button class="btn-detail" onclick="openFarmerById(' + Number(f.user_id) + ')">View</button>' +
+        '<button class="btn-edit" onclick="openEditModal(' + Number(f.user_id) + ')"><i class="fas fa-pen"></i></button>' +
+        '<button class="btn-reset" onclick="openResetModal(' + Number(f.user_id) + ')"><i class="fas fa-key"></i></button>' +
+        '<button class="btn-delete" onclick="openDeleteModal(' + Number(f.user_id) + ')"><i class="fas fa-trash"></i></button>' +
+        '<button class="toggle-btn ' + (active ? 'deactivate' : 'activate') + '" onclick="toggleFarmer(' + Number(f.user_id) + ', this)">' +
           (active ? 'Deactivate' : 'Activate') +
         '</button>' +
       '</td>' +
@@ -303,7 +303,7 @@ function renderLeaderboard(farmers) {
   el.innerHTML = sorted.map(function (f, i) {
     var total = (parseFloat(f.total_waste_kg)||0) + (parseFloat(f.total_harvest_kg)||0) + (parseFloat(f.total_dried_kg)||0);
     var initials = (f.full_name || f.username).split(' ').map(function(n){return n[0];}).join('').substring(0,2).toUpperCase();
-    return '<div class="lb-row" onclick="openFarmerModal(\'' + esc(f.username) + '\')">' +
+    return '<div class="lb-row" onclick="openFarmerById(' + Number(f.user_id) + ')">' +
       '<div class="lb-rank">' + medals[i] + '</div>' +
       '<div class="lb-avatar">' + initials + '</div>' +
       '<div class="lb-info">' +
@@ -400,12 +400,13 @@ async function openFarmerModal(username) {
     if (!data.success) throw new Error(data.message);
     var f = data.data.farmer;
     var t = data.data.totals;
+    _farmerDetail = f;
     document.getElementById('modalFarmerName').textContent = f.full_name || f.username;
 
     document.getElementById('modalActionBar').innerHTML =
-      '<button class="btn btn-outline btn-sm" onclick="openEditModal(' + f.user_id + ',\'' + esc(f.full_name) + '\',\'' + esc(f.email) + '\')"><i class="fas fa-pen"></i> Edit</button>' +
-      '<button class="btn btn-outline btn-sm" onclick="openResetModal(' + f.user_id + ',\'' + esc(f.full_name || f.username) + '\')"><i class="fas fa-key"></i> Reset Password</button>' +
-      '<button class="btn btn-red btn-sm" onclick="openDeleteModal(' + f.user_id + ',\'' + esc(f.full_name || f.username) + '\')"><i class="fas fa-trash"></i> Delete</button>';
+      '<button class="btn btn-outline btn-sm" onclick="openEditModal(' + Number(f.user_id) + ')"><i class="fas fa-pen"></i> Edit</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="openResetModal(' + Number(f.user_id) + ')"><i class="fas fa-key"></i> Reset Password</button>' +
+      '<button class="btn btn-red btn-sm" onclick="openDeleteModal(' + Number(f.user_id) + ')"><i class="fas fa-trash"></i> Delete</button>';
 
     var initials = (f.full_name || f.username).split(' ').map(function (n) { return n[0]; }).join('').substring(0, 2).toUpperCase();
     var html = '<div class="farmer-meta">' +
@@ -444,12 +445,64 @@ function closeFarmerModal(evt) {
   document.getElementById('farmerModal').classList.remove('open');
 }
 
+// Inline handlers pass only the numeric user id; names and emails are read
+// from the loaded list so user-supplied text never becomes script.
+var _farmerDetail = null;
+function farmerById(userId) {
+  return allFarmers.find(function (f) { return f.user_id === userId; }) ||
+    (_farmerDetail && _farmerDetail.user_id === userId ? _farmerDetail : null) || {};
+}
+function openFarmerById(userId) {
+  var farmer = farmerById(userId);
+  if (farmer.username) openFarmerModal(farmer.username);
+}
+
+// ── Roles ─────────────────────────────────────────────────────────────────
+var roleOptions = [];
+async function loadRoles() {
+  try {
+    var res = await fetch('/api/admin/roles', { credentials: 'include' });
+    var data = await res.json();
+    roleOptions = data.data || [];
+  } catch (err) {
+    roleOptions = [];
+  }
+  ['editRole', 'addRole'].forEach(function (id) {
+    var select = document.getElementById(id);
+    if (!select) return;
+    select.textContent = '';
+    roleOptions.forEach(function (role) {
+      var option = new Option(role.label, role.key);
+      option.title = role.permissions.join('; ') || 'Read only';
+      select.add(option);
+    });
+  });
+  var add = document.getElementById('addRole');
+  if (add) add.value = 'operator';
+  describeRole('addRole');
+}
+function roleLabel(key) {
+  var role = roleOptions.find(function (r) { return r.key === key; });
+  return role ? role.label : (key || '');
+}
+function describeRole(selectId) {
+  var select = document.getElementById(selectId);
+  var hint = document.getElementById(selectId + 'Hint');
+  if (!select || !hint) return;
+  var role = roleOptions.find(function (r) { return r.key === select.value; });
+  hint.textContent = role ? (role.permissions.length ? 'Can: ' + role.permissions.join('; ') : 'Read only') : '';
+}
+loadRoles();
+
 // ── Edit Farmer Modal ─────────────────────────────────────────────────────
 var _editUserId = null;
-function openEditModal(userId, fullName, email) {
+function openEditModal(userId) {
+  var farmer = farmerById(userId);
   _editUserId = userId;
-  document.getElementById('editFullName').value = fullName;
-  document.getElementById('editEmail').value = email;
+  document.getElementById('editFullName').value = farmer.full_name || '';
+  document.getElementById('editEmail').value = farmer.email || '';
+  document.getElementById('editRole').value = farmer.role || 'viewer';
+  describeRole('editRole');
   document.getElementById('editFarmerModal').classList.add('open');
 }
 function closeEditModal(evt) {
@@ -468,7 +521,8 @@ async function submitEditFarmer(e) {
       credentials: 'include',
       body: JSON.stringify({
         full_name: document.getElementById('editFullName').value.trim(),
-        email: document.getElementById('editEmail').value.trim()
+        email: document.getElementById('editEmail').value.trim(),
+        role: document.getElementById('editRole').value
       })
     });
     var data = await res.json();
@@ -490,9 +544,10 @@ async function submitEditFarmer(e) {
 
 // ── Reset Password Modal ──────────────────────────────────────────────────
 var _resetUserId = null;
-function openResetModal(userId, name) {
+function openResetModal(userId) {
+  var farmer = farmerById(userId);
   _resetUserId = userId;
-  document.getElementById('resetFarmerName').textContent = name;
+  document.getElementById('resetFarmerName').textContent = farmer.full_name || farmer.username || '';
   document.getElementById('resetPasswordForm').reset();
   document.getElementById('resetFarmerModal').classList.add('open');
 }
@@ -505,7 +560,7 @@ async function submitResetPassword(e) {
   var pw = document.getElementById('newPassword').value;
   var cpw = document.getElementById('confirmNewPassword').value;
   if (pw !== cpw) { toast('Passwords do not match', 'error'); return; }
-  if (pw.length < 8) { toast('Password must be at least 8 characters', 'error'); return; }
+  if (pw.length < 10) { toast('Password must be at least 10 characters', 'error'); return; }
   var btn = document.getElementById('resetPasswordBtn');
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resetting…';
@@ -533,9 +588,10 @@ async function submitResetPassword(e) {
 
 // ── Delete Farmer Modal ───────────────────────────────────────────────────
 var _deleteUserId = null;
-function openDeleteModal(userId, name) {
+function openDeleteModal(userId) {
+  var farmer = farmerById(userId);
   _deleteUserId = userId;
-  document.getElementById('deleteFarmerName').textContent = name;
+  document.getElementById('deleteFarmerName').textContent = farmer.full_name || farmer.username || '';
   document.getElementById('deleteFarmerModal').classList.add('open');
 }
 function closeDeleteModal(evt) {
@@ -571,6 +627,8 @@ async function confirmDeleteFarmer() {
 // ── Add Farmer Modal ──────────────────────────────────────────────────────
 function openAddFarmerModal() {
   document.getElementById('addFarmerForm').reset();
+  document.getElementById('addRole').value = 'operator';
+  describeRole('addRole');
   document.getElementById('addFarmerModal').classList.add('open');
 }
 function closeAddFarmerModal(evt) {
@@ -585,7 +643,7 @@ async function submitAddFarmer(e) {
   var password = fd.get('password');
   var confirm = fd.get('confirm_password');
   if (password !== confirm) { toast('Passwords do not match', 'error'); return; }
-  if (password.length < 8) { toast('Password must be at least 8 characters', 'error'); return; }
+  if (password.length < 10) { toast('Password must be at least 10 characters', 'error'); return; }
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating…';
   try {
@@ -597,7 +655,8 @@ async function submitAddFarmer(e) {
         username: fd.get('username').trim(),
         full_name: fd.get('full_name').trim(),
         email: fd.get('email').toLowerCase().trim(),
-        password: password
+        password: password,
+        role: fd.get('role')
       })
     });
     var data = await res.json();

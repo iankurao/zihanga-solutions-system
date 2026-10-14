@@ -397,3 +397,31 @@ gunicorn \
   types open Traceability. QR codes are drawn in the browser with
   qrcode-generator 1.4.4 (cdnjs). "Print QR label" links are on Batch 360,
   Product Lot and Traceability.
+- **Roles and security (Step 22)** (`backend/roles.py`, `backend/passwords.py`,
+  `migrations/rbac_security.sql`):
+  - Roles: `super_admin`, `manager` (organization, farm or facility manager;
+    the level comes from the user's location assignments), `operator`
+    (production operator / farmer), `qc_officer`, `inventory_officer`,
+    `sales_officer`, `viewer` (read only). A role says what someone may do;
+    `user_*_access` says where. Every write route declares a permission with
+    `@requires(...)` (a test fails if one does not). Super admins set roles in
+    the admin portal; a role can never be raised to super admin there
+    (use `python -m backend.create_super_admin`).
+  - Upgrading maps existing `viewer` accounts to `manager` once (they could
+    record data before); review roles after deploying.
+  - Customers, orders, deliveries, sales reports and order/delivery alerts
+    need `sales.read`. Stock write-offs and adjustments need a manager.
+    Legacy (pre-traceability) records and `/api/analytics/*`,
+    `/api/statistics/*`, `/api/*/all`, `/api/records` are super-admin only.
+  - Sessions: cookies are HttpOnly, Secure and SameSite=Lax. Set
+    `EMBEDDED_PREVIEW=1` only for the Replit workspace preview iframe
+    (SameSite=None); `SESSION_COOKIE_SECURE=0` only for plain-http local
+    runs. Sign-in starts a new session id; a password reset, role change or
+    deactivation signs the user out everywhere (`users.auth_version`).
+  - Writes from another website are refused (Origin/Referer check). CORS is
+    off unless `CORS_ORIGINS` lists trusted origins. Set `SECRET_KEY`.
+  - Sign-in is throttled: 5 failures per account or 30 per address in 15
+    minutes (`auth_login_attempts`, kept 90 days by `backend.jobs`).
+  - Passwords: at least 10 characters, not a common password, not containing
+    the username or email name - the same rule for registration, admin
+    resets and the super-admin script.

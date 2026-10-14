@@ -609,7 +609,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         unauthorized_user = SimpleNamespace(
             is_authenticated=True,
             id=987654321,
-            role="farm_operator",
+            role="manager",
             username="unassigned-operator",
         )
         with patch.dict(app.config, {"LOGIN_DISABLED": False}), patch(
@@ -1143,7 +1143,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         unauthorized_user = SimpleNamespace(
             is_authenticated=True,
             id=987654321,
-            role="farm_operator",
+            role="manager",
             username="unassigned-operator",
         )
         with patch.dict(app.config, {"LOGIN_DISABLED": False}), patch(
@@ -1153,14 +1153,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             listing = self.client.get("/api/feeding/harvest/all")
         self.assertEqual(response.status_code, 403, response.get_json())
         self.assertIn("not authorized", response.get_json()["message"])
-        self.assertEqual(listing.status_code, 200, listing.get_json())
-        self.assertFalse(
-            any(
-                row.get("production_batch_id") == batch["id"]
-                for row in listing.get_json()["records"]
-            ),
-            listing.get_json(),
-        )
+        # Step 22: the legacy harvest listing is for super admins only.
+        self.assertEqual(listing.status_code, 403, listing.get_json())
     # ---- Product Lot -> Inventory ledger -------------------------------------
 
     def _release_lot(self, *, output_quantity="0.600"):
@@ -1221,14 +1215,14 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             row["location_id"]: float(row["quantity_kg"]) for row in inventory["balances"]
         }, inventory
 
-    def _create_db_user(self, *, farm_access=True):
+    def _create_db_user(self, *, farm_access=True, role="manager"):
         name = f"u{uuid4().hex[:12]}"
         row = db.execute_returning(
             """
             INSERT INTO users (username, full_name, email, password_hash, role)
-            VALUES (%s, %s, %s, 'not-a-real-hash', 'viewer') RETURNING user_id
+            VALUES (%s, %s, %s, 'not-a-real-hash', %s) RETURNING user_id
             """,
-            (name, name, f"{name}@example.test"),
+            (name, name, f"{name}@example.test", role),
         )
         self.addCleanup(
             db.execute_query, "DELETE FROM users WHERE user_id = %s", (row["user_id"],)
@@ -1239,7 +1233,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                 (row["user_id"], self.farm_id),
             )
         return SimpleNamespace(
-            is_authenticated=True, id=row["user_id"], role="viewer", username=name,
+            is_authenticated=True, id=row["user_id"], role=role, username=name,
         )
 
     def _as(self, user):
@@ -1452,7 +1446,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
     def test_inventory_roles_and_farm_isolation(self):
         lot = self._release_lot()
         store_b = self._add_inventory_location("STORE-B")
-        operator = self._create_db_user()
+        operator = self._create_db_user(role="inventory_officer")
         with self._as(operator):
             transfer = self._move(
                 lot, "TRANSFER", "0.100",
@@ -3060,6 +3054,212 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/labels/customer").status_code, 404)
         self.assertEqual(len(self.client.get("/api/labels").get_json()["data"]), 7)
         self.assertEqual(self.client.get("/labels").status_code, 200)
+
+    # ---- Roles, permissions and security hardening ------------------------------------
+
+    HTTPS = {"base_url": "https://localhost"}
+
+    def _login_user(self, password="correct horse battery", role="manager", active=True):
+        from werkzeug.security import generate_password_hash
+
+        name = f"u{uuid4().hex[:12]}"
+        email = f"{name}@example.test"
+        row = db.execute_returning(
+            """
+            INSERT INTO users (username, full_name, email, password_hash, role, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING user_id
+            """,
+            (name, name, email, generate_password_hash(password), role, active),
+        )
+        self.addCleanup(db.execute_query, "DELETE FROM users WHERE user_id = %s", (row["user_id"],))
+        self.addCleanup(db.execute_query, "DELETE FROM auth_login_attempts WHERE email = %s", (email,))
+        return SimpleNamespace(id=row["user_id"], email=email, password=password, username=name)
+
+    def _api_login(self, client, email, password):
+        return client.post("/api/auth/login", json={"username": email, "password": password}, **self.HTTPS)
+
+    def test_every_write_route_declares_a_permission(self):
+        # Writes a signed-in user may make on their own account only.
+        self_service = {
+            "login", "register", "api_login", "api_register",
+            "mark_notification_read", "mark_all_notifications_read",
+            "set_notification_preferences", "refresh_alerts",
+        }
+        unguarded = []
+        for rule in app.url_map.iter_rules():
+            if not set(rule.methods) - {"GET", "HEAD", "OPTIONS"}:
+                continue
+            name = rule.endpoint.rsplit(".", 1)[-1]
+            view = app.view_functions[rule.endpoint]
+            if name not in self_service and not getattr(view, "required_permission", None):
+                unguarded.append(rule.rule)
+        self.assertEqual(unguarded, [])
+
+    def test_role_permissions_are_enforced_server_side(self):
+        viewer = self._create_db_user(role="viewer")
+        operator = self._create_db_user(role="operator")
+        qc = self._create_db_user(role="qc_officer")
+        sales = self._create_db_user(role="sales_officer")
+        with self._as(viewer):
+            refused = self.client.post("/api/production/batches", json={})
+            self.assertEqual(refused.status_code, 403)
+            self.assertIn("role does not allow", refused.get_json()["message"])
+            self.assertEqual(self.client.post("/api/inventory/movements", json={}).status_code, 403)
+            self.assertEqual(self.client.get("/api/orders").status_code, 403)
+            self.assertEqual(self.client.post("/api/alerts/1/acknowledge").status_code, 403)
+            # Reading production data in its own farm still works.
+            self.assertEqual(self.client.get("/api/production/batches").status_code, 200)
+        with self._as(operator):
+            self.assertEqual(self.client.post("/api/product-lots", json={}).status_code, 403)
+            self.assertEqual(self.client.post("/api/orders", json={}).status_code, 403)
+            # Passes the role check; rejected only for its content.
+            self.assertEqual(self.client.post("/api/production/batches", json={}).status_code, 400)
+            self.assertEqual(self.client.get("/api/me").get_json()["data"]["home"], "/farmer")
+        with self._as(qc):
+            self.assertEqual(self.client.post("/api/production/batches", json={}).status_code, 403)
+            self.assertNotEqual(self.client.post("/api/product-lots", json={}).status_code, 403)
+        with self._as(sales):
+            self.assertEqual(self.client.get("/api/orders").status_code, 200)
+            self.assertEqual(self.client.post("/api/production/batches", json={}).status_code, 403)
+
+    def test_commercial_data_needs_sales_access(self):
+        lot = self._release_lot()
+        operator = self._create_db_user(role="operator")
+        manager = self._create_db_user(role="manager")
+        with self._as(operator):
+            keys = {r["key"] for r in self.client.get("/api/reports").get_json()["data"]}
+            self.assertNotIn("sales", keys)
+            self.assertEqual(self.client.get("/api/reports/sales").status_code, 403)
+            self.assertIsNone(self.client.get("/api/dashboard").get_json()["data"]["commercial"])
+            detail = self.client.get(f"/api/product-lots/{lot['business_id']}")
+            self.assertEqual(detail.status_code, 200)
+        with self._as(manager):
+            keys = {r["key"] for r in self.client.get("/api/reports").get_json()["data"]}
+            self.assertIn("sales", keys)
+            self.assertIsNotNone(self.client.get("/api/dashboard").get_json()["data"]["commercial"])
+
+    def test_commercial_alerts_reach_only_sales_roles(self):
+        operator = self._create_db_user(role="operator")
+        sales = self._create_db_user(role="sales_officer")
+        alert = {"farm_id": self.farm_id, "site_id": None, "facility_id": None,
+                 "entity_type": "customer_order"}
+        with db.transaction() as cursor:
+            commercial = {r["user_id"] for r in notifications.alert_recipients(cursor, alert)}
+            stock = {r["user_id"] for r in notifications.alert_recipients(
+                cursor, {**alert, "entity_type": "inventory_threshold"})}
+        self.assertIn(sales.id, commercial)
+        self.assertNotIn(operator.id, commercial)
+        self.assertTrue({operator.id, sales.id} <= stock)
+
+    def test_legacy_records_are_super_admin_only(self):
+        manager = self._create_db_user(role="manager")
+        with self._as(manager):
+            for path in ("/api/analytics/sales", "/api/statistics/daily-report",
+                         "/api/waste-sourcing/all", "/api/records?date=2026-01-01&section=all",
+                         "/api/sales", "/api/waste-sourcing"):
+                self.assertEqual(self.client.get(path).status_code, 403, path)
+            self.assertEqual(self.client.get("/analytics").status_code, 200)
+        admin = SimpleNamespace(is_authenticated=True, id=0, role="super_admin", username="admin")
+        with self._as(admin):
+            self.assertEqual(self.client.get("/api/analytics/sales").status_code, 200)
+        anonymous = SimpleNamespace(is_authenticated=False, is_active=False, is_anonymous=True,
+                                    get_id=lambda: None)
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), \
+                patch("flask_login.utils._get_user", lambda: anonymous):
+            # The legacy blueprints used to answer without any sign-in.
+            self.assertEqual(self.client.get("/api/waste-sourcing").status_code, 401)
+            self.assertEqual(self.client.post("/api/fly-facility/egg-collection", json={}).status_code, 401)
+
+    def test_cross_site_writes_are_refused(self):
+        refused = [
+            {"Origin": "https://evil.example"},
+            {"Origin": "null"},
+            {"Referer": "https://evil.example/page"},
+            {"Sec-Fetch-Site": "cross-site"},
+        ]
+        for headers in refused:
+            response = self.client.post("/api/alerts/refresh", headers=headers)
+            self.assertEqual(response.status_code, 403, headers)
+            self.assertEqual(response.get_json()["message"], "Cross-site request refused")
+        same_site = self.client.post("/api/alerts/refresh", headers={"Origin": "http://localhost"})
+        self.assertNotEqual(same_site.status_code, 403)
+        # Reads are never blocked, and the response carries the hardening headers.
+        page = self.client.get("/api/me", headers={"Origin": "https://evil.example"})
+        self.assertNotIn("Access-Control-Allow-Origin", page.headers)
+        self.assertEqual(page.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(page.headers["Cache-Control"], "no-store")
+
+    def test_sign_in_is_throttled_and_does_not_reveal_accounts(self):
+        user = self._login_user()
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), app.test_client() as client:
+            unknown = self._api_login(client, f"nobody-{uuid4().hex}@example.test", "whatever-123")
+            self.addCleanup(db.execute_query, "DELETE FROM auth_login_attempts WHERE email LIKE 'nobody-%%'")
+            wrong = self._api_login(client, user.email, "wrong password 1")
+            self.assertEqual((unknown.status_code, wrong.status_code), (401, 401))
+            self.assertEqual(unknown.get_json()["message"], wrong.get_json()["message"])
+            for _ in range(4):
+                self._api_login(client, user.email, "wrong password 1")
+            blocked = self._api_login(client, user.email, user.password)
+            self.assertEqual(blocked.status_code, 429)
+        attempts = db.fetch_one(
+            "SELECT COUNT(*) FILTER (WHERE NOT succeeded) AS failed, COUNT(*) FILTER (WHERE succeeded) AS ok "
+            "FROM auth_login_attempts WHERE email = %s",
+            (user.email,),
+        )
+        self.assertEqual((attempts["failed"], attempts["ok"]), (5, 0))
+
+    def test_password_reset_role_change_and_deactivation_end_sessions(self):
+        user = self._login_user(role="operator")
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), app.test_client() as client:
+            signed_in = self._api_login(client, user.email, user.password)
+            self.assertEqual(signed_in.status_code, 200, signed_in.get_json())
+            self.assertEqual(signed_in.get_json()["redirect"], "/farmer")
+            cookie = client.get_cookie("bsf_session", domain="localhost")
+            self.assertTrue(cookie.http_only and cookie.secure)
+            self.assertEqual(cookie.same_site, "Lax")
+            me = client.get("/api/me", **self.HTTPS)
+            self.assertEqual(me.status_code, 200)
+            self.assertIn("production.write", me.get_json()["data"]["permissions"])
+            # What an admin's reset / role change / deactivation does.
+            db.execute_query(
+                "UPDATE users SET auth_version = auth_version + 1 WHERE user_id = %s", (user.id,)
+            )
+            self.assertEqual(client.get("/api/me", **self.HTTPS).status_code, 401)
+            page = client.get("/farmer", **self.HTTPS)
+            self.assertEqual(page.status_code, 302)
+            self.assertIn("/login?next=/farmer", page.headers["Location"])
+
+        inactive = self._login_user(active=False)
+        with patch.dict(app.config, {"LOGIN_DISABLED": False}), app.test_client() as client:
+            self.assertEqual(self._api_login(client, inactive.email, inactive.password).status_code, 401)
+
+    def test_admin_sets_roles_and_password_rules(self):
+        target = self._login_user(role="viewer")
+        admin = SimpleNamespace(is_authenticated=True, id=0, role="super_admin", username="admin")
+        with self._as(admin):
+            roles = self.client.get("/api/admin/roles").get_json()["data"]
+            self.assertNotIn("super_admin", [r["key"] for r in roles])
+            body = {"full_name": "Quality Person", "email": target.email}
+            promoted = self.client.put(f"/api/admin/users/{target.id}", json={**body, "role": "qc_officer"})
+            self.assertEqual(promoted.status_code, 200, promoted.get_json())
+            escalate = self.client.put(f"/api/admin/users/{target.id}", json={**body, "role": "super_admin"})
+            self.assertEqual(escalate.status_code, 400)
+            weak = self.client.post(f"/api/admin/users/{target.id}/reset-password", json={"password": "short"})
+            self.assertEqual(weak.status_code, 400)
+            own_name = self.client.post(f"/api/admin/users/{target.id}/reset-password",
+                                        json={"password": f"{target.username}-2026!"})
+            self.assertEqual(own_name.status_code, 400)
+            reset = self.client.post(f"/api/admin/users/{target.id}/reset-password",
+                                     json={"password": "a much longer passphrase"})
+            self.assertEqual(reset.status_code, 200)
+        row = db.fetch_one("SELECT role, auth_version FROM users WHERE user_id = %s", (target.id,))
+        self.assertEqual((row["role"], row["auth_version"]), ("qc_officer", 3))
+
+        registered = self.client.post("/api/auth/register", json={
+            "username": "bad name<script>", "fullName": "X Y", "email": "a@example.test",
+            "password": "a much longer passphrase", "confirmPassword": "a much longer passphrase",
+        })
+        self.assertEqual(registered.status_code, 400)
 
 
 def lot_release_approval_id(lot):

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from backend.database import DatabaseConnection
 import json
+import logging
 from datetime import datetime
 
 waste_management = Blueprint('waste_management', __name__)
@@ -13,7 +14,8 @@ def get_waste_sourcing():
         result = db.fetch_all(query)
         return jsonify(list(result)), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.getLogger(__name__).exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @waste_management.route('/api/storage-records', methods=['GET'])
 def get_storage_records():
@@ -22,7 +24,8 @@ def get_storage_records():
         result = db.fetch_all(query)
         return jsonify(list(result)), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.getLogger(__name__).exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @waste_management.route('/api/processing-records', methods=['GET'])
 def get_processing_records():
@@ -31,7 +34,8 @@ def get_processing_records():
         result = db.fetch_all(query)
         return jsonify(list(result)), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.getLogger(__name__).exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500
 
 @waste_management.route('/api/environmental-monitoring', methods=['GET'])
 def get_environmental_monitoring():
@@ -40,4 +44,5 @@ def get_environmental_monitoring():
         result = db.fetch_all(query)
         return jsonify(list(result)), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.getLogger(__name__).exception('Request failed')
+        return jsonify({'error': 'An internal error occurred.'}), 500

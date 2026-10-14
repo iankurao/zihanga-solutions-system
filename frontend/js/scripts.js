@@ -673,12 +673,6 @@ document.addEventListener('DOMContentLoaded', function() {
     refreshSubstrateChainData();
     loadLocationHierarchy();
     refreshAlertBadge();
-    fetch('/api/admin/me', { credentials: 'include' })
-        .then(response => {
-            const link = document.getElementById('setupNavLink');
-            if (link && response.ok) link.hidden = false;
-        })
-        .catch(() => {});
 
     // Sidebar badge: open critical and warning alerts visible to this user.
     async function refreshAlertBadge() {
@@ -911,15 +905,22 @@ document.addEventListener('DOMContentLoaded', function() {
     let deliveries = [];
     let feedbacks = [];
 
+    // Record text is user-entered; escape it before building table HTML.
+    function escapeCell(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     // Fetch customers from backend and update all dropdowns
     async function fetchCustomers() {
       const res = await fetch('/api/customers', { credentials: 'include' });
-      customers = await res.json();
+      customers = res.ok ? await res.json() : [];
       updateCustomerDropdowns();
       renderCustomers();
     }
     function updateCustomerDropdowns() {
-      const options = '<option value="">Select customer</option>' + customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      const options = '<option value="">Select customer</option>' + customers.map(c => `<option value="${Number(c.id)}">${escapeCell(c.name)}</option>`).join('');
       if (saleCustomerSelect) saleCustomerSelect.innerHTML = options;
       if (deliveryCustomerSelect) deliveryCustomerSelect.innerHTML = options;
       if (feedbackCustomerSelect) feedbackCustomerSelect.innerHTML = options;
@@ -928,19 +929,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Fetch and render sales
     async function fetchSales() {
       const res = await fetch('/api/sales', { credentials: 'include' });
-      sales = await res.json();
+      sales = res.ok ? await res.json() : [];
       renderSales();
     }
     // Fetch and render deliveries
     async function fetchDeliveries() {
       const res = await fetch('/api/deliveries', { credentials: 'include' });
-      deliveries = await res.json();
+      deliveries = res.ok ? await res.json() : [];
       renderDeliveries();
     }
     // Fetch and render feedback
     async function fetchFeedback() {
       const res = await fetch('/api/feedback', { credentials: 'include' });
-      feedbacks = await res.json();
+      feedbacks = res.ok ? await res.json() : [];
       renderFeedback();
     }
 
@@ -950,7 +951,7 @@ document.addEventListener('DOMContentLoaded', function() {
       customerTableBody.innerHTML = '';
       customers.forEach(c => {
         const row = document.createElement('tr');
-        row.innerHTML = `<td>${c.name}</td><td>${c.contact || ''}</td><td>${c.email || ''}</td><td>${c.address || ''}</td><td><button class='btn btn-sm btn-warning' onclick='editCustomer(${c.id})'>Edit</button></td>`;
+        row.innerHTML = `<td>${escapeCell(c.name)}</td><td>${escapeCell(c.contact)}</td><td>${escapeCell(c.email)}</td><td>${escapeCell(c.address)}</td><td><button class='btn btn-sm btn-warning' onclick='editCustomer(${Number(c.id)})'>Edit</button></td>`;
         customerTableBody.appendChild(row);
       });
     }
@@ -959,7 +960,7 @@ document.addEventListener('DOMContentLoaded', function() {
       salesTableBody.innerHTML = '';
       sales.forEach(s => {
         const row = document.createElement('tr');
-        row.innerHTML = `<td>${s.date}</td><td>${s.customer_name}</td><td>${s.product || ''}</td><td>${s.quantity || ''}</td><td>${s.amount}</td><td><button class='btn btn-sm btn-warning' onclick='editSale(${s.id})'>Edit</button></td>`;
+        row.innerHTML = `<td>${escapeCell(s.date)}</td><td>${escapeCell(s.customer_name)}</td><td>${escapeCell(s.product)}</td><td>${escapeCell(s.quantity)}</td><td>${escapeCell(s.amount)}</td><td><button class='btn btn-sm btn-warning' onclick='editSale(${Number(s.id)})'>Edit</button></td>`;
         salesTableBody.appendChild(row);
       });
     }
@@ -968,7 +969,7 @@ document.addEventListener('DOMContentLoaded', function() {
       deliveryTableBody.innerHTML = '';
       deliveries.forEach(d => {
         const row = document.createElement('tr');
-        row.innerHTML = `<td>${d.date}</td><td>${d.customer_name}</td><td>${d.product || ''}</td><td>${d.quantity || ''}</td><td>${d.status}</td><td>${d.notes || ''}</td><td><button class='btn btn-sm btn-warning' onclick='editDelivery(${d.id})'>Edit</button></td>`;
+        row.innerHTML = `<td>${escapeCell(d.date)}</td><td>${escapeCell(d.customer_name)}</td><td>${escapeCell(d.product)}</td><td>${escapeCell(d.quantity)}</td><td>${escapeCell(d.status)}</td><td>${escapeCell(d.notes)}</td><td><button class='btn btn-sm btn-warning' onclick='editDelivery(${Number(d.id)})'>Edit</button></td>`;
         deliveryTableBody.appendChild(row);
       });
     }
@@ -977,7 +978,7 @@ document.addEventListener('DOMContentLoaded', function() {
       feedbackTableBody.innerHTML = '';
       feedbacks.forEach(f => {
         const row = document.createElement('tr');
-        row.innerHTML = `<td>${f.date}</td><td>${f.customer_name}</td><td>${f.feedback}</td><td>${f.rating}</td><td><button class='btn btn-sm btn-warning' onclick='editFeedback(${f.id})'>Edit</button></td>`;
+        row.innerHTML = `<td>${escapeCell(f.date)}</td><td>${escapeCell(f.customer_name)}</td><td>${escapeCell(f.feedback)}</td><td>${escapeCell(f.rating)}</td><td><button class='btn btn-sm btn-warning' onclick='editFeedback(${Number(f.id)})'>Edit</button></td>`;
         feedbackTableBody.appendChild(row);
       });
     }
@@ -1141,11 +1142,16 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     };
 
-    // Initial load
-    fetchCustomers();
-    fetchSales();
-    fetchDeliveries();
-    fetchFeedback();
+    // Initial load: only what this role may see (the server enforces it too).
+    (window.currentUser || Promise.resolve(null)).then(function (profile) {
+      var granted = (profile && profile.permissions) || [];
+      if (granted.indexOf('sales.read') !== -1) fetchCustomers();
+      if (granted.indexOf('legacy.read') !== -1) {
+        fetchSales();
+        fetchDeliveries();
+        fetchFeedback();
+      }
+    });
 });
 
 // Drying Process Section

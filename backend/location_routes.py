@@ -44,6 +44,7 @@ def _admin_required(view):
             abort(403)
         return view(*args, **kwargs)
 
+    decorated.required_permission = "super_admin"
     return decorated
 
 

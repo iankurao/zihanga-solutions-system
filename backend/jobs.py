@@ -23,9 +23,17 @@ from backend.app import _sync_alerts, db
 logger = logging.getLogger("backend.jobs")
 
 
+# Sign-in attempts are kept this long for throttling and security review.
+LOGIN_ATTEMPT_RETENTION_DAYS = 90
+
+
 def run_once():
     ran = _sync_alerts(force=True)
     stats = notifications.deliver_pending(db, limit=200)
+    db.execute_query(
+        "DELETE FROM auth_login_attempts WHERE attempted_at < now() - make_interval(days => %s)",
+        (LOGIN_ATTEMPT_RETENTION_DAYS,),
+    )
     logger.info("alerts evaluated=%s email=%s", ran, stats)
     return ran, stats
 
