@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Analytics Dashboard — BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -13,26 +14,28 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* Colours and type from the ERP design tokens (css/erp.css). */
     :root {
-      --primary: #2ecc71;
-      --primary-dark: #27ae60;
-      --sidebar: #2c3e50;
-      --sidebar-active: #27ae60;
-      --text: #2c3e50;
-      --text-light: #7f8c8d;
-      --bg: #f5f6fa;
-      --card-bg: #fff;
-      --border: #e2e8f0;
-      --shadow: 0 2px 12px rgba(44,62,80,.08);
+      --primary: var(--erp-accent);
+      --primary-dark: var(--erp-accent-hover);
+      --sidebar: var(--erp-brand);
+      --sidebar-active: var(--erp-accent);
+      --text: var(--erp-ink);
+      --text-light: var(--erp-muted);
+      --bg: var(--erp-page);
+      --card-bg: var(--erp-surface);
+      --border: var(--erp-line);
+      --shadow: var(--erp-shadow);
     }
 
-    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+    body { font-family: var(--erp-font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-wrap: wrap; }
+    body > .erp-appbar { flex: 0 0 100%; }
 
     /* ── Sidebar ── */
     .sidebar {
       width: 240px; min-height: 100vh; background: var(--sidebar);
       display: flex; flex-direction: column; flex-shrink: 0;
-      position: sticky; top: 0; max-height: 100vh; overflow-y: auto;
+      position: sticky; top: 56px; max-height: calc(100vh - 56px); overflow-y: auto;
     }
 
     .sidebar-logo {
@@ -152,8 +155,8 @@
     }
     .bsf-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(44,62,80,.12); }
     .bsf-card-icon { font-size: 1.5rem; width: 36px; text-align: center; flex-shrink: 0; }
-    .bsf-card-value { font-size: 1.35rem; font-weight: 700; color: #2c3e50; line-height: 1.2; }
-    .bsf-card-label { font-size: .73rem; color: #7f8c8d; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+    .bsf-card-value { font-size: 1.35rem; font-weight: 700; color: var(--erp-ink); line-height: 1.2; }
+    .bsf-card-label { font-size: .73rem; color: var(--erp-muted); text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
 
     .bsf-charts-grid {
       display: flex; flex-wrap: wrap; gap: 16px;
@@ -165,12 +168,12 @@
       flex: 1; min-width: 260px; max-width: 420px; border: 1px solid var(--border);
     }
 
-    .bsf-chart-title { font-size: .85rem; font-weight: 600; color: #34495e; margin-bottom: 10px; text-align: center; }
+    .bsf-chart-title { font-size: .85rem; font-weight: 600; color: var(--erp-ink); margin-bottom: 10px; text-align: center; }
 
     .bsf-table-section { padding: 16px 20px; }
 
     .bsf-table-title {
-      font-size: .92rem; font-weight: 600; color: #2c3e50;
+      font-size: .92rem; font-weight: 600; color: var(--erp-ink);
       margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
     }
 
@@ -178,7 +181,7 @@
 
     .bsf-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
 
-    .bsf-table thead tr { background: linear-gradient(90deg, #2ecc71, #27ae60); color: #fff; }
+    .bsf-table thead tr { background: linear-gradient(90deg, var(--erp-accent), var(--erp-accent-hover)); color: #fff; }
 
     .bsf-table thead th {
       padding: 10px 12px; text-align: left; font-weight: 600;
@@ -190,17 +193,17 @@
 
     .bsf-table td {
       padding: 9px 12px; border-bottom: 1px solid #eef0f5;
-      color: #34495e; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--erp-ink); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
     .bsf-empty { text-align: center; color: #95a5a6; padding: 24px; font-style: italic; }
 
     .bsf-btn-delete {
-      background: #fee; border: 1px solid #fcc; color: #e74c3c;
+      background: #fee; border: 1px solid #fcc; color: var(--erp-danger);
       border-radius: 6px; padding: 4px 8px; cursor: pointer;
       font-size: .78rem; transition: all .2s;
     }
-    .bsf-btn-delete:hover { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+    .bsf-btn-delete:hover { background: var(--erp-danger); color: #fff; border-color: var(--erp-danger); }
 
     .bsf-export-buttons {
       display: flex; gap: 10px; padding: 14px 20px;
@@ -212,10 +215,10 @@
       font-size: .86rem; font-weight: 600; display: flex; align-items: center; gap: 7px; transition: all .2s;
     }
 
-    .bsf-btn-excel { background: linear-gradient(135deg, var(--primary-dark), #27ae60); color: #fff; }
+    .bsf-btn-excel { background: linear-gradient(135deg, var(--primary-dark), var(--erp-accent-hover)); color: #fff; }
     .bsf-btn-excel:hover { box-shadow: 0 4px 12px rgba(39,174,96,.35); transform: translateY(-1px); }
 
-    .bsf-btn-pdf { background: linear-gradient(135deg, #922b21, #e74c3c); color: #fff; }
+    .bsf-btn-pdf { background: linear-gradient(135deg, #922b21, var(--erp-danger)); color: #fff; }
     .bsf-btn-pdf:hover { box-shadow: 0 4px 12px rgba(231,76,60,.35); transform: translateY(-1px); }
 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -232,6 +235,7 @@
   <style>[data-permission][hidden] { display: none !important; }</style>
 </head>
 <body>
+  <header data-erp-nav></header>
 
   <!-- ── Sidebar ── -->
   <nav class="sidebar">
@@ -417,6 +421,7 @@
 
   <script src="js/exportManager.js"></script>
   <script src="js/permissions.js"></script>
+  <script src="js/appNav.js"></script>
   <script src="js/reports.js"></script>
   <script src="js/analyticsManager.js"></script>
 
@@ -449,11 +454,11 @@
     };
 
     const OVERVIEW_SECTIONS = [
-      { key: 'wasteSourcing',   label: 'Waste Records',   icon: 'fa-recycle',       color: '#2ecc71' },
-      { key: 'harvestYield',    label: 'Harvest Records', icon: 'fa-leaf',           color: '#3498db' },
+      { key: 'wasteSourcing',   label: 'Waste Records',   icon: 'fa-recycle',       color: 'var(--erp-accent)' },
+      { key: 'harvestYield',    label: 'Harvest Records', icon: 'fa-leaf',           color: 'var(--erp-info)' },
       { key: 'dryingOutput',    label: 'Drying Batches',  icon: 'fa-wind',           color: '#e67e22' },
       { key: 'eggCollection',   label: 'Egg Collections', icon: 'fa-egg',            color: '#9b59b6' },
-      { key: 'sales',           label: 'Sales Records',   icon: 'fa-cash-register',  color: '#e74c3c' },
+      { key: 'sales',           label: 'Sales Records',   icon: 'fa-cash-register',  color: 'var(--erp-danger)' },
       { key: 'customers',       label: 'Customers',       icon: 'fa-users',          color: '#1abc9c' }
     ];
 

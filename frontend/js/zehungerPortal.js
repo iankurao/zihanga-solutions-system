@@ -37,10 +37,14 @@ async function loadAdminInfo() {
     var res = await fetch('/api/admin/me', { credentials: 'include' });
     var data = await res.json();
     if (data.success) {
+      // The shared ERP app bar shows the signed-in user; older layouts had their own badge.
       var name = data.data.full_name || data.data.username;
-      document.getElementById('adminName').textContent = name;
-      document.getElementById('adminInitials').textContent =
-        name.split(' ').map(function (n) { return n[0]; }).join('').substring(0, 2).toUpperCase();
+      var nameNode = document.getElementById('adminName');
+      var initialsNode = document.getElementById('adminInitials');
+      if (nameNode) nameNode.textContent = name;
+      if (initialsNode) {
+        initialsNode.textContent = name.split(' ').map(function (n) { return n[0]; }).join('').substring(0, 2).toUpperCase();
+      }
     }
   } catch (e) { /* silently ignore */ }
 }

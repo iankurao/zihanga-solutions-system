@@ -5,77 +5,85 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Customer Orders | Zehunger BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="stylesheet" href="/css/batch-360.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="/css/traceability.css">
   <link rel="stylesheet" href="/css/orders.css">
 </head>
-<body class="b360-page">
-  <header class="b360-topbar">
-    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
-    <div class="b360-topbar-title">
-      <p class="b360-eyebrow">PHASE ONE · SALES & DELIVERY</p>
-      <h1>Customer orders</h1>
-    </div>
-  </header>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-  <main class="b360-main orders-layout">
-    <aside class="b360-card orders-list-panel">
-      <div class="orders-list-head">
-        <label class="sr-only" for="orderStatusFilter">Status</label>
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Sales &amp; delivery</p>
+        <h1>Customer orders</h1>
+      </div>
+      <div class="erp-pagehead-actions">
+        <button type="button" id="newOrderButton" class="erp-btn"><i class="fas fa-plus" aria-hidden="true"></i> New order</button>
+      </div>
+    </header>
+
+    <div class="orders-layout">
+    <aside class="erp-card orders-list-panel">
+      <div class="erp-field orders-list-head">
+        <label for="orderStatusFilter">Show</label>
         <select id="orderStatusFilter">
           <option value="">All orders</option>
           <option value="OPEN" selected>Open</option>
           <option value="FULFILLED">Fulfilled</option>
           <option value="CANCELLED">Cancelled</option>
         </select>
-        <button type="button" id="newOrderButton" class="orders-primary"><i class="fas fa-plus"></i> New order</button>
       </div>
       <div id="orderList" class="orders-list" aria-live="polite"></div>
-      <p class="trace-hint">Earlier records in the dashboard's Sales &amp; Deliveries section are kept as history; they are not linked to stock.</p>
+      <p class="erp-hint">Earlier records in the dashboard's Sales &amp; Deliveries section are kept as history; they are not linked to stock.</p>
     </aside>
 
     <section class="orders-detail">
-      <p id="ordersMessage" class="b360-message" role="status" aria-live="polite"></p>
+      <div id="ordersMessage" class="erp-inline-message" aria-live="polite"></div>
 
-      <section id="ordersWelcome" class="b360-welcome">
-        <i class="fas fa-truck"></i>
-        <h2>Select or create an order</h2>
+      <section id="ordersWelcome" class="erp-state">
+        <i class="fas fa-truck" aria-hidden="true"></i>
+        <strong>Select or create an order</strong>
         <p>Orders reserve specific product lots, dispatches post stock movements, and every delivery can be traced back to its waste lots.</p>
       </section>
 
-      <form id="newOrderForm" class="b360-card" hidden>
-        <h3><span><i class="fas fa-file-invoice"></i></span> New customer order</h3>
-        <div class="trace-form">
-          <div class="trace-field">
+      <form id="newOrderForm" class="erp-card" hidden>
+        <h3 class="erp-card-title"><span class="erp-chip"><i class="fas fa-file-invoice" aria-hidden="true"></i></span> New customer order</h3>
+        <div class="erp-form">
+          <div class="erp-field">
             <label for="orderCustomer">Customer</label>
             <select id="orderCustomer" required></select>
           </div>
-          <div class="trace-field">
+          <div class="erp-field">
             <label for="orderFarm">Supplying farm</label>
             <select id="orderFarm" required></select>
           </div>
-          <div class="trace-field">
+          <div class="erp-field">
             <label for="orderRequested">Requested delivery</label>
             <input id="orderRequested" type="date">
           </div>
-          <div class="trace-field">
+          <div class="erp-field">
             <label for="orderReference">Customer reference</label>
             <input id="orderReference" type="text" maxlength="60" placeholder="PO number (optional)">
           </div>
         </div>
-        <p class="b360-subtitle">Order lines</p>
+        <p class="erp-subhead">Order lines</p>
         <div id="orderLines" class="order-lines"></div>
         <datalist id="productTypes"></datalist>
-        <div class="orders-actions">
-          <button type="button" id="addOrderLine" class="orders-secondary"><i class="fas fa-plus"></i> Add line</button>
-          <button type="submit" class="orders-primary"><i class="fas fa-check"></i> Create order</button>
+        <div class="erp-actions">
+          <button type="button" id="addOrderLine" class="erp-btn erp-btn--secondary"><i class="fas fa-plus" aria-hidden="true"></i> Add line</button>
+          <button type="submit" class="erp-btn"><i class="fas fa-check" aria-hidden="true"></i> Create order</button>
         </div>
       </form>
 
       <div id="orderDetail" hidden></div>
     </section>
+    </div>
   </main>
 
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script src="/js/orders.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>

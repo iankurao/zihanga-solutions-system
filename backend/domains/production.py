@@ -261,7 +261,9 @@ def _create_feeding_event(data):
         allowed={'kg', 'g'},
     ) if biomass is not None else None
     larvae_age = data.get('larvae_age_days')
-    if larvae_age not in (None, ''):
+    if larvae_age in (None, ''):
+        larvae_age = None  # optional; browser forms send '' for blank fields
+    else:
         try:
             larvae_age = int(larvae_age)
         except (TypeError, ValueError):

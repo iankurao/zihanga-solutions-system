@@ -5,58 +5,66 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Operations Dashboard | Zehunger BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="stylesheet" href="/css/batch-360.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="/css/operations.css">
 </head>
-<body class="b360-page">
-  <header class="b360-topbar">
-    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Data entry</a>
-    <div class="b360-topbar-title">
-      <p class="b360-eyebrow">PHASE ONE · LIVE OPERATIONS</p>
-      <h1>Operations dashboard</h1>
-    </div>
-  </header>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-  <main class="b360-main">
-    <form class="ops-filters" id="opsFilters" aria-label="Dashboard filters">
-      <label class="sr-only" for="opsFarm">Farm</label>
-      <select id="opsFarm"><option value="">All my farms</option></select>
-      <label class="sr-only" for="opsFacility">Facility</label>
-      <select id="opsFacility"><option value="">All facilities</option></select>
-      <div class="ops-period" role="radiogroup" aria-label="Period">
-        <button type="button" data-days="7" role="radio" aria-checked="false">7 days</button>
-        <button type="button" data-days="30" role="radio" aria-checked="true">30 days</button>
-        <button type="button" data-days="90" role="radio" aria-checked="false">90 days</button>
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Live operations</p>
+        <h1>Operations dashboard</h1>
       </div>
       <span id="opsUpdated" class="ops-updated" aria-live="polite"></span>
+    </header>
+
+    <form class="erp-filters" id="opsFilters" aria-label="Dashboard filters" onsubmit="return false">
+      <div class="erp-field">
+        <label for="opsFarm">Farm</label>
+        <select id="opsFarm"><option value="">All my farms</option></select>
+      </div>
+      <div class="erp-field">
+        <label for="opsFacility">Facility</label>
+        <select id="opsFacility"><option value="">All facilities</option></select>
+      </div>
+      <div class="erp-field ops-period-field">
+        <span class="erp-label" id="opsPeriodLabel">Period</span>
+        <div class="erp-segmented ops-period" role="radiogroup" aria-labelledby="opsPeriodLabel">
+          <button type="button" data-days="7" role="radio" aria-checked="false">7 days</button>
+          <button type="button" data-days="30" role="radio" aria-checked="true">30 days</button>
+          <button type="button" data-days="90" role="radio" aria-checked="false">90 days</button>
+        </div>
+      </div>
     </form>
-    <p id="opsMessage" class="b360-message" role="status"></p>
+    <div id="opsMessage" class="erp-inline-message" aria-live="polite"></div>
 
     <section id="opsKpis" class="ops-kpis" aria-label="Key figures"></section>
 
     <div class="ops-grid">
-      <section class="b360-card ops-wide">
+      <section class="erp-card ops-wide">
         <h3>Material flow <small id="flowPeriod"></small></h3>
         <p class="ops-sub">Kilograms recorded at each stage in the period.</p>
         <div id="flowChart" class="ops-chart"></div>
         <details><summary>Show as table</summary><div id="flowTable"></div></details>
       </section>
 
-      <section class="b360-card ops-wide">
+      <section class="erp-card ops-wide">
         <h3>Output over time <small id="trendPeriod"></small></h3>
         <ul id="trendLegend" class="ops-legend" aria-label="Legend"></ul>
         <div id="trendChart" class="ops-chart"></div>
         <details><summary>Show as table</summary><div id="trendTable"></div></details>
       </section>
 
-      <section class="b360-card">
+      <section class="erp-card">
         <h3>Production pipeline</h3>
         <p class="ops-sub">Open production batches by status.</p>
         <div id="pipelineChart" class="ops-chart"></div>
         <details><summary>Show as table</summary><div id="pipelineTable"></div></details>
       </section>
 
-      <section class="b360-card">
+      <section class="erp-card">
         <h3>Needs attention <a class="ops-more" href="/alerts">All alerts →</a></h3>
         <div id="opsAlerts"></div>
       </section>
@@ -65,6 +73,9 @@
     <div id="opsTooltip" class="ops-tooltip" role="tooltip" hidden></div>
   </main>
 
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script src="/js/operations.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>

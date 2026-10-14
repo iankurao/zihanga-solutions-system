@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function renderChoices(preselectAll) {
     choices.textContent = '';
     if (!rows.length) {
-      choices.appendChild(el('p', 'b360-empty', 'No records of this type that you can label.'));
+      choices.appendChild(ErpUI.state('empty', { text: 'No records of this type that you can label.', compact: true }));
     }
     rows.forEach(function (row, i) {
       var item = el('label', 'label-choice');
@@ -95,16 +95,16 @@ document.addEventListener('DOMContentLoaded', function () {
     var params = new URLSearchParams();
     if (refs) params.set('refs', refs);
     else if (search.value.trim()) params.set('q', search.value.trim());
-    message.textContent = '';
+    ErpUI.message(message, '');
     try {
       var response = await fetch('/api/labels/' + typeSelect.value + '?' + params.toString(), { credentials: 'include' });
       var payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'Could not load records');
       rows = payload.data;
       renderChoices(!!refs);
-      if (refs && !rows.length) message.textContent = 'That record is not available to you.';
+      if (refs && !rows.length) ErpUI.message(message, 'That record is not available to you.', 'warning');
     } catch (error) {
-      message.textContent = error.message;
+      ErpUI.message(message, error.message, 'danger');
     }
   }
 
@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var payload = await response.json();
       payload.data.forEach(function (type) { typeSelect.add(new Option(type.title, type.key)); });
     } catch (error) {
-      message.textContent = 'Could not load label types.';
+      ErpUI.message(message, 'Could not load label types.', 'danger');
       return;
     }
     var requested = params.get('type');

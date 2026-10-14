@@ -7,7 +7,7 @@
 // flashes before the profile loads. window.currentUser resolves to the
 // /api/me profile (or null) for page scripts that need it.
 (function () {
-  window.currentUser = fetch('/api/me', { credentials: 'include' })
+  window.currentUser = window.currentUser || fetch('/api/me', { credentials: 'include' })
     .then(function (response) { return response.ok ? response.json() : null; })
     .then(function (payload) { return payload && payload.data; })
     .catch(function () { return null; });

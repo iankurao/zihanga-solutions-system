@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var more = document.getElementById('auditMore');
   var typeSelect = document.getElementById('auditType');
   var nextBefore = null;
+  var shown = 0;
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -103,36 +104,45 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function load(append) {
-    message.textContent = '';
+    ErpUI.message(message, '');
     try {
       var response = await fetch('/api/audit?' + query(append ? nextBefore : null), { credentials: 'include' });
       var payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'Could not load the audit log');
-      if (!append) rowsBody.textContent = '';
+      if (!append) { rowsBody.textContent = ''; shown = 0; }
       payload.data.forEach(function (entry) { rowsBody.appendChild(row(entry)); });
+      shown += payload.data.length;
       if (!append && !payload.data.length) {
         var empty = el('tr');
-        var cell = el('td', 'b360-empty', 'No entries match these filters.');
+        var cell = el('td');
+        cell.appendChild(ErpUI.state('empty', { title: 'No entries', text: 'No entries match these filters.', compact: true }));
         cell.colSpan = 5;
         empty.appendChild(cell);
         rowsBody.appendChild(empty);
       }
       nextBefore = payload.next_before;
       more.hidden = !nextBefore;
+      document.getElementById('auditShown').textContent = !shown ? ''
+        : nextBefore ? 'Showing the newest ' + shown + ' entries' : 'Showing all ' + shown + ' entries';
       var current = typeSelect.value;
       if (typeSelect.options.length === 1) {
         payload.entity_types.forEach(function (type) { typeSelect.add(new Option(type, type)); });
         typeSelect.value = current;
       }
     } catch (error) {
-      message.textContent = error.message;
+      ErpUI.message(message, error.message, 'danger');
     }
   }
 
-  form.addEventListener('submit', function (event) { event.preventDefault(); load(false); });
-  more.addEventListener('click', function () { load(true); });
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    ErpUI.busy(form.querySelector('button[type="submit"]'), load(false));
+  });
+  more.addEventListener('click', function () { ErpUI.busy(more, load(true)); });
 
   var params = new URLSearchParams(window.location.search);
   if (params.get('record')) document.getElementById('auditRecord').value = params.get('record');
+  ErpUI.loading(rowsBody.appendChild(document.createElement('tr')).appendChild(
+    Object.assign(document.createElement('td'), { colSpan: 5 })), 'Loading the audit log…', true);
   load(false);
 });

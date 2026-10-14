@@ -56,11 +56,11 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function empty(text) {
-    return el('p', 'b360-empty', text);
+    return ErpUI.state('empty', { text: text, compact: true });
   }
 
   function facts(pairs) {
-    var list = el('dl', 'b360-facts');
+    var list = el('dl', 'erp-facts');
     pairs.forEach(function (pair) {
       var item = el('div');
       item.append(el('dt', null, pair[0]), el('dd', null, pair[1] == null || pair[1] === '' ? '—' : pair[1]));
@@ -70,37 +70,12 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function table(headers, rows) {
-    var wrap = el('div', 'b360-table-wrap');
-    var tableNode = el('table', 'b360-table');
-    var head = el('tr');
-    headers.forEach(function (label) { head.appendChild(el('th', null, label)); });
-    var thead = el('thead');
-    thead.appendChild(head);
-    var tbody = el('tbody');
-    rows.forEach(function (cells) {
-      var row = el('tr');
-      cells.forEach(function (value) {
-        var cell = el('td');
-        if (value instanceof Node) cell.appendChild(value);
-        else cell.textContent = value == null || value === '' ? '—' : String(value);
-        row.appendChild(cell);
-      });
-      tbody.appendChild(row);
-    });
-    tableNode.append(thead, tbody);
-    wrap.appendChild(tableNode);
-    return wrap;
+    return ErpUI.table(headers, rows);
   }
 
-  function pill(text, tone) {
-    return el('span', 'b360-pill' + (tone ? ' is-' + tone : ''), label(text));
-  }
-
-  function statusTone(value) {
-    var status = String(value || '').toLowerCase();
-    if (/(fail|reject|revok|blocked|cancel|alert|critical|high)/.test(status)) return 'bad';
-    if (/(pending|paused|open|follow|draft|conditional|medium)/.test(status)) return 'warn';
-    return '';
+  // Status badge with the ERP-wide colour meaning (see js/ui.js).
+  function pill(status) {
+    return ErpUI.badge(status);
   }
 
   function body(name) {
@@ -110,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function subtitle(text) {
-    return el('p', 'b360-subtitle', text);
+    return el('p', 'erp-subhead', text);
   }
 
   // ---- sections ------------------------------------------------------------
@@ -118,9 +93,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var batch = data.batch;
     setText('b360BatchId', batch.business_id || batch.batch_code);
     var status = document.getElementById('b360Status');
-    status.textContent = label(batch.status);
-    status.className = 'b360-status' +
-      (/(HEALTH_ALERT|CANCELLED)/.test(batch.status) ? ' is-alert' : batch.status === 'PAUSED' ? ' is-paused' : '');
+    status.replaceWith(Object.assign(ErpUI.badge(batch.status), { id: 'b360Status' }));
     setText('b360Farm', [batch.farm_name, batch.site_name].filter(Boolean).join(' / ') || 'Unassigned (legacy)');
     setText('b360Facility', batch.facility_name || 'Unassigned (legacy)');
     setText('b360Started', day(batch.started_at || batch.start_date));
@@ -246,8 +219,8 @@ document.addEventListener('DOMContentLoaded', function () {
       target.appendChild(table(
         ['When', 'Issue', 'Severity', 'Action', 'Status'],
         ops.health.items.map(function (item) {
-          return [moment(item.occurred_at), item.observed_issue, pill(item.severity, statusTone(item.severity)),
-            item.action_taken, pill(item.health_status, statusTone(item.health_status))];
+          return [moment(item.occurred_at), item.observed_issue, pill(item.severity),
+            item.action_taken, pill(item.health_status)];
         })
       ));
     }
@@ -289,13 +262,13 @@ document.addEventListener('DOMContentLoaded', function () {
     target.appendChild(table(
       ['Drying batch', 'Status', 'Method', 'Wet in', 'Dry out', 'Moisture', 'Yield'],
       proc.drying_batches.map(function (row) {
-        return [row.business_id || row.batch_code, pill(row.status, statusTone(row.status)), row.drying_method,
+        return [row.business_id || row.batch_code, pill(row.status), row.drying_method,
           kg(row.total_input_kg), row.outputs.length ? kg(row.total_output_kg) : 'Not recorded',
           pct(row.output_moisture_percent), pct(row.yield_percent)];
       })
     ));
     if (proc.any_shared) {
-      target.appendChild(el('p', 'b360-note',
+      target.appendChild(el('div', 'erp-alert is-warning',
         'At least one drying batch also contains harvest from other production batches. Output and yield are shown for the whole drying batch, not split by source.'));
     }
   }
@@ -309,15 +282,15 @@ document.addEventListener('DOMContentLoaded', function () {
     target.appendChild(table(
       ['Check', 'Result', 'Moisture', 'Inspector', 'Decision', 'Approver', 'Decided'],
       data.quality.map(function (q) {
-        return [q.check_code, pill(q.check_status, statusTone(q.check_status)), pct(q.moisture_percent), q.inspector,
-          q.decision ? pill(q.decision, statusTone(q.decision)) : pill('Awaiting decision', 'warn'),
+        return [q.check_code, pill(q.check_status), pct(q.moisture_percent), q.inspector,
+          q.decision ? pill(q.decision) : pill('Awaiting decision'),
           q.approver, moment(q.decided_at)];
       })
     ));
   }
 
   function lotLink(businessId) {
-    var link = el('a', 'b360-link', businessId);
+    var link = el('a', 'erp-link', businessId);
     link.href = '/product-lot?ref=' + encodeURIComponent(businessId);
     return link;
   }
@@ -332,7 +305,7 @@ document.addEventListener('DOMContentLoaded', function () {
       ['Product lot', 'Product', 'Released', 'On hand', 'Status'],
       data.product_lots.map(function (lot) {
         return [lotLink(lot.business_id), lot.product_type, kg(lot.quantity_kg), kg(lot.on_hand_kg),
-          pill(lot.status, statusTone(lot.status))];
+          pill(lot.status)];
       })
     ));
   }
@@ -419,7 +392,7 @@ document.addEventListener('DOMContentLoaded', function () {
       chain.appendChild(item);
     });
     target.appendChild(chain);
-    var full = el('a', 'b360-link', 'Open full traceability for ' + data.batch.business_id + ' →');
+    var full = el('a', 'erp-link', 'Open full traceability for ' + data.batch.business_id + ' →');
     full.href = '/traceability?ref=' + encodeURIComponent(data.batch.business_id) + '&type=production_batch';
     var line = el('p', 'b360-direction');
     line.appendChild(full);
@@ -486,7 +459,7 @@ document.addEventListener('DOMContentLoaded', function () {
   async function load(reference) {
     var ref = String(reference || '').trim();
     if (!ref) return;
-    message.textContent = 'Loading batch…';
+    ErpUI.message(message, 'Loading batch…', 'info');
     try {
       var response = await fetch('/api/production/batches/' + encodeURIComponent(ref) + '/360', {
         credentials: 'include'
@@ -494,11 +467,11 @@ document.addEventListener('DOMContentLoaded', function () {
       var result = await response.json();
       if (!response.ok) throw new Error(result.message || result.error || 'Could not load this batch.');
       render(result.data);
-      message.textContent = '';
+      ErpUI.message(message, '');
       if ([].some.call(select.options, function (option) { return option.value === ref; })) select.value = ref;
       history.replaceState(null, '', '/batch-360?ref=' + encodeURIComponent(ref));
     } catch (error) {
-      message.textContent = error.message;
+      ErpUI.message(message, error.message, 'danger');
     }
   }
 

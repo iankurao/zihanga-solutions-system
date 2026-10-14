@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design System | Zehunger ERP</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/erp.css">
+  <style>
+    .ds-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); gap: var(--erp-space-3); }
+    .ds-swatch { border: 1px solid var(--erp-line); border-radius: var(--erp-radius); overflow: hidden; background: var(--erp-surface); font-size: var(--erp-text-sm); }
+    .ds-swatch div { height: 56px; }
+    .ds-swatch p { margin: 0; padding: var(--erp-space-2); }
+    .ds-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--erp-space-3); }
+    .ds-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: var(--erp-space-4); }
+    .ds-code { font-family: var(--erp-font-mono); font-size: var(--erp-text-xs); color: var(--erp-muted); }
+  </style>
+</head>
+<body class="erp-page">
+  <header data-erp-nav></header>
+
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Reference</p>
+        <h1>Design system</h1>
+        <p class="erp-subtitle">The building blocks every ERP page uses. Copy the markup; use the helpers in <span class="erp-mono">/js/ui.js</span> for states, badges and confirmations.</p>
+      </div>
+    </header>
+
+    <section class="erp-card" aria-labelledby="ds-colour">
+      <h2 id="ds-colour">Colour</h2>
+      <p class="erp-hint">Green means done or approved, blue in progress, amber waiting or needs attention, red failed or unsafe. Colour always comes with a text label.</p>
+      <div class="ds-swatches" id="dsSwatches"></div>
+    </section>
+
+    <section class="erp-card" aria-labelledby="ds-type">
+      <h2 id="ds-type">Typography</h2>
+      <p class="erp-eyebrow">Eyebrow · section label</p>
+      <h1 style="margin:0">Page title (1.75rem)</h1>
+      <h2 style="margin:.5rem 0 0">Card title (1.125rem)</h2>
+      <p>Body text is 16px with 1.5 line height so it stays readable on a phone in the field. <span class="erp-muted">Secondary text uses the muted colour.</span></p>
+      <p class="erp-mono">BSF-2026-00002 · LOT-2026-00001 (record IDs may use the mono font)</p>
+    </section>
+
+    <div class="ds-grid">
+      <section class="erp-card" aria-labelledby="ds-buttons">
+        <h2 id="ds-buttons">Buttons</h2>
+        <div class="ds-row">
+          <button class="erp-btn" type="button"><i class="fas fa-check" aria-hidden="true"></i> Primary</button>
+          <button class="erp-btn erp-btn--secondary" type="button">Secondary</button>
+          <button class="erp-btn erp-btn--ghost" type="button">Ghost</button>
+          <button class="erp-btn erp-btn--danger" type="button">Danger</button>
+          <button class="erp-btn erp-btn--sm" type="button">Small</button>
+          <button class="erp-btn" type="button" disabled>Disabled</button>
+          <button class="erp-btn" type="button" id="dsBusy">Save (shows busy)</button>
+        </div>
+        <p class="ds-code">.erp-btn [--secondary|--ghost|--danger|--sm] · ErpUI.busy(button, promise)</p>
+        <div class="erp-segmented" role="radiogroup" aria-label="Period">
+          <button type="button" role="radio" aria-checked="false">7 days</button>
+          <button type="button" role="radio" aria-checked="true">30 days</button>
+          <button type="button" role="radio" aria-checked="false">90 days</button>
+        </div>
+        <p class="ds-code">.erp-segmented</p>
+      </section>
+
+      <section class="erp-card" aria-labelledby="ds-badges">
+        <h2 id="ds-badges">Status badges</h2>
+        <div class="ds-row" id="dsBadges"></div>
+        <p class="ds-code">ErpUI.badge('READY_FOR_HARVEST') → tone from one shared table</p>
+      </section>
+    </div>
+
+    <section class="erp-card" aria-labelledby="ds-forms">
+      <h2 id="ds-forms">Forms and filters</h2>
+      <form class="erp-filters" onsubmit="event.preventDefault()">
+        <div class="erp-field">
+          <label for="dsFarm">Farm</label>
+          <select id="dsFarm"><option>All my farms</option></select>
+        </div>
+        <div class="erp-field">
+          <label for="dsFrom">From</label>
+          <input id="dsFrom" type="date">
+        </div>
+        <div class="erp-field erp-field--wide">
+          <label for="dsSearch">Search</label>
+          <input id="dsSearch" type="search" placeholder="Batch or lot ID">
+        </div>
+        <button class="erp-btn" type="submit"><i class="fas fa-magnifying-glass" aria-hidden="true"></i> Apply</button>
+        <button class="erp-btn erp-btn--ghost" type="reset">Reset</button>
+      </form>
+      <form class="erp-form" onsubmit="event.preventDefault()">
+        <div class="erp-field">
+          <label for="dsQty">Quantity (kg)</label>
+          <input id="dsQty" type="number" step="0.001" value="12.5">
+        </div>
+        <div class="erp-field">
+          <label for="dsBad">Required field</label>
+          <input id="dsBad" type="text" aria-invalid="true" aria-describedby="dsBadError">
+          <span id="dsBadError" class="erp-field-error">Enter a quantity greater than 0.</span>
+        </div>
+        <div class="erp-field erp-field--full">
+          <label for="dsNotes">Notes</label>
+          <textarea id="dsNotes" placeholder="Optional"></textarea>
+        </div>
+        <label class="erp-check"><input type="checkbox" checked> Release after QC</label>
+      </form>
+      <p class="erp-hint">Controls are at least 44px tall. Labels sit above fields; errors sit below them and use aria-invalid.</p>
+    </section>
+
+    <section class="erp-card" aria-labelledby="ds-kpis">
+      <h2 id="ds-kpis">Cards and figures</h2>
+      <div class="erp-kpis">
+        <div class="erp-kpi"><span>Active batches</span><strong>12</strong></div>
+        <div class="erp-kpi"><span>Harvested (30 days)</span><strong>418.5 kg</strong></div>
+        <div class="erp-kpi"><span>Free stock</span><strong>96.0 kg</strong></div>
+        <div class="erp-kpi"><span>Open alerts</span><strong>3</strong></div>
+      </div>
+    </section>
+
+    <section class="erp-card" aria-labelledby="ds-table">
+      <div class="erp-card-head">
+        <h2 id="ds-table">Table</h2>
+        <span class="erp-muted">Numbers right-aligned</span>
+      </div>
+      <div id="dsTable"></div>
+      <div id="dsPager"></div>
+    </section>
+
+    <section class="erp-card" aria-labelledby="ds-alerts">
+      <h2 id="ds-alerts">Alerts and messages</h2>
+      <div id="dsMsgInfo"></div>
+      <div id="dsMsgSuccess"></div>
+      <div id="dsMsgWarning"></div>
+      <div id="dsMsgDanger"></div>
+      <p class="ds-code">ErpUI.message(container, text, 'info'|'success'|'warning'|'danger')</p>
+    </section>
+
+    <section class="erp-card" aria-labelledby="ds-states">
+      <h2 id="ds-states">Loading, empty and error states</h2>
+      <div class="ds-grid">
+        <div id="dsLoading"></div>
+        <div id="dsEmpty"></div>
+        <div id="dsError"></div>
+      </div>
+      <p class="ds-code">ErpUI.loading(el) · ErpUI.empty(el, title, text, {actionLabel, href|onAction}) · ErpUI.error(el, message, retry)</p>
+    </section>
+
+    <section class="erp-card" aria-labelledby="ds-modal">
+      <h2 id="ds-modal">Modal</h2>
+      <button class="erp-btn erp-btn--danger" type="button" id="dsModal">Cancel order…</button>
+      <p class="ds-code" id="dsModalResult">ErpUI.confirm({title, text, confirmLabel, danger}) → Promise&lt;boolean&gt;</p>
+    </section>
+  </main>
+
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
+  <script>
+    (function () {
+      var U = window.ErpUI;
+      var styles = getComputedStyle(document.documentElement);
+      [['--erp-brand', 'Brand'], ['--erp-accent', 'Accent / success'], ['--erp-info', 'Info'],
+       ['--erp-warning', 'Warning'], ['--erp-danger', 'Danger'], ['--erp-ink', 'Text'],
+       ['--erp-muted', 'Muted text'], ['--erp-control', 'Control border'], ['--erp-line', 'Divider'],
+       ['--erp-page', 'Page']].forEach(function (pair) {
+        var card = U.el('div', 'ds-swatch');
+        var chip = U.el('div');
+        chip.style.background = 'var(' + pair[0] + ')';
+        card.append(chip, U.el('p', null, pair[1] + ' ' + styles.getPropertyValue(pair[0]).trim()));
+        document.getElementById('dsSwatches').appendChild(card);
+      });
+      ['COMPLETED', 'APPROVED', 'ACTIVE', 'DISPATCHED', 'PLANNED', 'QC_PENDING', 'OPEN',
+       'HEALTH_ALERT', 'CANCELLED', 'rejected', 'closed'].forEach(function (status) {
+        document.getElementById('dsBadges').appendChild(U.badge(status));
+      });
+      var rows = [
+        ['BSF-2026-00002', U.badge('ACTIVE'), 'BSF Production House', '42.000'],
+        ['BSF-2026-00001', U.badge('HARVESTED'), 'BSF Production House', '118.250'],
+        ['BSF-2025-00187', U.badge('CANCELLED'), 'Kericho Pod Shed', '—']
+      ];
+      document.getElementById('dsTable').appendChild(U.table(
+        ['Batch', 'Status', 'Facility', { label: 'Harvested (kg)', numeric: true }], rows, 'Example batches'));
+      var pager = U.pager(function () { pager.update(false, 'Showing all 3 batches'); });
+      pager.update(true, 'Showing 3 of 12 batches');
+      document.getElementById('dsPager').appendChild(pager);
+      U.message(document.getElementById('dsMsgInfo'), 'Stock figures update when a movement is posted.', 'info');
+      U.message(document.getElementById('dsMsgSuccess'), 'Product Lot LOT-2026-00004 released into Dry Store A.', 'success');
+      U.message(document.getElementById('dsMsgWarning'), 'Batch BSF-2026-00002 has not been fed today.', 'warning');
+      U.message(document.getElementById('dsMsgDanger'), 'Quantity is more than the free stock (12.0 kg).', 'danger');
+      U.loading(document.getElementById('dsLoading'), 'Loading batches…');
+      U.empty(document.getElementById('dsEmpty'), 'No open orders', 'New customer orders appear here.', { actionLabel: 'Create order', href: '#ds-modal' });
+      U.error(document.getElementById('dsError'), 'The server did not respond.', function () {});
+      document.getElementById('dsBusy').addEventListener('click', function (event) {
+        U.busy(event.currentTarget, new Promise(function (resolve) { setTimeout(resolve, 1500); }));
+      });
+      document.getElementById('dsModal').addEventListener('click', async function () {
+        var yes = await U.confirm({ title: 'Cancel order ORD-2026-00012?', text: 'Reserved stock goes back to free stock. This cannot be undone.', confirmLabel: 'Cancel order', cancelLabel: 'Keep order', danger: true });
+        document.getElementById('dsModalResult').textContent = 'Result: ' + (yes ? 'confirmed' : 'kept');
+      });
+      document.querySelectorAll('.erp-segmented button').forEach(function (button, _i, all) {
+        button.addEventListener('click', function () {
+          all.forEach(function (b) { b.setAttribute('aria-checked', String(b === button)); });
+        });
+      });
+    })();
+  </script>
+  <script src="/js/notificationCenter.js" defer></script>
+</body>
+</html>

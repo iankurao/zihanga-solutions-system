@@ -5,89 +5,107 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Operational Alerts | Zehunger BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="stylesheet" href="/css/batch-360.css">
-  <link rel="stylesheet" href="/css/traceability.css">
-  <link rel="stylesheet" href="/css/orders.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="/css/alerts.css">
 </head>
-<body class="b360-page">
-  <header class="b360-topbar">
-    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
-    <div class="b360-topbar-title">
-      <p class="b360-eyebrow">PHASE ONE · OPERATIONS</p>
-      <h1>Operational alerts</h1>
-    </div>
-  </header>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-  <main class="b360-main">
-    <section class="b360-card alerts-toolbar">
-      <div id="alertCounts" class="alert-counts" aria-live="polite"></div>
-      <div class="alerts-filters">
-        <label class="sr-only" for="alertView">Show</label>
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Operations</p>
+        <h1>Operational alerts</h1>
+        <p class="erp-subtitle">Alerts come from recorded batches, QC, stock and orders. They resolve on their own when the condition is fixed.</p>
+      </div>
+    </header>
+
+    <div id="alertCounts" class="alert-counts" aria-live="polite"></div>
+
+    <form class="erp-filters" onsubmit="return false" aria-label="Alert filters">
+      <div class="erp-field">
+        <label for="alertView">Show</label>
         <select id="alertView">
           <option value="active">Active alerts</option>
           <option value="resolved">Resolved history</option>
           <option value="all">All alerts</option>
         </select>
-        <label class="sr-only" for="alertSeverity">Severity</label>
+      </div>
+      <div class="erp-field">
+        <label for="alertSeverity">Severity</label>
         <select id="alertSeverity">
           <option value="">All severities</option>
           <option value="critical">Critical</option>
           <option value="warning">Warning</option>
           <option value="info">Info</option>
         </select>
-        <button type="button" id="alertRefresh" class="orders-secondary"><i class="fas fa-rotate"></i> Check now</button>
       </div>
-      <p class="trace-hint">Alerts come from recorded batches, QC, stock and orders. They resolve on their own when the condition is fixed.</p>
-      <p id="alertMessage" class="b360-message" role="status" aria-live="polite"></p>
-    </section>
+      <button type="button" id="alertRefresh" class="erp-btn erp-btn--secondary"><i class="fas fa-rotate" aria-hidden="true"></i> Check now</button>
+    </form>
+    <div id="alertMessage" class="erp-inline-message" aria-live="polite"></div>
 
     <section id="alertList" class="alert-list" aria-label="Alerts"></section>
 
-    <section class="b360-card" id="notification-settings">
-      <h3><span><i class="fas fa-bell"></i></span> Your notifications</h3>
-      <p class="trace-hint">You are notified when an alert you can see opens, gets worse, or comes back after a snooze.</p>
-      <form id="preferenceForm" class="inline-form">
-        <label for="prefInApp">In the app for</label>
-        <select id="prefInApp">
-          <option value="info">All alerts</option>
-          <option value="warning">Warnings and critical</option>
-          <option value="critical">Critical only</option>
-          <option value="off">Nothing</option>
-        </select>
-        <label for="prefEmail">By email for</label>
-        <select id="prefEmail">
-          <option value="info">All alerts</option>
-          <option value="warning">Warnings and critical</option>
-          <option value="critical">Critical only</option>
-          <option value="off">Nothing</option>
-        </select>
-        <button type="submit" class="orders-primary">Save</button>
+    <section class="erp-card" id="notification-settings">
+      <h2 class="erp-card-title"><span class="erp-chip"><i class="fas fa-bell" aria-hidden="true"></i></span> Your notifications</h2>
+      <p class="erp-hint">You are notified when an alert you can see opens, gets worse, or comes back after a snooze.</p>
+      <form id="preferenceForm" class="erp-form">
+        <div class="erp-field">
+          <label for="prefInApp">In the app for</label>
+          <select id="prefInApp">
+            <option value="info">All alerts</option>
+            <option value="warning">Warnings and critical</option>
+            <option value="critical">Critical only</option>
+            <option value="off">Nothing</option>
+          </select>
+        </div>
+        <div class="erp-field">
+          <label for="prefEmail">By email for</label>
+          <select id="prefEmail">
+            <option value="info">All alerts</option>
+            <option value="warning">Warnings and critical</option>
+            <option value="critical">Critical only</option>
+            <option value="off">Nothing</option>
+          </select>
+        </div>
+        <button type="submit" class="erp-btn">Save</button>
       </form>
-      <p id="preferenceNote" class="trace-hint"></p>
+      <p id="preferenceNote" class="erp-hint"></p>
     </section>
 
-    <section class="b360-card" id="emailStatusCard" hidden>
-      <h3><span><i class="fas fa-envelope"></i></span> Email delivery (administrators)</h3>
+    <section class="erp-card" id="emailStatusCard" hidden>
+      <h2 class="erp-card-title"><span class="erp-chip"><i class="fas fa-envelope" aria-hidden="true"></i></span> Email delivery (administrators)</h2>
       <div id="emailStatus"></div>
-      <div class="inline-form">
-        <button type="button" id="testEmailButton" class="orders-secondary">Send me a test email</button>
+      <div class="erp-actions">
+        <button type="button" id="testEmailButton" class="erp-btn erp-btn--secondary">Send me a test email</button>
       </div>
     </section>
 
-    <section class="b360-card">
-      <h3><span><i class="fas fa-scale-balanced"></i></span> Low-stock minimums</h3>
-      <p class="trace-hint">A warning is raised when free, QC-released stock of a product on a farm falls below its minimum.</p>
+    <section class="erp-card">
+      <h2 class="erp-card-title"><span class="erp-chip"><i class="fas fa-scale-balanced" aria-hidden="true"></i></span> Low-stock minimums</h2>
+      <p class="erp-hint">A warning is raised when free, QC-released stock of a product on a farm falls below its minimum.</p>
       <div id="thresholdList"></div>
-      <form id="thresholdForm" class="inline-form" hidden>
-        <select id="thresholdFarm" required aria-label="Farm"></select>
-        <input id="thresholdProduct" type="text" maxlength="50" placeholder="Product type, e.g. dried_larvae" required aria-label="Product type">
-        <input id="thresholdMinimum" type="number" min="0.001" step="0.001" placeholder="Minimum kg" required aria-label="Minimum kg" class="qty-input">
-        <button type="submit" class="orders-primary">Save minimum</button>
+      <form id="thresholdForm" class="erp-form threshold-form" hidden>
+        <div class="erp-field">
+          <label for="thresholdFarm">Farm</label>
+          <select id="thresholdFarm" required></select>
+        </div>
+        <div class="erp-field">
+          <label for="thresholdProduct">Product type</label>
+          <input id="thresholdProduct" type="text" maxlength="50" placeholder="e.g. dried_larvae" required>
+        </div>
+        <div class="erp-field">
+          <label for="thresholdMinimum">Minimum (kg)</label>
+          <input id="thresholdMinimum" type="number" min="0.001" step="0.001" required>
+        </div>
+        <button type="submit" class="erp-btn">Save minimum</button>
       </form>
     </section>
   </main>
 
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script src="/js/alerts.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>

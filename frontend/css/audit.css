@@ -1,40 +1,13 @@
 /* Audit log viewer */
 
-.audit-form {
-  flex-wrap: wrap;
-}
-
-.audit-table-wrap {
-  overflow-x: auto;
-}
-
-.audit-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.86rem;
-}
-
-.audit-table th {
-  padding: 0.5rem 0.6rem;
-  border-bottom: 2px solid var(--line, #dfe7e2);
-  color: var(--muted, #5b6b63);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-align: left;
-  text-transform: uppercase;
-}
-
 .audit-table td {
-  padding: 0.55rem 0.6rem;
-  border-bottom: 1px solid var(--line, #dfe7e2);
-  vertical-align: top;
   overflow-wrap: anywhere;
 }
 
 .audit-table td small {
   display: block;
-  color: var(--muted, #5b6b63);
-  font-size: 0.75rem;
+  color: var(--erp-muted);
+  font-size: var(--erp-text-xs);
 }
 
 .audit-when {
@@ -83,10 +56,6 @@
 .audit-more,
 .audit-reason {
   color: var(--muted, #5b6b63);
-}
-
-#auditMore[hidden] {
-  display: none;
 }
 
 @media (max-width: 720px) {

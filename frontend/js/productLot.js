@@ -17,11 +17,16 @@ document.addEventListener('DOMContentLoaded', function () {
     return parts.length ? parts.join(' · ') : '—';
   }
 
-  function addCell(row, value) {
+  function addCell(row, value, numeric) {
     var cell = document.createElement('td');
+    if (numeric) cell.className = 'is-num';
     cell.textContent = value == null || value === '' ? '—' : String(value);
     row.appendChild(cell);
   }
+
+  // Quantities are shown right-aligned (see erp-table .is-num).
+  function Num(value) { this.value = value; }
+  function num(value) { return new Num(value); }
 
   function renderTrace(lot) {
     var lines = lot.source_chain || [];
@@ -68,6 +73,8 @@ document.addEventListener('DOMContentLoaded', function () {
           var cell = document.createElement('td');
           cell.appendChild(value);
           row.appendChild(cell);
+        } else if (value instanceof Num) {
+          addCell(row, value.value, true);
         } else {
           addCell(row, value);
         }
@@ -82,10 +89,10 @@ document.addEventListener('DOMContentLoaded', function () {
     text('lotOnHand', kg(inventory.on_hand_kg) + ' on hand');
     fillTable('lotBalanceRows', 'lotBalanceEmpty', inventory.balances, function (item) {
       return [place(item.location_code, item.location_name), item.facility_name,
-        kg(item.quantity_kg), kg(item.reserved_kg), kg(item.free_kg), when(item.last_movement_at)];
+        num(kg(item.quantity_kg)), num(kg(item.reserved_kg)), num(kg(item.free_kg)), when(item.last_movement_at)];
     });
     fillTable('lotMovementRows', 'lotMovementEmpty', inventory.movements, function (item) {
-      return [item.business_id, item.movement_type, kg(item.quantity_kg),
+      return [item.business_id, ErpUI.humanize(item.movement_type), num(kg(item.quantity_kg)),
         place(item.from_location_code, item.from_location_name),
         place(item.to_location_code, item.to_location_name),
         when(item.occurred_at), item.recorded_by,
@@ -133,28 +140,28 @@ document.addEventListener('DOMContentLoaded', function () {
       var totals = document.getElementById('stockTotals');
       totals.textContent = '';
       (result.totals || []).forEach(function (total) {
-        var card = document.createElement('div');
-        card.className = 'stock-total';
-        var label = document.createElement('span');
-        label.textContent = total.product_type;
-        var value = document.createElement('strong');
-        value.textContent = kg(total.available_kg) + ' available';
-        card.append(label, value);
+        var card = ErpUI.el('div', 'erp-kpi');
+        card.append(ErpUI.el('span', null, ErpUI.humanize(total.product_type) + ' available'),
+          ErpUI.el('strong', null, kg(total.available_kg)));
         totals.appendChild(card);
       });
+      totals.hidden = !totals.children.length;
       fillTable('stockRows', 'stockEmpty', result.data || [], function (item) {
         var link = document.createElement('button');
         link.type = 'button';
         link.className = 'lot-link';
         link.textContent = item.business_id;
         link.addEventListener('click', function () { load(item.business_id); });
-        return [item.product_type, link,
+        return [ErpUI.humanize(item.product_type), link,
           item.facility_name + ' — ' + place(item.location_code, item.location_name),
-          kg(item.quantity_kg), item.lot_status, when(item.last_movement_at)];
+          num(kg(item.quantity_kg)), ErpUI.badge(item.lot_status), when(item.last_movement_at)];
       });
     } catch (error) {
-      document.getElementById('stockEmpty').hidden = false;
-      document.getElementById('stockEmpty').textContent = error.message;
+      var stockEmpty = document.getElementById('stockEmpty');
+      stockEmpty.hidden = false;
+      stockEmpty.replaceWith(Object.assign(ErpUI.state('error', {
+        title: 'Stock could not be loaded', text: error.message, actionLabel: 'Try again', onAction: loadStock
+      }), { id: 'stockEmpty' }));
     }
   }
 
@@ -162,17 +169,15 @@ document.addEventListener('DOMContentLoaded', function () {
     currentLot = lot;
     text('lotBusinessId', lot.business_id);
     text('lotNumber', 'Lot number ' + (lot.lot_code || '—'));
-    text('lotProductType', lot.product_type);
+    text('lotProductType', ErpUI.humanize(lot.product_type));
     text('lotQuantity', Number(lot.quantity).toFixed(3) + ' ' + lot.unit);
     text('lotProductionDate', lot.production_date);
     text('lotFarm', lot.farm_name);
-    text('lotQcStatus', lot.qc_status);
-    text('lotApprovalStatus', lot.approval_status);
+    text('lotQcStatus', ErpUI.humanize(lot.qc_status));
+    text('lotApprovalStatus', ErpUI.humanize(lot.approval_status));
     text('lotStorageLocation', lot.storage_location || 'Not recorded');
     text('lotReleasedBy', lot.released_by);
-    var status = document.getElementById('lotStatus');
-    status.textContent = lot.status;
-    status.className = 'lot-status lot-status-' + String(lot.status).toLowerCase();
+    document.getElementById('lotStatus').replaceWith(Object.assign(ErpUI.badge(lot.status), { id: 'lotStatus' }));
     renderTrace(lot);
     document.getElementById('lotLabelLink').href =
       '/labels?type=product_lot&ref=' + encodeURIComponent(lot.business_id);
@@ -187,6 +192,13 @@ document.addEventListener('DOMContentLoaded', function () {
   var movementMessage = document.getElementById('movementMessage');
   document.getElementById('movementType').addEventListener('change', syncMovementFields);
   syncMovementFields();
+  // Write-offs and adjustments are for roles with inventory.adjust (managers).
+  (window.currentUser || Promise.resolve(null)).then(function (profile) {
+    var canAdjust = !!profile && (profile.permissions || []).indexOf('inventory.adjust') !== -1;
+    document.querySelectorAll('#movementType option[data-adjust]').forEach(function (option) {
+      option.hidden = option.disabled = !canAdjust;
+    });
+  });
 
   movementForm.addEventListener('submit', async function (event) {
     event.preventDefault();
@@ -205,34 +217,41 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!document.getElementById('movementToField').hidden) {
       payload.to_location_id = document.getElementById('movementTo').value;
     }
-    movementMessage.className = 'movement-message';
-    movementMessage.textContent = 'Posting movement…';
+    if (type !== 'TRANSFER' && type !== 'ADJUSTMENT_IN') {
+      var confirmed = await ErpUI.confirm({
+        title: (type === 'WASTAGE' ? 'Write off ' : 'Remove ') + payload.quantity_kg + ' kg of ' + currentLot.business_id + '?',
+        text: 'This takes the stock out of the ledger. It is recorded with your name and reason and cannot be deleted.',
+        confirmLabel: type === 'WASTAGE' ? 'Write off stock' : 'Post adjustment',
+        danger: true
+      });
+      if (!confirmed) return;
+    }
+    var submit = movementForm.querySelector('button[type="submit"]');
+    ErpUI.message(movementMessage, '');
     try {
-      var response = await fetch('/api/inventory/movements', {
+      var response = await ErpUI.busy(submit, fetch('/api/inventory/movements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(payload)
-      });
+      }));
       var result = await response.json();
       if (!response.ok) throw new Error(result.message || result.error || 'Movement was not posted.');
-      movementMessage.className = 'movement-message is-success';
-      movementMessage.textContent = result.data.business_id + ' posted.';
+      ErpUI.message(movementMessage, result.data.business_id + ' posted.', 'success');
       movementForm.reset();
       syncMovementFields();
       currentLot.inventory = result.data.inventory;
       renderInventory(currentLot);
       loadStock();
     } catch (error) {
-      movementMessage.className = 'movement-message is-error';
-      movementMessage.textContent = error.message;
+      ErpUI.message(movementMessage, error.message, 'danger');
     }
   });
 
   async function load(referenceValue) {
     var lookup = String(referenceValue || '').trim();
     if (!lookup) return;
-    message.textContent = 'Loading Product Lot…';
+    ErpUI.message(message, 'Loading product lot…', 'info');
     content.hidden = true;
     try {
       var response = await fetch('/api/product-lots/' + encodeURIComponent(lookup), {
@@ -241,11 +260,11 @@ document.addEventListener('DOMContentLoaded', function () {
       var result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Could not load Product Lot.');
       render(result.data);
-      message.textContent = '';
+      ErpUI.message(message, '');
       referenceInput.value = lookup;
       history.replaceState(null, '', '/product-lot?ref=' + encodeURIComponent(lookup));
     } catch (error) {
-      message.textContent = error.message;
+      ErpUI.message(message, error.message, 'danger');
     }
   }
 
@@ -254,6 +273,7 @@ document.addEventListener('DOMContentLoaded', function () {
     load(referenceInput.value);
   });
 
+  ErpUI.loading(document.getElementById('stockTotals'), 'Loading stock…', true);
   loadStock();
   var initialReference = new URLSearchParams(window.location.search).get('ref');
   if (initialReference) load(initialReference);

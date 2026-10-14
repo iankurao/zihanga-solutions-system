@@ -28,23 +28,15 @@ document.addEventListener('DOMContentLoaded', function () {
     return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
-  function tone(status) {
-    var value = String(status || '').toLowerCase();
-    if (/(fail|reject|revok|blocked|cancel|alert|quarantin)/.test(value)) return ' is-bad';
-    if (/(pending|paused|draft|planned)/.test(value)) return ' is-warn';
-    return '';
-  }
-
   // ---- summary -------------------------------------------------------------
   function renderSummary(data) {
     var root = data.root;
     document.getElementById('traceRootType').textContent = root.type_label.toUpperCase();
     document.getElementById('traceRootRef').textContent = root.ref;
     document.getElementById('traceRootTitle').textContent = root.title || '';
-    var status = document.getElementById('traceRootStatus');
-    status.textContent = label(root.status);
-    status.className = 'b360-pill' + tone(root.status);
+    var status = Object.assign(ErpUI.badge(root.status), { id: 'traceRootStatus' });
     status.hidden = !root.status;
+    document.getElementById('traceRootStatus').replaceWith(status);
     var link = document.getElementById('traceRootLink');
     link.hidden = !root.href;
     if (root.href) link.href = root.href;
@@ -173,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function () {
       stage.nodes.forEach(function (node) { nodesByKey[node.key] = node; });
     });
     if (!data.edges.length) {
-      target.appendChild(el('p', 'b360-empty', 'This record has no recorded links to other records yet.'));
+      target.appendChild(ErpUI.state('empty', { text: 'This record has no recorded links to other records yet.', compact: true }));
       return;
     }
     function name(key) {
@@ -181,29 +173,20 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!node) return '—';
       return node.restricted ? node.type_label + ' (restricted)' : node.type_label + ' ' + node.ref;
     }
-    var wrap = el('div', 'b360-table-wrap');
-    var table = el('table', 'b360-table');
-    var head = el('tr');
-    ['From', 'To', 'Quantity'].forEach(function (text) { head.appendChild(el('th', null, text)); });
-    var thead = el('thead');
-    thead.appendChild(head);
-    var tbody = el('tbody');
-    data.edges.forEach(function (edge) {
-      var row = el('tr');
-      row.append(el('td', null, name(edge.from)), el('td', null, name(edge.to)),
-        el('td', null, kg(edge.quantity, edge.unit) || '—'));
-      tbody.appendChild(row);
-    });
-    table.append(thead, tbody);
-    wrap.appendChild(table);
-    target.appendChild(wrap);
+    target.appendChild(ErpUI.table(
+      ['From', 'To', { label: 'Quantity', numeric: true }],
+      data.edges.map(function (edge) {
+        return [name(edge.from), name(edge.to), kg(edge.quantity, edge.unit)];
+      }),
+      'Recorded links'
+    ));
   }
 
   // ---- loading -------------------------------------------------------------
   async function trace(ref, type) {
     var value = String(ref || '').trim();
     if (!value) return;
-    message.textContent = 'Tracing ' + value + '…';
+    ErpUI.message(message, 'Tracing ' + value + '…', 'info');
     try {
       var url = '/api/traceability?ref=' + encodeURIComponent(value) + (type ? '&type=' + encodeURIComponent(type) : '');
       var response = await fetch(url, { credentials: 'include' });
@@ -213,13 +196,13 @@ document.addEventListener('DOMContentLoaded', function () {
       renderFlow(payload.data);
       renderEdges(payload.data);
       result.hidden = false;
-      message.textContent = '';
+      ErpUI.message(message, '');
       document.title = payload.data.root.ref + ' · Traceability | Zehunger';
       history.replaceState(null, '', '/traceability?ref=' + encodeURIComponent(payload.data.root.ref) +
         '&type=' + encodeURIComponent(payload.data.root.type));
     } catch (error) {
       result.hidden = true;
-      message.textContent = error.message;
+      ErpUI.message(message, error.message, 'danger');
     }
   }
 

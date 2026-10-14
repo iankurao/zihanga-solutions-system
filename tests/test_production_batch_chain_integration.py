@@ -1680,6 +1680,27 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual([None if r["larvae_weight"] is None else float(r["larvae_weight"])
                           for r in weights], [31.0, None])
 
+    def test_feeding_form_blank_optional_fields_are_accepted(self):
+        # The batch page posts every form field; blanks arrive as "".
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        response = self.client.post(
+            f"/api/production/batches/{batch['business_id']}/events/feeding",
+            json={
+                "feeding_date": "2026-09-25", "event_time": "", "feed_type": "brewer grain",
+                "quantity_offered": 2.5, "offered_unit": "kg", "quantity_consumed": "",
+                "consumed_unit": "kg", "larvae_biomass": "", "biomass_unit": "g",
+                "larvae_age_days": "", "tray_batch_id": "", "operator": self.actor, "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+        row = db.fetch_one(
+            "SELECT f.larvae_age_days FROM feeding_events AS f JOIN production_events AS e "
+            "ON e.id = f.production_event_id WHERE e.production_batch_id = %s",
+            (batch["id"],),
+        )
+        self.assertIsNone(row["larvae_age_days"])
+
     # ---- Traceability ---------------------------------------------------------
 
     def _trace(self, ref, record_type=None):

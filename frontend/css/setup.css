@@ -1,4 +1,4 @@
-/* Farm setup (admin) page; builds on batch-360, traceability and orders CSS. */
+/* Farm setup (admin) page layout; components come from erp.css. */
 
 .setup-layout {
   display: grid;
@@ -9,6 +9,7 @@
 
 .setup-layout > * {
   min-width: 0;
+  margin: 0;
 }
 
 .setup-full {
@@ -44,39 +45,17 @@
   text-decoration: line-through;
 }
 
-.setup-node button {
-  padding: 0.2rem 0.55rem;
-  border: 0;
-  border-radius: 6px;
-  color: var(--muted);
-  background: #eef2ef;
-  font: inherit;
-  font-size: 0.78rem;
-  cursor: pointer;
-}
-
 .setup-form {
   display: grid;
+  align-items: end;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
-.setup-form .b360-subtitle {
+.setup-form .erp-subhead {
   grid-column: 1 / -1;
   margin: 0;
-}
-
-.setup-form input,
-.setup-form select,
-.inline-form select {
-  min-width: 0;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #cad8ce;
-  border-radius: 8px;
-  color: var(--ink);
-  background: #fff;
-  font: inherit;
 }
 
 @media (max-width: 900px) {
@@ -85,6 +64,7 @@
   }
 }
 
-.setup-node span button + button {
-  margin-left: 0.35rem;
+.setup-node span {
+  display: inline-flex;
+  gap: 0.35rem;
 }

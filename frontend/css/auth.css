@@ -1,9 +1,10 @@
+/* Colours from the ERP design tokens (css/erp.css, loaded first). */
 :root {
-    --primary-color: #2c3e50;
-    --secondary-color: #34495e;
-    --accent-color: #27ae60;
-    --text-color: #2c3e50;
-    --light-bg: #f8f9fa;
+    --primary-color: var(--erp-brand);
+    --secondary-color: var(--erp-brand-2);
+    --accent-color: var(--erp-accent);
+    --text-color: var(--erp-ink);
+    --light-bg: var(--erp-page);
 }
 
 body {
@@ -12,7 +13,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--erp-font);
     position: relative;
     height: 100vh;
 }
@@ -57,8 +58,9 @@ body.bsf-bg::before {
     content: none;
 }
 
+/* Near-solid surface so labels and links stay readable over the photo. */
 .auth-container {
-    background-color: rgba(255,255,255,0.28);
+    background-color: rgba(255,255,255,0.96);
     padding: 2.5rem 2.5rem 2rem 2.5rem;
     border-radius: 20px;
     box-shadow: 0 10px 32px rgba(44, 62, 80, 0.10);
@@ -157,7 +159,7 @@ h2 {
     top: 50%;
     left: 16px;
     transform: translateY(-50%);
-    color: #7f8c8d;
+    color: var(--erp-muted);
     z-index: 2;
     font-size: 1.15rem;
     pointer-events: none;
@@ -176,7 +178,7 @@ h2 {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    color: #7f8c8d;
+    color: var(--erp-muted);
     cursor: pointer;
     z-index: 3;
     font-size: 1.15rem;
@@ -202,7 +204,7 @@ h2 {
     top: 50%;
     right: 16px;
     transform: translateY(-50%);
-    color: #7f8c8d;
+    color: var(--erp-muted);
     cursor: pointer;
     transition: color 0.3s;
     z-index: 2;
@@ -270,14 +272,14 @@ h2 {
     font-family: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 .alert-danger {
-    background-color: #fdecea;
-    color: #d32f2f;
-    border: 1px solid #ef9a9a;
+    background-color: var(--erp-danger-soft);
+    color: var(--erp-danger-ink);
+    border: 1px solid var(--erp-danger);
 }
 .alert-success {
-    background-color: #e8f5e9;
-    color: #388e3c;
-    border: 1px solid #a5d6a7;
+    background-color: var(--erp-success-soft);
+    color: var(--erp-success-ink);
+    border: 1px solid var(--erp-success);
 }
 .alert i {
     margin-right: 10px;
@@ -298,7 +300,7 @@ h2 {
 .form-check label {
     margin-bottom: 0;
     font-size: 1rem;
-    color: #7f8c8d;
+    color: var(--erp-muted);
     font-weight: 500;
 }
 .auth-flex-wrapper {
@@ -456,8 +458,12 @@ h2 {
     }
 }
 @media (max-width: 600px) {
+    .auth-flex-wrapper {
+        max-width: 100%;
+    }
+    /* Leave room for the 1rem side margins so phones never scroll sideways. */
     .auth-container, .company-statement {
-        max-width: 98vw;
+        max-width: calc(100vw - 2rem);
         min-width: 0;
         padding: 1rem;
         max-height: 98vh;

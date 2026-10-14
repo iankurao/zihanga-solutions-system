@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Zehunger Solutions – Circular Economy ERP</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/erp.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', sans-serif;
-      background: #f9fafb;
+      font-family: var(--erp-font);
+      background: var(--erp-page);
       min-height: 100vh;
-      color: #111827;
+      color: var(--erp-ink);
     }
 
     /* ── Header ── */
     header {
       background: #fff;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--erp-line);
       padding: 0 2rem;
       height: 64px;
       display: flex;
@@ -36,7 +36,7 @@
     .brand-icon {
       width: 40px;
       height: 40px;
-      background: #16a34a;
+      background: var(--erp-accent);
       border-radius: 10px;
       display: flex;
       align-items: center;
@@ -48,13 +48,13 @@
     .brand-text h1 {
       font-size: 0.95rem;
       font-weight: 700;
-      color: #111827;
+      color: var(--erp-ink);
       line-height: 1.2;
     }
 
     .brand-text p {
       font-size: 0.75rem;
-      color: #6b7280;
+      color: var(--erp-muted);
       font-weight: 400;
     }
 
@@ -68,8 +68,8 @@
       display: inline-flex;
       align-items: center;
       gap: 0.4rem;
-      background: #dcfce7;
-      color: #15803d;
+      background: var(--erp-accent-soft);
+      color: var(--erp-accent-hover);
       font-size: 0.8rem;
       font-weight: 600;
       padding: 0.35rem 0.85rem;
@@ -80,14 +80,14 @@
     .hero h2 {
       font-size: clamp(1.75rem, 4vw, 2.6rem);
       font-weight: 800;
-      color: #111827;
+      color: var(--erp-ink);
       line-height: 1.2;
       margin-bottom: 1rem;
     }
 
     .hero p {
       font-size: 1rem;
-      color: #6b7280;
+      color: var(--erp-muted);
       max-width: 480px;
       margin: 0 auto;
       line-height: 1.6;
@@ -104,7 +104,7 @@
 
     .portal-card {
       background: #fff;
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--erp-line);
       border-radius: 16px;
       padding: 2rem;
       width: 100%;
@@ -131,18 +131,18 @@
       font-size: 1.3rem;
     }
 
-    .card-icon.admin  { background: #dcfce7; color: #16a34a; }
-    .card-icon.farmer { background: #ffedd5; color: #d97706; }
+    .card-icon.admin  { background: var(--erp-accent-soft); color: var(--erp-accent); }
+    .card-icon.farmer { background: var(--erp-warning-soft); color: var(--erp-warning); }
 
     .portal-card h3 {
       font-size: 1.25rem;
       font-weight: 700;
-      color: #111827;
+      color: var(--erp-ink);
     }
 
     .portal-card .desc {
       font-size: 0.875rem;
-      color: #6b7280;
+      color: var(--erp-muted);
       line-height: 1.55;
     }
 
@@ -159,7 +159,7 @@
       align-items: center;
       gap: 0.55rem;
       font-size: 0.85rem;
-      color: #374151;
+      color: var(--erp-ink);
     }
 
     .feature-list li::before {
@@ -170,8 +170,8 @@
       flex-shrink: 0;
     }
 
-    .feature-list.admin-list  li::before { background: #16a34a; }
-    .feature-list.farmer-list li::before { background: #d97706; }
+    .feature-list.admin-list  li::before { background: var(--erp-accent); }
+    .feature-list.farmer-list li::before { background: var(--erp-warning); }
 
     .btn-portal {
       display: flex;
@@ -192,9 +192,9 @@
 
     .btn-portal:hover { opacity: 0.88; }
 
-    .btn-admin  { background: #16a34a; color: #fff; }
-    .btn-farmer { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
-    .btn-farmer:hover { background: #e5e7eb; opacity: 1; }
+    .btn-admin  { background: var(--erp-accent); color: #fff; }
+    .btn-farmer { background: var(--erp-page); color: var(--erp-ink); border: 1px solid var(--erp-control); }
+    .btn-farmer:hover { background: var(--erp-line); opacity: 1; }
   </style>
 </head>
 <body>

@@ -3,188 +3,184 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Product Lot Traceability | BSF Farm</title>
+  <title>Product Lots | Zehunger BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="/css/product-lot.css">
 </head>
-<body class="product-lot-page">
-  <header class="lot-header">
-    <a class="lot-back-link" href="/" aria-label="Back to farm operations">
-      <i class="fas fa-arrow-left"></i> Operations
-    </a>
-    <div>
-      <p class="lot-eyebrow">PHASE ONE · PRODUCT RELEASE</p>
-      <h1>Product Lot Traceability</h1>
-    </div>
-    <span class="lot-header-mark"><i class="fas fa-leaf"></i> BSF FARM</span>
-  </header>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-  <main class="lot-main">
-    <section class="lot-search-panel" aria-labelledby="lot-search-title">
+  <main class="erp-main">
+    <header class="erp-pagehead">
       <div>
-        <h2 id="lot-search-title">Find a Product Lot</h2>
-        <p>Enter its business ID, lot number, or database ID.</p>
+        <p class="erp-eyebrow">Product release &amp; stock</p>
+        <h1>Product lots</h1>
       </div>
-      <form id="lotLookupForm" class="lot-search-form">
-        <label class="sr-only" for="lotLookupRef">Product Lot reference</label>
-        <input id="lotLookupRef" name="lotRef" type="text" autocomplete="off"
-               placeholder="LOT-2026-00001" required>
-        <button type="submit"><i class="fas fa-search"></i> Load lot</button>
-      </form>
-      <p id="lotMessage" class="lot-message" role="status" aria-live="polite"></p>
-    </section>
-
-    <section class="trace-panel stock-panel" aria-labelledby="stock-title">
-      <div class="trace-heading">
-        <div>
-          <p class="lot-eyebrow">INVENTORY LEDGER</p>
-          <h2 id="stock-title">Stock on hand</h2>
+      <form id="lotLookupForm" class="erp-form lot-lookup">
+        <div class="erp-field erp-field--wide">
+          <label for="lotLookupRef">Product lot</label>
+          <input id="lotLookupRef" name="lotRef" type="text" autocomplete="off" placeholder="LOT-2026-00001, lot number or ID" required>
         </div>
-        <p>Calculated from posted inventory movements at locations you can access. Select a lot for its history.</p>
+        <button class="erp-btn" type="submit"><i class="fas fa-magnifying-glass" aria-hidden="true"></i> Open lot</button>
+      </form>
+    </header>
+    <div id="lotMessage" class="erp-inline-message" aria-live="polite"></div>
+
+    <section class="erp-card" aria-labelledby="stock-title">
+      <div class="erp-card-head">
+        <h2 id="stock-title" class="erp-card-title"><span class="erp-chip"><i class="fas fa-warehouse" aria-hidden="true"></i></span> Stock on hand</h2>
+        <span class="erp-muted">From posted movements at locations you can access</span>
       </div>
-      <div id="stockTotals" class="stock-totals"></div>
-      <div class="trace-table-wrap">
-        <table class="trace-table">
+      <div id="stockTotals" class="erp-kpis"></div>
+      <div class="erp-table-wrap">
+        <table class="erp-table">
+          <caption class="sr-only">Stock on hand by lot and location</caption>
           <thead>
             <tr>
-              <th>Product</th>
-              <th>Product Lot</th>
-              <th>Location</th>
-              <th>On hand</th>
-              <th>Lot status</th>
-              <th>Last movement</th>
+              <th scope="col">Product</th>
+              <th scope="col">Product lot</th>
+              <th scope="col">Location</th>
+              <th scope="col" class="is-num">On hand</th>
+              <th scope="col">Lot status</th>
+              <th scope="col">Last movement</th>
             </tr>
           </thead>
           <tbody id="stockRows"></tbody>
         </table>
       </div>
-      <p id="stockEmpty" class="trace-empty" hidden>No stock on hand at locations you can access.</p>
+      <div id="stockEmpty" class="erp-state erp-state--compact" hidden>No stock on hand at locations you can access.</div>
     </section>
 
     <section id="lotContent" hidden>
-      <div class="lot-summary-panel">
-        <div class="lot-summary-heading">
+      <section class="erp-card lot-summary" aria-labelledby="lotBusinessId">
+        <div class="erp-card-head">
           <div>
-            <p class="lot-eyebrow">RELEASED PRODUCT</p>
-            <h2 id="lotBusinessId">—</h2>
-            <p id="lotNumber" class="lot-number">Lot number —</p>
+            <p class="erp-eyebrow">Released product</p>
+            <h2 id="lotBusinessId" class="lot-id">—</h2>
+            <p id="lotNumber" class="erp-muted lot-number">Lot number —</p>
           </div>
-          <span id="lotStatus" class="lot-status">—</span>
+          <span id="lotStatus" class="erp-badge">—</span>
         </div>
-        <div class="lot-facts-grid">
-          <div class="lot-fact"><span>Product type</span><strong id="lotProductType">—</strong></div>
-          <div class="lot-fact"><span>Quantity</span><strong id="lotQuantity">—</strong></div>
-          <div class="lot-fact"><span>Production date</span><strong id="lotProductionDate">—</strong></div>
-          <div class="lot-fact"><span>Farm</span><strong id="lotFarm">—</strong></div>
-          <div class="lot-fact"><span>QC status</span><strong id="lotQcStatus">—</strong></div>
-          <div class="lot-fact"><span>Approval status</span><strong id="lotApprovalStatus">—</strong></div>
-          <div class="lot-fact"><span>Storage location</span><strong id="lotStorageLocation">—</strong></div>
-          <div class="lot-fact"><span>Approved by</span><strong id="lotReleasedBy">—</strong></div>
-        </div>
-      </div>
+        <dl class="erp-facts">
+          <div><dt>Product type</dt><dd id="lotProductType">—</dd></div>
+          <div><dt>Quantity</dt><dd id="lotQuantity">—</dd></div>
+          <div><dt>Production date</dt><dd id="lotProductionDate">—</dd></div>
+          <div><dt>Farm</dt><dd id="lotFarm">—</dd></div>
+          <div><dt>QC status</dt><dd id="lotQcStatus">—</dd></div>
+          <div><dt>Approval status</dt><dd id="lotApprovalStatus">—</dd></div>
+          <div><dt>Storage location</dt><dd id="lotStorageLocation">—</dd></div>
+          <div><dt>Approved by</dt><dd id="lotReleasedBy">—</dd></div>
+        </dl>
+      </section>
 
-      <section class="trace-panel inventory-panel" aria-labelledby="inventory-title">
-        <div class="trace-heading">
-          <div>
-            <p class="lot-eyebrow">LOT INVENTORY</p>
-            <h2 id="inventory-title">Current stock and movements</h2>
-          </div>
-          <p id="lotOnHand" class="lot-on-hand">—</p>
+      <section class="erp-card" aria-labelledby="inventory-title">
+        <div class="erp-card-head">
+          <h2 id="inventory-title" class="erp-card-title"><span class="erp-chip"><i class="fas fa-boxes-stacked" aria-hidden="true"></i></span> Current stock and movements</h2>
+          <strong id="lotOnHand" class="lot-on-hand">—</strong>
         </div>
-        <div class="trace-table-wrap">
-          <table class="trace-table">
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <caption class="sr-only">Stock of this lot by location</caption>
             <thead>
-              <tr><th>Location</th><th>Facility</th><th>On hand</th><th>Reserved for orders</th><th>Free</th><th>Last movement</th></tr>
+              <tr>
+                <th scope="col">Location</th><th scope="col">Facility</th><th scope="col" class="is-num">On hand</th>
+                <th scope="col" class="is-num">Reserved for orders</th><th scope="col" class="is-num">Free</th><th scope="col">Last movement</th>
+              </tr>
             </thead>
             <tbody id="lotBalanceRows"></tbody>
           </table>
         </div>
-        <p id="lotBalanceEmpty" class="trace-empty" hidden>This lot has no stock on hand.</p>
+        <div id="lotBalanceEmpty" class="erp-state erp-state--compact" hidden>This lot has no stock on hand.</div>
 
-        <h3 class="inventory-subheading">Movement history</h3>
-        <div class="trace-table-wrap">
-          <table class="trace-table">
+        <p class="erp-subhead">Movement history</p>
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <caption class="sr-only">Inventory movements of this lot</caption>
             <thead>
               <tr>
-                <th>Movement</th><th>Type</th><th>Quantity</th><th>From</th>
-                <th>To</th><th>When</th><th>By</th><th>Reason / notes</th>
+                <th scope="col">Movement</th><th scope="col">Type</th><th scope="col" class="is-num">Quantity</th><th scope="col">From</th>
+                <th scope="col">To</th><th scope="col">When</th><th scope="col">By</th><th scope="col">Reason / notes</th>
               </tr>
             </thead>
             <tbody id="lotMovementRows"></tbody>
           </table>
         </div>
-        <p id="lotMovementEmpty" class="trace-empty" hidden>
+        <div id="lotMovementEmpty" class="erp-state erp-state--compact" hidden>
           No ledger movements. Lots released before the inventory ledger existed have not been received.
-        </p>
+        </div>
 
-        <h3 class="inventory-subheading">Record a movement</h3>
-        <form id="movementForm" class="movement-form">
-          <label>Type
-            <select id="movementType" name="movementType" required>
-              <option value="TRANSFER">Transfer between locations</option>
-              <option value="WASTAGE">Wastage / write-off (admin)</option>
-              <option value="ADJUSTMENT_OUT">Adjustment out (admin)</option>
-              <option value="ADJUSTMENT_IN">Adjustment in (admin)</option>
-            </select>
-          </label>
-          <label id="movementFromField">From location
-            <select id="movementFrom" name="fromLocationId"></select>
-          </label>
-          <label id="movementToField">To location
-            <select id="movementTo" name="toLocationId"></select>
-          </label>
-          <label>Quantity (kg)
-            <input id="movementQuantity" name="quantityKg" type="number" min="0.001" step="0.001" required>
-          </label>
-          <label class="movement-reason">Reason
-            <input id="movementReason" name="reason" type="text" maxlength="500"
-                   placeholder="Required for adjustments and wastage">
-          </label>
-          <button type="submit"><i class="fas fa-exchange-alt"></i> Post movement</button>
-        </form>
-        <p id="movementMessage" class="movement-message" role="status" aria-live="polite"></p>
+        <div id="movementSection" data-permission="inventory.write" hidden>
+          <p class="erp-subhead">Record a movement</p>
+          <form id="movementForm" class="erp-form">
+            <div class="erp-field">
+              <label for="movementType">Type</label>
+              <select id="movementType" name="movementType" required>
+                <option value="TRANSFER">Transfer between locations</option>
+                <option value="WASTAGE" data-adjust>Wastage / write-off (managers)</option>
+                <option value="ADJUSTMENT_OUT" data-adjust>Adjustment out (managers)</option>
+                <option value="ADJUSTMENT_IN" data-adjust>Adjustment in (managers)</option>
+              </select>
+            </div>
+            <div class="erp-field" id="movementFromField">
+              <label for="movementFrom">From location</label>
+              <select id="movementFrom" name="fromLocationId"></select>
+            </div>
+            <div class="erp-field" id="movementToField">
+              <label for="movementTo">To location</label>
+              <select id="movementTo" name="toLocationId"></select>
+            </div>
+            <div class="erp-field">
+              <label for="movementQuantity">Quantity (kg)</label>
+              <input id="movementQuantity" name="quantityKg" type="number" min="0.001" step="0.001" required>
+            </div>
+            <div class="erp-field erp-field--wide">
+              <label for="movementReason">Reason</label>
+              <input id="movementReason" name="reason" type="text" maxlength="500" placeholder="Required for adjustments and wastage">
+            </div>
+            <button class="erp-btn" type="submit"><i class="fas fa-right-left" aria-hidden="true"></i> Post movement</button>
+          </form>
+          <div id="movementMessage" class="erp-inline-message" aria-live="polite"></div>
+        </div>
       </section>
 
-      <section class="trace-panel" aria-labelledby="trace-title">
-        <div class="trace-heading">
-          <div>
-            <p class="lot-eyebrow">UPSTREAM TRACEABILITY</p>
-            <h2 id="trace-title">Source chain</h2>
-          </div>
-          <p>Each row follows recorded foreign-key relationships upstream to a Waste Lot.
-            <a id="lotTraceLink" class="lot-link" href="/traceability">Open full traceability</a> ·
-            <a id="lotLabelLink" class="lot-link" href="/labels">Print QR label</a></p>
+      <section class="erp-card" aria-labelledby="trace-title">
+        <div class="erp-card-head">
+          <h2 id="trace-title" class="erp-card-title"><span class="erp-chip"><i class="fas fa-diagram-project" aria-hidden="true"></i></span> Source chain</h2>
+          <span>
+            <a id="lotTraceLink" class="erp-link" href="/traceability">Open full traceability</a> ·
+            <a id="lotLabelLink" class="erp-link" href="/labels">Print QR label</a>
+          </span>
         </div>
-        <div class="trace-chain-banner" aria-label="Traceability sequence">
-          <span>Product Lot</span><i class="fas fa-chevron-right"></i>
-          <span>Drying Batch</span><i class="fas fa-chevron-right"></i>
-          <span>Harvest</span><i class="fas fa-chevron-right"></i>
-          <span>Production Batch</span><i class="fas fa-chevron-right"></i>
-          <span>Substrate Batch</span><i class="fas fa-chevron-right"></i>
-          <span>Waste Lot</span>
-        </div>
-        <div class="trace-table-wrap">
-          <table class="trace-table">
+        <p class="erp-hint">Each row follows recorded relationships upstream to a Waste Lot.</p>
+        <ol class="lot-chain" aria-label="Traceability sequence">
+          <li>Product lot</li><li>Drying batch</li><li>Harvest</li><li>Production batch</li><li>Substrate batch</li><li>Waste lot</li>
+        </ol>
+        <div class="erp-table-wrap">
+          <table class="erp-table">
+            <caption class="sr-only">Upstream source chain</caption>
             <thead>
               <tr>
-                <th>Drying Output / Batch</th>
-                <th>Harvest</th>
-                <th>Production Batch</th>
-                <th>Substrate Batch</th>
-                <th>Waste Lot</th>
+                <th scope="col">Drying output / batch</th>
+                <th scope="col">Harvest</th>
+                <th scope="col">Production batch</th>
+                <th scope="col">Substrate batch</th>
+                <th scope="col">Waste lot</th>
               </tr>
             </thead>
             <tbody id="traceRows"></tbody>
           </table>
         </div>
-        <p id="traceEmpty" class="trace-empty" hidden>
+        <div id="traceEmpty" class="erp-state erp-state--compact" hidden>
           No complete upstream links were found for this lot. Historical source data has not been inferred.
-        </p>
+        </div>
       </section>
     </section>
   </main>
 
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script src="/js/productLot.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>

@@ -5,47 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QR Labels | Zehunger BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="stylesheet" href="/css/batch-360.css">
-  <link rel="stylesheet" href="/css/traceability.css">
-  <link rel="stylesheet" href="/css/orders.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="/css/labels.css">
 </head>
-<body class="b360-page">
-  <header class="b360-topbar no-print">
-    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
-    <div class="b360-topbar-title">
-      <p class="b360-eyebrow">PHASE ONE · TRACEABILITY</p>
-      <h1>QR labels</h1>
-    </div>
-  </header>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-  <main class="b360-main">
-    <section class="b360-card no-print">
-      <form id="labelForm" class="trace-form">
-        <div class="trace-field">
+  <main class="erp-main">
+    <header class="erp-pagehead no-print">
+      <div>
+        <p class="erp-eyebrow">Traceability</p>
+        <h1>QR labels</h1>
+      </div>
+    </header>
+
+    <section class="erp-card no-print">
+      <form id="labelForm" class="erp-form">
+        <div class="erp-field">
           <label for="labelType">Record type</label>
           <select id="labelType"></select>
         </div>
-        <div class="trace-field trace-field-ref">
+        <div class="erp-field erp-field--wide">
           <label for="labelSearch">ID starts with (optional)</label>
           <input id="labelSearch" type="text" maxlength="40" placeholder="e.g. BSF-2026" autocomplete="off">
         </div>
-        <div class="trace-field">
+        <div class="erp-field">
           <label for="labelSize">Label size</label>
           <select id="labelSize">
             <option value="small">Small · 50 × 30 mm</option>
             <option value="large">Large · 100 × 60 mm</option>
           </select>
         </div>
-        <button type="submit"><i class="fas fa-magnifying-glass"></i> Find</button>
+        <button class="erp-btn" type="submit"><i class="fas fa-magnifying-glass" aria-hidden="true"></i> Find</button>
       </form>
-      <p class="trace-hint">Scanning a label asks for sign-in and opens the record only for people allowed to see it.
+      <p class="erp-hint">Scanning a label asks for sign-in and opens the record only for people allowed to see it.
         Labels show the ID and basic details only — never customers or prices.</p>
-      <p id="labelMessage" class="b360-message" role="status" aria-live="polite"></p>
+      <div id="labelMessage" class="erp-inline-message" aria-live="polite"></div>
       <div id="labelChoices" class="label-choices"></div>
-      <div class="orders-actions">
-        <button type="button" id="selectAll" class="orders-secondary">Select all</button>
-        <button type="button" id="printLabels" class="orders-primary" disabled><i class="fas fa-print"></i> Print selected</button>
+      <div class="erp-actions">
+        <button type="button" id="selectAll" class="erp-btn erp-btn--secondary">Select all</button>
+        <button type="button" id="printLabels" class="erp-btn" disabled><i class="fas fa-print" aria-hidden="true"></i> Print selected</button>
       </div>
     </section>
 
@@ -53,6 +52,9 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script src="/js/labels.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>

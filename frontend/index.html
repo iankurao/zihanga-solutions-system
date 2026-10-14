@@ -13,6 +13,7 @@
   <meta property="og:type" content="website">
   <!-- <meta property="og:image" content="https://efarmzehunger.com/static/your-image.jpg"> -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -21,9 +22,10 @@
   
   <style>[data-permission][hidden] { display: none !important; }</style>
 </head>
-<body>
+<body class="erp-legacy">
+  <header data-erp-nav></header>
 
-  <!-- Sidebar -->
+  <!-- Sidebar: data-entry sections of this page -->
   <div class="sidebar">
     <div class="logo">
       <a href="login.html">
@@ -2218,6 +2220,7 @@
   
 
   <script src="js/permissions.js"></script>
+  <script src="js/appNav.js"></script>
   <script src="js/scripts.js"></script>
   <script src="js/dataManager.js"></script>
   <script src="js/notificationManager.js"></script>

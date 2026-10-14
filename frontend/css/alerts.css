@@ -1,13 +1,4 @@
-/* Operational alerts page; builds on batch-360, traceability and orders CSS. */
-
-.b360-page {
-  --info: #3b6fb6;
-  --info-soft: #eaf1fb;
-}
-
-.alerts-toolbar {
-  margin-bottom: 1.1rem;
-}
+/* Operational alerts page layout; components come from erp.css. */
 
 .alert-counts {
   display: grid;
@@ -42,21 +33,6 @@
 .alert-count.is-info { background: var(--info-soft); }
 .alert-count.is-info strong { color: var(--info); }
 
-.alerts-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.alerts-filters select {
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #cad8ce;
-  border-radius: 8px;
-  color: var(--ink);
-  background: #fff;
-  font: inherit;
-}
-
 .alert-list {
   display: grid;
   gap: 0.7rem;
@@ -73,7 +49,8 @@
 
 .alert-card.is-warning { border-left-color: var(--amber); }
 .alert-card.is-critical { border-left-color: var(--red); }
-.alert-card.is-muted { opacity: 0.72; }
+/* Handled alerts recede by background, not opacity, so text keeps its contrast. */
+.alert-card.is-muted { background: #f7f9f8; }
 
 .alert-card-head {
   display: flex;
@@ -106,16 +83,9 @@
 
 .alert-actions select,
 .alert-actions input {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid #cad8ce;
-  border-radius: 8px;
-  font: inherit;
-}
-
-.alert-actions .orders-primary,
-.alert-actions .orders-secondary {
-  padding: 0.45rem 0.75rem;
-  font-size: 0.85rem;
+  width: auto;
+  flex: 1 1 160px;
+  max-width: 320px;
 }
 
 .alert-open-link {
@@ -124,9 +94,8 @@
   text-decoration: none;
 }
 
-.b360-pill.is-info {
-  color: var(--info);
-  background: var(--info-soft);
+.alert-counts {
+  margin-bottom: var(--erp-space-4);
 }
 
 @media (max-width: 760px) {

@@ -1,0 +1,115 @@
+/* Production batch page layout; components come from erp.css. */
+
+.batch-lookup {
+  flex: 0 1 560px;
+}
+
+.new-batch-card h2,
+.batch-section h2,
+.erp-tabpanel > h2 {
+  margin: 0 0 var(--erp-space-3);
+  font-size: var(--erp-text-lg);
+}
+
+.batch-section + .batch-section {
+  margin-top: var(--erp-space-5);
+}
+
+/* Event forms: two columns of labelled fields, one on phones */
+.event-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--erp-space-4);
+  margin-bottom: var(--erp-space-5);
+}
+
+.event-form .full {
+  grid-column: 1 / -1;
+}
+
+.event-form label {
+  display: block;
+  margin-bottom: var(--erp-space-1);
+  font-size: var(--erp-text-sm);
+  font-weight: 700;
+}
+
+.event-form > button {
+  justify-self: start;
+}
+
+/* Recorded events */
+.event-list {
+  display: grid;
+  gap: var(--erp-space-3);
+}
+
+.event-item {
+  padding: var(--erp-space-3) var(--erp-space-4);
+  border: 1px solid var(--erp-line);
+  border-left: 4px solid var(--erp-accent);
+  border-radius: var(--erp-radius-sm);
+  background: var(--erp-surface);
+}
+
+.event-item header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--erp-space-2);
+  margin-bottom: var(--erp-space-1);
+}
+
+.event-item strong {
+  text-transform: capitalize;
+}
+
+.event-meta {
+  color: var(--erp-muted);
+  font-size: var(--erp-text-sm);
+}
+
+.event-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--erp-space-4);
+  font-size: var(--erp-text-sm);
+}
+
+/* New batch: substrate and unit pickers */
+.nb-substrate-line {
+  display: grid;
+  grid-template-columns: auto 1fr 9rem;
+  align-items: center;
+  gap: var(--erp-space-2);
+  padding: var(--erp-space-2) 0;
+  border-bottom: 1px solid var(--erp-line);
+}
+
+.nb-substrate-line label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.nb-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--erp-space-2);
+  min-height: var(--erp-touch);
+  margin: 0 var(--erp-space-4) 0 0;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .event-form {
+    grid-template-columns: 1fr;
+  }
+
+  .nb-substrate-line {
+    grid-template-columns: auto 1fr;
+  }
+
+  .nb-substrate-line input[type="number"] {
+    grid-column: 1 / -1;
+  }
+}

@@ -35,11 +35,9 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function say(text, isError) {
-    toast.textContent = text;
-    toast.className = 'farmer-toast' + (isError ? ' is-error' : '');
-    toast.hidden = false;
+    ErpUI.message(toast, text, isError ? 'danger' : 'success');
     clearTimeout(say.timer);
-    say.timer = setTimeout(function () { toast.hidden = true; }, 6000);
+    if (!isError) say.timer = setTimeout(function () { ErpUI.message(toast, ''); }, 6000);
   }
 
   async function api(url, options) {
@@ -200,19 +198,17 @@ document.addEventListener('DOMContentLoaded', function () {
       try { localStorage.setItem('zehunger.farmer.doneBy', values.operator); } catch (e) { /* optional */ }
     }
     var save = document.getElementById('dialogSave');
-    save.disabled = true;
     try {
-      await api('/api/production/batches/' + encodeURIComponent(current.batch.business_id) + '/events/' + current.kind, {
+      await ErpUI.busy(save, api('/api/production/batches/' + encodeURIComponent(current.batch.business_id) + '/events/' + current.kind, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-      });
+      }));
       dialog.close();
       say('Saved for ' + current.batch.business_id + '.');
       load();
     } catch (error) {
       errorBox.textContent = error.message;
-      save.disabled = false;
     }
   });
 
@@ -237,15 +233,13 @@ document.addEventListener('DOMContentLoaded', function () {
     var box = document.getElementById('farmerBatches');
     box.textContent = '';
     if (!batches.length) {
-      box.appendChild(el('p', 'farmer-empty', 'You have no active batches. Ask your farm manager if this looks wrong.'));
+      ErpUI.empty(box, 'No active batches', 'Ask your farm manager if this looks wrong.', { icon: 'fa-seedling' });
       return;
     }
     batches.forEach(function (b) {
       var card = el('article', 'farmer-batch');
       var head = el('div', 'farmer-batch-head');
-      head.append(el('strong', null, b.business_id),
-        el('span', 'farmer-pill' + (b.status === 'HEALTH_ALERT' ? ' is-alert' : b.status === 'PAUSED' || b.status === 'PLANNED' ? ' is-wait' : ''),
-          STATUS_TEXT[b.status] || b.status));
+      head.append(el('strong', null, b.business_id), ErpUI.badge(b.status, STATUS_TEXT[b.status]));
       card.appendChild(head);
       var facts = el('div', 'farmer-facts');
       [
@@ -266,7 +260,7 @@ document.addEventListener('DOMContentLoaded', function () {
         ['health', 'Health issue', 'fa-kit-medical']];
       if (b.status === 'READY_FOR_HARVEST') buttons.push(['harvest', 'Harvest', 'fa-basket-shopping']);
       buttons.forEach(function (spec) {
-        var button = el('button', spec[0] === 'harvest' ? 'is-harvest' : null);
+        var button = el('button', spec[0] === 'harvest' ? 'erp-btn' : 'erp-btn erp-btn--secondary');
         button.type = 'button';
         button.append(el('i', 'fas ' + spec[2]), document.createTextNode(' ' + spec[1]));
         button.addEventListener('click', function () { openForm(b, spec[0]); });
@@ -284,7 +278,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var box = document.getElementById('farmerUnits');
     box.textContent = '';
     if (!units.length) {
-      box.appendChild(el('p', 'farmer-empty', 'No bio-pods or trays are set up for your facilities yet.'));
+      box.appendChild(ErpUI.state('empty', { text: 'No bio-pods or trays are set up for your facilities yet.', compact: true }));
       return;
     }
     units.forEach(function (u) {
@@ -303,11 +297,12 @@ document.addEventListener('DOMContentLoaded', function () {
       renderBatches(data.batches);
       renderUnits(data.units);
     } catch (error) {
-      say(error.message, true);
+      ErpUI.error(document.getElementById('farmerBatches'), error.message, load);
     }
   }
 
   (async function init() {
+    ErpUI.loading(document.getElementById('farmerBatches'), 'Loading your batches…');
     try {
       me = (await api('/api/me')).data;
       var name = me.full_name || me.username;

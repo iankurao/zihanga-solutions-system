@@ -1,65 +1,4 @@
-.b360-page {
-  --ink: #16302a;
-  --muted: #63746c;
-  --line: #e1eae4;
-  --brand: #143c2d;
-  --accent: #19804b;
-  --accent-soft: #e6f4ec;
-  --amber: #a86a12;
-  --amber-soft: #fdf3e2;
-  --red: #a13b30;
-  --red-soft: #fde8e5;
-  --surface: #ffffff;
-  --page: #f3f6f4;
-  margin: 0;
-  min-height: 100vh;
-  background: var(--page);
-  color: var(--ink);
-  font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
-  line-height: 1.45;
-}
-
-.b360-page *,
-.b360-page *::before,
-.b360-page *::after {
-  box-sizing: border-box;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-}
-
-/* Top bar */
-.b360-topbar {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 1.1rem clamp(1rem, 4vw, 3rem);
-  color: #f2fbf5;
-  background: var(--brand);
-}
-
-.b360-back {
-  color: inherit;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.b360-topbar-title {
-  flex: 1;
-  min-width: 0;
-}
-
-.b360-topbar h1 {
-  margin: 0;
-  font-size: 1.5rem;
-}
+/* Batch 360 page layout; components come from erp.css. */
 
 .b360-eyebrow {
   margin: 0 0 0.25rem;
@@ -69,67 +8,10 @@
   letter-spacing: 0.12em;
 }
 
-.b360-topbar .b360-eyebrow {
-  color: #a6d6b8;
-}
-
+/* Batch picker in the page header */
 .b360-picker {
-  display: flex;
-  gap: 0.5rem;
-  min-width: min(420px, 100%);
-}
-
-.b360-picker select {
-  flex: 1;
-  min-width: 0;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid #2f5c49;
-  border-radius: 8px;
-  color: #f2fbf5;
-  background: #1c4a38;
-  font: inherit;
-}
-
-.b360-picker button {
-  padding: 0.6rem 0.9rem;
-  border: 0;
-  border-radius: 8px;
-  color: var(--brand);
-  background: #bfe8cf;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* Layout */
-.b360-main {
-  width: min(1200px, calc(100% - 2rem));
-  margin: 1.5rem auto 4rem;
-}
-
-.b360-message {
-  min-height: 1.2rem;
-  margin: 0 0 0.75rem;
-  color: var(--red);
-}
-
-.b360-welcome {
-  padding: 3rem 1.5rem;
-  border: 1px dashed #c9d9cf;
-  border-radius: 16px;
-  color: var(--muted);
-  text-align: center;
-  background: var(--surface);
-}
-
-.b360-welcome i {
-  color: var(--accent);
-  font-size: 2rem;
-}
-
-.b360-welcome h2 {
-  margin: 0.75rem 0 0.4rem;
-  color: var(--ink);
+  flex: 0 1 520px;
+  min-width: min(320px, 100%);
 }
 
 /* Hero */
@@ -153,27 +35,6 @@
   margin: 0 0 0.6rem;
   font-size: clamp(1.7rem, 4vw, 2.4rem);
   letter-spacing: 0.01em;
-}
-
-.b360-status {
-  display: inline-block;
-  padding: 0.3rem 0.75rem;
-  border-radius: 999px;
-  color: var(--brand);
-  background: #bfe8cf;
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.b360-status.is-alert {
-  color: #7a2a22;
-  background: #f8cfc9;
-}
-
-.b360-status.is-paused {
-  color: #6b4508;
-  background: #f7deb0;
 }
 
 .b360-hero-facts {
@@ -310,146 +171,13 @@
   gap: 1.1rem;
 }
 
-.b360-card {
-  min-width: 0;
-  padding: 1.25rem 1.35rem;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface);
-  box-shadow: 0 6px 18px rgba(22, 54, 39, 0.04);
-}
-
 .b360-wide {
   grid-column: 1 / -1;
 }
 
-.b360-card h3 {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0 0 1rem;
-  font-size: 1.05rem;
-}
-
-.b360-card h3 span {
-  display: grid;
-  width: 1.7rem;
-  height: 1.7rem;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-size: 0.8rem;
-}
-
-.b360-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.6rem;
-  margin: 0 0 1rem;
-}
-
-.b360-facts div {
-  padding: 0.65rem 0.75rem;
-  border-radius: 10px;
-  background: #f5f9f6;
-}
-
-.b360-facts dt {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.b360-facts dd {
-  margin: 0.15rem 0 0;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.b360-table-wrap {
-  overflow-x: auto;
-}
-
-.b360-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-}
-
-.b360-table th,
-.b360-table td {
-  padding: 0.55rem 0.5rem;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-}
-
-.b360-table th,
-.b360-table td:first-child {
-  white-space: nowrap;
-}
-
-.b360-table th {
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.b360-empty {
+.b360-grid > .erp-card {
+  min-width: 0;
   margin: 0;
-  padding: 0.85rem 1rem;
-  border-radius: 10px;
-  color: var(--muted);
-  background: #f6f8f6;
-  font-size: 0.9rem;
-}
-
-.b360-note {
-  margin: 0.75rem 0 0;
-  padding: 0.6rem 0.8rem;
-  border-radius: 8px;
-  color: var(--amber);
-  background: var(--amber-soft);
-  font-size: 0.85rem;
-}
-
-.b360-subtitle {
-  margin: 1rem 0 0.4rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.b360-pill {
-  display: inline-block;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.b360-pill.is-bad {
-  color: var(--red);
-  background: var(--red-soft);
-}
-
-.b360-pill.is-warn {
-  color: var(--amber);
-  background: var(--amber-soft);
-}
-
-.b360-link {
-  color: var(--accent);
-  font-weight: 700;
 }
 
 /* Operations tiles */
@@ -624,14 +352,6 @@
 }
 
 @media (max-width: 760px) {
-  .b360-topbar {
-    flex-wrap: wrap;
-  }
-
-  .b360-picker {
-    flex-basis: 100%;
-    min-width: 0;
-  }
 
   .b360-hero-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -647,10 +367,6 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .b360-grid .b360-card {
-    grid-column: 1 / -1;
-  }
-
   .b360-timeline li {
     grid-template-columns: 1fr;
     gap: 0.1rem;
@@ -664,16 +380,11 @@
 }
 
 @media print {
-  .b360-topbar,
   .b360-footnote a {
     display: none;
   }
 
-  .b360-page {
-    background: #fff;
-  }
-
-  .b360-card,
+  .erp-card,
   .b360-kpi,
   .b360-stages {
     box-shadow: none;

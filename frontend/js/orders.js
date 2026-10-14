@@ -32,10 +32,9 @@ document.addEventListener('DOMContentLoaded', function () {
     return date.toLocaleString(undefined, options);
   }
 
+  // Status badge with the ERP-wide colour meaning (see js/ui.js).
   function pill(status) {
-    var value = String(status || '').toLowerCase();
-    var tone = /(cancel|blocked)/.test(value) ? ' is-bad' : /(open|dispatched)/.test(value) ? ' is-warn' : '';
-    return el('span', 'b360-pill' + tone, label(status));
+    return ErpUI.badge(status);
   }
 
   function button(text, className, onClick) {
@@ -53,33 +52,18 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function table(headers, rows) {
-    var wrap = el('div', 'b360-table-wrap');
-    var tableNode = el('table', 'b360-table');
-    var head = el('tr');
-    headers.forEach(function (text) { head.appendChild(el('th', null, text)); });
-    var thead = el('thead');
-    thead.appendChild(head);
-    var tbody = el('tbody');
-    rows.forEach(function (cells) {
-      var row = el('tr');
-      cells.forEach(function (value) {
-        var cell = el('td');
-        if (value instanceof Node) cell.appendChild(value);
-        else cell.textContent = value == null || value === '' ? '—' : String(value);
-        row.appendChild(cell);
-      });
-      tbody.appendChild(row);
-    });
-    tableNode.append(thead, tbody);
-    wrap.appendChild(tableNode);
-    return wrap;
+    return ErpUI.table(headers, rows);
+  }
+
+  function empty(text) {
+    return ErpUI.state('empty', { text: text, compact: true });
   }
 
   function card(iconName, title) {
-    var section = el('section', 'b360-card');
-    var heading = el('h3');
-    var badge = el('span');
-    badge.appendChild(el('i', 'fas ' + iconName));
+    var section = el('section', 'erp-card');
+    var heading = el('h3', 'erp-card-title');
+    var badge = el('span', 'erp-chip');
+    badge.appendChild(ErpUI.icon(iconName));
     heading.append(badge, document.createTextNode(title));
     section.appendChild(heading);
     return section;
@@ -101,33 +85,30 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function showMessage(text, isError) {
-    message.textContent = text || '';
-    message.style.color = isError ? '' : 'var(--accent)';
+    ErpUI.message(message, text, isError ? 'danger' : 'success');
   }
 
   // Run an action that returns the updated order, then redraw.
   async function act(control, promise, successText) {
-    if (control) control.disabled = true;
     try {
-      var payload = await promise;
+      var payload = await (control ? ErpUI.busy(control, promise) : promise);
       showMessage(successText, false);
       renderDetail(payload.data);
       loadList();
     } catch (error) {
       showMessage(error.message, true);
-    } finally {
-      if (control) control.disabled = false;
     }
   }
 
   // ---- list ----------------------------------------------------------------
   async function loadList() {
+    if (!listNode.children.length) ErpUI.loading(listNode, 'Loading orders…', true);
     try {
       var status = statusFilter.value;
       var payload = await api('/api/orders' + (status ? '?status=' + status : ''));
       listNode.textContent = '';
       if (!payload.data.length) {
-        listNode.appendChild(el('p', 'b360-empty', 'No orders in this view.'));
+        ErpUI.empty(listNode, 'No orders here', status ? 'No ' + ErpUI.humanize(status).toLowerCase() + ' orders.' : 'Create the first customer order.');
         return;
       }
       payload.data.forEach(function (order) {
@@ -151,8 +132,7 @@ document.addEventListener('DOMContentLoaded', function () {
         listNode.appendChild(item);
       });
     } catch (error) {
-      listNode.textContent = '';
-      listNode.appendChild(el('p', 'b360-empty', error.message));
+      ErpUI.error(listNode, error.message, loadList);
     }
   }
 
@@ -163,7 +143,7 @@ document.addEventListener('DOMContentLoaded', function () {
     product.className = 'order-line-product';
     var quantity = input('number', { min: '0.001', step: '0.001', placeholder: 'kg', required: '' });
     quantity.className = 'order-line-qty';
-    row.append(product, quantity, button('Remove', 'orders-danger', function () {
+    row.append(product, quantity, button('Remove', 'erp-btn erp-btn--danger', function () {
       if (document.querySelectorAll('.order-line').length > 1) row.remove();
     }));
     document.getElementById('orderLines').appendChild(row);
@@ -271,10 +251,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var base = '/api/orders/' + encodeURIComponent(order.business_id);
 
     // Header
-    var summary = el('section', 'b360-card trace-summary');
+    var summary = el('section', 'erp-card trace-summary');
     var header = el('div', 'order-header');
     var title = el('div');
-    title.append(el('p', 'b360-eyebrow', 'CUSTOMER ORDER'), el('h2', null, order.business_id),
+    title.append(el('p', 'erp-eyebrow', 'Customer order'), el('h2', null, order.business_id),
       el('p', null, order.customer_name + ' · supplied by ' + order.farm_name));
     var side = el('div', 'trace-summary-side');
     var trace = el('a', 'trace-open', 'Trace order ');
@@ -282,7 +262,7 @@ document.addEventListener('DOMContentLoaded', function () {
     trace.appendChild(el('i', 'fas fa-route'));
     side.append(pill(order.status), trace);
     header.append(title, side);
-    var facts = el('dl', 'b360-facts');
+    var facts = el('dl', 'erp-facts');
     [['Order date', when(order.order_date)], ['Requested delivery', when(order.requested_delivery_date)],
       ['Customer reference', order.customer_reference], ['Created by', order.created_by]]
       .concat(order.cancel_reason ? [['Cancelled', order.cancel_reason]] : [])
@@ -291,11 +271,11 @@ document.addEventListener('DOMContentLoaded', function () {
         item.append(el('dt', null, pair[0]), el('dd', null, pair[1] || '—'));
         facts.appendChild(item);
       });
-    var kpis = el('div', 'order-kpis');
+    var kpis = el('div', 'erp-kpis order-kpis');
     [['Ordered', order.totals.ordered_kg], ['Reserved', order.totals.allocated_kg],
       ['Dispatched', order.totals.dispatched_kg], ['Delivered', order.totals.delivered_kg]]
       .forEach(function (pair) {
-        var tile = el('div', 'b360-kpi');
+        var tile = el('div', 'erp-kpi');
         tile.append(el('span', null, pair[0]), el('strong', null, kg(pair[1])));
         kpis.appendChild(tile);
       });
@@ -307,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var lineRows = order.lines.map(function (line) {
       var actionCell = el('div');
       if (open && Number(line.remaining_to_allocate_kg) > 0) {
-        actionCell.appendChild(button('Allocate stock', 'orders-secondary', function () {
+        actionCell.appendChild(button('Allocate stock', 'erp-btn erp-btn--secondary erp-btn--sm', function () {
           showStockPicker(order, line, pickerHost);
         }));
       }
@@ -322,16 +302,16 @@ document.addEventListener('DOMContentLoaded', function () {
     // Allocations
     var allocCard = card('fa-boxes-stacked', 'Reserved stock');
     if (!order.allocations.length) {
-      allocCard.appendChild(el('p', 'b360-empty', 'No stock has been reserved for this order yet.'));
+      allocCard.appendChild(empty('No stock has been reserved for this order yet.'));
     } else {
       allocCard.appendChild(table(
         ['Product lot', 'Location', 'Reserved', 'Dispatched', 'Released', 'Outstanding', ''],
         order.allocations.map(function (a) {
-          var lot = el('a', 'b360-link', a.product_lot_business_id);
+          var lot = el('a', 'erp-link', a.product_lot_business_id);
           lot.href = '/product-lot?ref=' + encodeURIComponent(a.product_lot_business_id);
           var cell = el('div');
           if (Number(a.outstanding_kg) > 0) {
-            cell.appendChild(button('Release', 'orders-danger', function () {
+            cell.appendChild(button('Release', 'erp-btn erp-btn--danger erp-btn--sm', function () {
               showReasonForm(cell, 'Reason for releasing ' + kg(a.outstanding_kg), function (reason, control) {
                 act(control, post(base + '/allocations/' + a.id + '/release', { reason: reason }), 'Allocation released.');
               });
@@ -360,7 +340,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var form = el('div', 'inline-form');
       var vehicle = input('text', { placeholder: 'Vehicle (optional)', maxlength: '60' });
       var driver = input('text', { placeholder: 'Driver (optional)', maxlength: '100' });
-      var dispatchButton = button('Dispatch', 'orders-primary', function () {
+      var dispatchButton = button('Dispatch', 'erp-btn', function () {
         var lines = qtyInputs.filter(function (row) { return Number(row.input.value) > 0; })
           .map(function (row) { return { allocation_id: row.allocation.id, quantity_kg: row.input.value }; });
         if (!lines.length) { showMessage('Enter a quantity to dispatch.', true); return; }
@@ -375,17 +355,17 @@ document.addEventListener('DOMContentLoaded', function () {
     // Deliveries
     var deliveryCard = card('fa-clipboard-check', 'Deliveries');
     if (!order.deliveries.length) {
-      deliveryCard.appendChild(el('p', 'b360-empty', 'Nothing has been dispatched for this order.'));
+      deliveryCard.appendChild(empty('Nothing has been dispatched for this order.'));
     } else {
       deliveryCard.appendChild(table(
         ['Delivery', 'Status', 'Dispatched', 'Quantity', 'Lots', 'Received', ''],
         order.deliveries.map(function (d) {
-          var ref = el('a', 'b360-link', d.business_id);
+          var ref = el('a', 'erp-link', d.business_id);
           ref.href = '/traceability?ref=' + encodeURIComponent(d.business_id) + '&type=delivery';
           ref.title = 'Trace this delivery back to its waste lots';
           var cell = el('div');
           if (d.status === 'DISPATCHED') {
-            cell.appendChild(button('Confirm delivered', 'orders-secondary', function () {
+            cell.appendChild(button('Confirm delivered', 'erp-btn erp-btn--secondary erp-btn--sm', function () {
               showReasonForm(cell, 'Received by', function (receivedBy, control) {
                 act(control, post('/api/deliveries/' + encodeURIComponent(d.business_id) + '/confirm',
                   { received_by: receivedBy }), d.business_id + ' confirmed as delivered.');
@@ -405,12 +385,25 @@ document.addEventListener('DOMContentLoaded', function () {
     // Cancel
     if (open && !order.deliveries.length) {
       var cancelCard = card('fa-ban', 'Cancel order');
-      cancelCard.appendChild(el('p', 'trace-hint', 'Cancelling releases all reserved stock back to inventory.'));
+      cancelCard.appendChild(el('p', 'erp-hint', 'Cancelling releases all reserved stock back to inventory.'));
       var cancelForm = el('div', 'inline-form');
       var reason = input('text', { placeholder: 'Reason for cancelling', maxlength: '500' });
-      var cancelButton = button('Cancel order', 'orders-danger', function () {
-        if (!reason.value.trim()) { showMessage('Enter a reason to cancel the order.', true); return; }
-        act(cancelButton, post(base + '/cancel', { reason: reason.value }), order.business_id + ' cancelled.');
+      var cancelButton = button('Cancel order', 'erp-btn erp-btn--danger', function () {
+        if (!reason.value.trim()) {
+          reason.setAttribute('aria-invalid', 'true');
+          showMessage('Enter a reason to cancel the order.', true);
+          return;
+        }
+        reason.removeAttribute('aria-invalid');
+        ErpUI.confirm({
+          title: 'Cancel ' + order.business_id + '?',
+          text: 'All stock reserved for this order goes back to free stock. This cannot be undone.',
+          confirmLabel: 'Cancel order',
+          cancelLabel: 'Keep order',
+          danger: true
+        }).then(function (confirmed) {
+          if (confirmed) act(cancelButton, post(base + '/cancel', { reason: reason.value }), order.business_id + ' cancelled.');
+        });
       });
       cancelForm.append(reason, cancelButton);
       cancelCard.appendChild(cancelForm);
@@ -423,7 +416,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var form = el('div', 'inline-form');
     var field = input('text', { placeholder: placeholder, maxlength: '500' });
     field.setAttribute('aria-label', placeholder);
-    var ok = button('Save', 'orders-primary', function () {
+    var ok = button('Save', 'erp-btn', function () {
       if (!field.value.trim()) { showMessage(placeholder + ' is required.', true); return; }
       onSubmit(field.value.trim(), ok);
     });
@@ -435,7 +428,7 @@ document.addEventListener('DOMContentLoaded', function () {
   async function showStockPicker(order, line, host) {
     host.textContent = '';
     var picker = el('div', 'stock-picker');
-    picker.appendChild(el('p', 'b360-subtitle',
+    picker.appendChild(el('p', 'erp-subhead',
       'Free ' + line.product_type + ' stock on ' + order.farm_name + ' (oldest lots first) · ' +
       kg(line.remaining_to_allocate_kg) + ' still to allocate'));
     host.appendChild(picker);
@@ -443,7 +436,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var payload = await api('/api/orders/' + encodeURIComponent(order.business_id) +
         '/available-stock?line_id=' + line.id);
       if (!payload.data.length) {
-        picker.appendChild(el('p', 'b360-empty', 'No free, QC-released ' + line.product_type + ' stock on this farm.'));
+        picker.appendChild(empty('No free, QC-released ' + line.product_type + ' stock on this farm.'));
         return;
       }
       var remaining = Number(line.remaining_to_allocate_kg);
@@ -455,7 +448,7 @@ document.addEventListener('DOMContentLoaded', function () {
           });
           qty.className = 'qty-input';
           qty.setAttribute('aria-label', 'Quantity to allocate from ' + row.product_lot_business_id);
-          var allocateButton = button('Allocate', 'orders-primary', function () {
+          var allocateButton = button('Allocate', 'erp-btn erp-btn--sm', function () {
             act(allocateButton, post('/api/orders/' + encodeURIComponent(order.business_id) + '/allocations', {
               order_line_id: line.id, product_lot_id: row.product_lot_id,
               location_id: row.location_id, quantity_kg: qty.value
@@ -465,7 +458,7 @@ document.addEventListener('DOMContentLoaded', function () {
             kg(row.on_hand_kg), kg(row.reserved_kg), kg(row.free_kg), qty, allocateButton];
         })));
     } catch (error) {
-      picker.appendChild(el('p', 'b360-empty', error.message));
+      picker.appendChild(empty(error.message));
     }
   }
 

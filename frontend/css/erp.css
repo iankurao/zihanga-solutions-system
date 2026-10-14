@@ -1,0 +1,1014 @@
+/* Zehunger ERP design system.
+ *
+ * One set of tokens and components for every page. Page stylesheets add
+ * layout for their own content only; they use these tokens instead of their
+ * own colours, and these components instead of their own buttons, fields,
+ * tables, badges, cards and states. Reference: /design-system.
+ *
+ * Contrast (WCAG 2.1): body and badge text >= 4.5:1, control borders and
+ * focus ring >= 3:1 on their backgrounds. Controls are at least 44px tall so
+ * they work on phones and with gloves.
+ */
+
+:root {
+  /* Colour */
+  --erp-brand: #143c2d;          /* app bar, headings on dark */
+  --erp-brand-2: #1c4a38;        /* raised surfaces on the brand colour */
+  --erp-on-brand: #ffffff;
+  --erp-on-brand-muted: #b9dcc8;
+  --erp-accent: #19804b;         /* primary actions, links */
+  --erp-accent-hover: #146a3e;
+  --erp-accent-soft: #e6f4ec;
+  --erp-ink: #16302a;            /* body text */
+  --erp-muted: #5b6d64;          /* secondary text */
+  --erp-line: #dfe7e2;           /* dividers, card borders (decorative) */
+  --erp-control: #74897f;        /* input borders (>= 3:1) */
+  --erp-surface: #ffffff;
+  --erp-page: #f3f6f4;
+  --erp-focus: #2f62a8;
+
+  --erp-success: #19804b;
+  --erp-success-ink: #14653b;
+  --erp-success-soft: #e6f4ec;
+  --erp-info: #3b6fb6;
+  --erp-info-ink: #24548f;
+  --erp-info-soft: #eaf1fb;
+  --erp-warning: #a86a12;
+  --erp-warning-ink: #7a4a00;
+  --erp-warning-soft: #fdf1dc;
+  --erp-danger: #a13b30;
+  --erp-danger-ink: #8a2a20;
+  --erp-danger-soft: #fde8e5;
+  --erp-neutral-ink: #46564f;
+  --erp-neutral-soft: #eef2f0;
+
+  /* Type */
+  --erp-font: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --erp-font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --erp-text-xs: 0.75rem;
+  --erp-text-sm: 0.875rem;
+  --erp-text-md: 1rem;
+  --erp-text-lg: 1.125rem;
+  --erp-text-xl: 1.375rem;
+  --erp-text-2xl: 1.75rem;
+
+  /* Space, shape, depth */
+  --erp-space-1: 0.25rem;
+  --erp-space-2: 0.5rem;
+  --erp-space-3: 0.75rem;
+  --erp-space-4: 1rem;
+  --erp-space-5: 1.5rem;
+  --erp-space-6: 2rem;
+  --erp-radius-sm: 6px;
+  --erp-radius: 10px;
+  --erp-radius-lg: 14px;
+  --erp-shadow: 0 1px 2px rgba(20, 60, 45, 0.06), 0 4px 14px rgba(20, 60, 45, 0.06);
+  --erp-shadow-lg: 0 12px 40px rgba(20, 60, 45, 0.22);
+  --erp-touch: 44px;
+  --erp-content: 1200px;
+}
+
+/* ---- Base ------------------------------------------------------------------ */
+
+/* Short names used by page stylesheets for their own layout rules. They point
+   at the tokens above, so a page can never drift to its own palette. */
+.erp-page {
+  --ink: var(--erp-ink);
+  --muted: var(--erp-muted);
+  --line: var(--erp-line);
+  --brand: var(--erp-brand);
+  --accent: var(--erp-accent);
+  --accent-soft: var(--erp-accent-soft);
+  --amber: var(--erp-warning);
+  --amber-soft: var(--erp-warning-soft);
+  --red: var(--erp-danger);
+  --red-soft: var(--erp-danger-soft);
+  --info: var(--erp-info);
+  --info-soft: var(--erp-info-soft);
+  --surface: var(--erp-surface);
+  --page: var(--erp-page);
+}
+
+.erp-page {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--erp-ink);
+  background: var(--erp-page);
+  font-family: var(--erp-font);
+  font-size: var(--erp-text-md);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.erp-page *,
+.erp-page *::before,
+.erp-page *::after {
+  box-sizing: border-box;
+}
+
+.erp-page h1,
+.erp-page h2,
+.erp-page h3 {
+  line-height: 1.25;
+}
+
+.erp-page a {
+  color: var(--erp-accent);
+}
+
+.erp-page :focus-visible {
+  outline: 3px solid var(--erp-focus);
+  outline-offset: 2px;
+}
+
+.erp-page [hidden] {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.erp-main {
+  width: min(var(--erp-content), calc(100% - 2rem));
+  margin: var(--erp-space-5) auto 4rem;
+}
+
+/* ---- Navigation (rendered by js/appNav.js) --------------------------------- */
+
+.erp-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  color: var(--erp-on-brand);
+  background: var(--erp-brand);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.erp-appbar-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--erp-space-4);
+  width: min(1400px, 100%);
+  min-height: 56px;
+  margin: 0 auto;
+  padding: 0 clamp(0.75rem, 3vw, 1.5rem);
+}
+
+.erp-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--erp-space-2);
+  color: var(--erp-on-brand) !important;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.erp-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.erp-nav {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.erp-nav a,
+.erp-nav summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0 0.7rem;
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-on-brand-muted) !important;
+  font-size: var(--erp-text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.erp-nav a:hover,
+.erp-nav summary:hover {
+  color: var(--erp-on-brand) !important;
+  background: var(--erp-brand-2);
+}
+
+.erp-nav a[aria-current="page"] {
+  color: var(--erp-on-brand) !important;
+  background: var(--erp-brand-2);
+  box-shadow: inset 0 -3px 0 #7fd0a3;
+}
+
+.erp-nav-more {
+  position: relative;
+}
+
+.erp-nav-more summary.has-current {
+  color: var(--erp-on-brand) !important;
+  box-shadow: inset 0 -3px 0 #7fd0a3;
+}
+
+.erp-nav-more summary {
+  list-style: none;
+}
+
+.erp-nav-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.erp-nav-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 220px;
+  padding: var(--erp-space-2);
+  border-radius: var(--erp-radius);
+  background: var(--erp-brand);
+  box-shadow: var(--erp-shadow-lg);
+}
+
+.erp-user {
+  display: flex;
+  align-items: center;
+  gap: var(--erp-space-3);
+  margin-left: auto;
+  font-size: var(--erp-text-sm);
+  white-space: nowrap;
+}
+
+.erp-user-name {
+  display: grid;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.erp-user-name small {
+  color: var(--erp-on-brand-muted);
+}
+
+.erp-user a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--erp-touch);
+  height: var(--erp-touch);
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-on-brand-muted) !important;
+}
+
+.erp-user a:hover {
+  color: var(--erp-on-brand) !important;
+  background: var(--erp-brand-2);
+}
+
+.erp-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--erp-touch);
+  height: var(--erp-touch);
+  border: 0;
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-on-brand);
+  background: transparent;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+@media (max-width: 1080px) {
+  .erp-nav-toggle {
+    display: inline-flex;
+  }
+
+  .erp-nav {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    max-height: calc(100vh - 56px);
+    padding: var(--erp-space-2) var(--erp-space-3) var(--erp-space-4);
+    overflow-y: auto;
+    background: var(--erp-brand);
+    box-shadow: var(--erp-shadow-lg);
+  }
+
+  .erp-appbar.is-open .erp-nav {
+    display: flex;
+  }
+
+  .erp-nav a,
+  .erp-nav summary {
+    min-height: var(--erp-touch);
+    font-size: var(--erp-text-md);
+  }
+
+  .erp-nav-more[open] .erp-nav-menu,
+  .erp-nav-menu {
+    position: static;
+    min-width: 0;
+    padding: 0 0 0 var(--erp-space-4);
+    box-shadow: none;
+  }
+
+  .erp-user-name {
+    display: none;
+  }
+}
+
+/* Page header under the app bar */
+.erp-pagehead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--erp-space-4);
+  margin-bottom: var(--erp-space-5);
+}
+
+.erp-pagehead h1 {
+  margin: 0;
+  font-size: var(--erp-text-2xl);
+}
+
+.erp-eyebrow {
+  margin: 0 0 var(--erp-space-1);
+  color: var(--erp-accent);
+  font-size: var(--erp-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.erp-subtitle {
+  margin: var(--erp-space-1) 0 0;
+  color: var(--erp-muted);
+}
+
+.erp-pagehead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--erp-space-2);
+}
+
+/* ---- Buttons --------------------------------------------------------------- */
+
+.erp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--erp-space-2);
+  min-height: var(--erp-touch);
+  padding: 0 var(--erp-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--erp-radius-sm);
+  color: #fff;
+  background: var(--erp-accent);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.erp-btn:hover {
+  background: var(--erp-accent-hover);
+}
+
+.erp-btn--secondary {
+  border-color: var(--erp-accent);
+  color: var(--erp-accent);
+  background: var(--erp-surface);
+}
+
+.erp-btn--secondary:hover {
+  background: var(--erp-accent-soft);
+}
+
+.erp-btn--danger {
+  background: var(--erp-danger);
+}
+
+.erp-btn--danger:hover {
+  background: #8a2a20;
+}
+
+.erp-btn--ghost {
+  color: var(--erp-accent);
+  background: transparent;
+}
+
+.erp-btn--ghost:hover {
+  background: var(--erp-accent-soft);
+}
+
+.erp-btn--sm {
+  min-height: 36px;
+  padding: 0 var(--erp-space-3);
+  font-size: var(--erp-text-sm);
+}
+
+.erp-btn:disabled,
+.erp-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.erp-btn.is-busy {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+}
+
+.erp-btn.is-busy::after {
+  position: absolute;
+  width: 1.1em;
+  height: 1.1em;
+  border: 2px solid currentColor;
+  border-color: #fff #fff transparent transparent;
+  border-radius: 50%;
+  animation: erp-spin 0.7s linear infinite;
+  content: "";
+}
+
+.erp-btn--secondary.is-busy::after,
+.erp-btn--ghost.is-busy::after {
+  border-color: var(--erp-accent) var(--erp-accent) transparent transparent;
+}
+
+.erp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--erp-space-2);
+  margin-top: var(--erp-space-4);
+}
+
+/* Segmented control (e.g. 7 / 30 / 90 days) */
+.erp-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--erp-control);
+  border-radius: var(--erp-radius-sm);
+  background: var(--erp-surface);
+}
+
+.erp-segmented button {
+  min-height: 38px;
+  padding: 0 var(--erp-space-3);
+  border: 0;
+  border-radius: 4px;
+  color: var(--erp-ink);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.erp-segmented button[aria-checked="true"],
+.erp-segmented button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--erp-brand);
+}
+
+/* Tabs (role="tablist" / role="tab" with aria-selected) */
+.erp-tabs {
+  display: flex;
+  gap: var(--erp-space-1);
+  margin: var(--erp-space-4) 0 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--erp-line);
+}
+
+.erp-tab {
+  min-height: var(--erp-touch);
+  padding: 0 var(--erp-space-4);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--erp-muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.erp-tab:hover {
+  color: var(--erp-ink);
+}
+
+.erp-tab[aria-selected="true"] {
+  color: var(--erp-accent);
+  border-bottom-color: var(--erp-accent);
+}
+
+.erp-tabpanel {
+  padding-top: var(--erp-space-5);
+}
+
+/* ---- Forms and filters ------------------------------------------------------ */
+
+/* :where() keeps these defaults at the lowest specificity, so a page rule
+   such as `.qty-input { width: 6.5rem; }` can still adjust a control. */
+.erp-page :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea) {
+  width: 100%;
+  min-height: var(--erp-touch);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--erp-control);
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-ink);
+  background: var(--erp-surface);
+  font: inherit;
+}
+
+.erp-page :where(textarea) {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.erp-page :where(input[type="checkbox"], input[type="radio"]) {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--erp-accent);
+}
+
+.erp-page :where(input:disabled, select:disabled, textarea:disabled) {
+  color: var(--erp-muted);
+  background: var(--erp-neutral-soft);
+}
+
+.erp-page [aria-invalid="true"] {
+  border-color: var(--erp-danger) !important;
+  box-shadow: 0 0 0 1px var(--erp-danger);
+}
+
+.erp-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--erp-space-3);
+}
+
+.erp-form--stack {
+  display: grid;
+  align-items: stretch;
+}
+
+.erp-field {
+  display: grid;
+  flex: 1 1 180px;
+  gap: var(--erp-space-1);
+  min-width: 0;
+}
+
+.erp-field--wide {
+  flex-basis: 320px;
+}
+
+.erp-field--full {
+  flex-basis: 100%;
+}
+
+.erp-field > label,
+.erp-label {
+  color: var(--erp-ink);
+  font-size: var(--erp-text-sm);
+  font-weight: 700;
+}
+
+.erp-hint {
+  margin: var(--erp-space-2) 0 0;
+  color: var(--erp-muted);
+  font-size: var(--erp-text-sm);
+}
+
+.erp-field-error {
+  color: var(--erp-danger-ink);
+  font-size: var(--erp-text-sm);
+  font-weight: 600;
+}
+
+.erp-check {
+  display: flex;
+  align-items: center;
+  gap: var(--erp-space-2);
+  min-height: var(--erp-touch);
+}
+
+/* Filter bar above lists, tables and charts */
+.erp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--erp-space-3);
+  margin-bottom: var(--erp-space-4);
+  padding: var(--erp-space-3) var(--erp-space-4);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+  background: var(--erp-surface);
+}
+
+.erp-filters .erp-field {
+  flex: 1 1 160px;
+}
+
+/* ---- Cards and KPIs --------------------------------------------------------- */
+
+.erp-card {
+  margin-bottom: var(--erp-space-4);
+  padding: var(--erp-space-5);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius-lg);
+  background: var(--erp-surface);
+  box-shadow: var(--erp-shadow);
+}
+
+.erp-card > h2,
+.erp-card > h3,
+.erp-card-head h2,
+.erp-card-head h3 {
+  margin: 0 0 var(--erp-space-3);
+  font-size: var(--erp-text-lg);
+}
+
+.erp-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--erp-space-2);
+}
+
+@media (max-width: 600px) {
+  .erp-card {
+    padding: var(--erp-space-4);
+  }
+}
+
+.erp-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: var(--erp-space-3);
+  margin-bottom: var(--erp-space-4);
+}
+
+.erp-kpi {
+  padding: var(--erp-space-4);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+  background: var(--erp-surface);
+}
+
+.erp-kpi span {
+  display: block;
+  color: var(--erp-muted);
+  font-size: var(--erp-text-sm);
+}
+
+.erp-kpi strong {
+  display: block;
+  font-size: var(--erp-text-xl);
+}
+
+/* Card title with a small icon or step number */
+.erp-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--erp-space-2);
+}
+
+.erp-chip {
+  display: inline-grid;
+  flex: none;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.35rem;
+  place-items: center;
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-accent);
+  background: var(--erp-accent-soft);
+  font-size: var(--erp-text-sm);
+  font-weight: 800;
+}
+
+/* Small uppercase heading inside a card section */
+.erp-subhead {
+  margin: var(--erp-space-4) 0 var(--erp-space-2);
+  color: var(--erp-muted);
+  font-size: var(--erp-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.erp-link {
+  color: var(--erp-accent);
+  font-weight: 700;
+}
+
+/* Label / value pairs (record facts) */
+.erp-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: var(--erp-space-2);
+  margin: 0 0 var(--erp-space-4);
+}
+
+.erp-facts > div {
+  padding: var(--erp-space-2) var(--erp-space-3);
+  border-radius: var(--erp-radius-sm);
+  background: #f5f9f6;
+}
+
+.erp-facts dt {
+  color: var(--erp-muted);
+  font-size: var(--erp-text-xs);
+  font-weight: 700;
+}
+
+.erp-facts dd {
+  margin: 0.15rem 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Tables ------------------------------------------------------------------ */
+
+.erp-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+}
+
+.erp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--erp-text-sm);
+  background: var(--erp-surface);
+}
+
+.erp-table th {
+  padding: var(--erp-space-2) var(--erp-space-3);
+  border-bottom: 2px solid var(--erp-line);
+  color: var(--erp-muted);
+  background: #f7faf8;
+  font-size: var(--erp-text-xs);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.erp-table td {
+  padding: var(--erp-space-3);
+  border-bottom: 1px solid var(--erp-line);
+  vertical-align: top;
+}
+
+.erp-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.erp-table tbody tr:hover td {
+  background: #f9fbfa;
+}
+
+.erp-table .is-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---- Status badges ------------------------------------------------------------ */
+/* Always carry text: colour supports the label, it never replaces it. */
+
+.erp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  color: var(--erp-neutral-ink);
+  background: var(--erp-neutral-soft);
+  font-size: var(--erp-text-xs);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.erp-badge.is-success { color: var(--erp-success-ink); background: var(--erp-success-soft); }
+.erp-badge.is-info { color: var(--erp-info-ink); background: var(--erp-info-soft); }
+.erp-badge.is-warning { color: var(--erp-warning-ink); background: var(--erp-warning-soft); }
+.erp-badge.is-danger { color: var(--erp-danger-ink); background: var(--erp-danger-soft); }
+
+/* ---- Alert banners ------------------------------------------------------------ */
+
+.erp-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--erp-space-3);
+  margin: 0 0 var(--erp-space-4);
+  padding: var(--erp-space-3) var(--erp-space-4);
+  border: 1px solid transparent;
+  border-left-width: 4px;
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-info-ink);
+  background: var(--erp-info-soft);
+  border-color: var(--erp-info);
+}
+
+.erp-alert i {
+  margin-top: 0.2rem;
+}
+
+.erp-alert.is-success { color: var(--erp-success-ink); background: var(--erp-success-soft); border-color: var(--erp-success); }
+.erp-alert.is-warning { color: var(--erp-warning-ink); background: var(--erp-warning-soft); border-color: var(--erp-warning); }
+.erp-alert.is-danger { color: var(--erp-danger-ink); background: var(--erp-danger-soft); border-color: var(--erp-danger); }
+
+/* One-line message area above a form or list (filled by ErpUI.message). */
+.erp-inline-message:empty {
+  display: none;
+}
+
+/* ---- Empty, loading and error states ------------------------------------------- */
+
+.erp-state {
+  display: grid;
+  justify-items: center;
+  gap: var(--erp-space-2);
+  padding: var(--erp-space-6) var(--erp-space-4);
+  border: 1px dashed #c9d9cf;
+  border-radius: var(--erp-radius);
+  color: var(--erp-muted);
+  text-align: center;
+  background: var(--erp-surface);
+}
+
+.erp-state > i {
+  color: var(--erp-accent);
+  font-size: 1.75rem;
+}
+
+.erp-state strong {
+  color: var(--erp-ink);
+  font-size: var(--erp-text-lg);
+}
+
+.erp-state p {
+  max-width: 46ch;
+  margin: 0;
+}
+
+.erp-state--compact {
+  justify-items: start;
+  padding: var(--erp-space-3) var(--erp-space-4);
+  border-style: solid;
+  border-color: transparent;
+  text-align: left;
+  background: #f6f8f6;
+  font-size: var(--erp-text-sm);
+}
+
+.erp-state--compact > i {
+  display: none;
+}
+
+.erp-state--error {
+  border-style: solid;
+  border-color: #f0c9c3;
+  background: var(--erp-danger-soft);
+}
+
+.erp-state--error > i,
+.erp-state--error strong {
+  color: var(--erp-danger-ink);
+}
+
+.erp-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--erp-accent-soft);
+  border-top-color: var(--erp-accent);
+  border-radius: 50%;
+  animation: erp-spin 0.8s linear infinite;
+}
+
+.erp-skeleton {
+  display: grid;
+  gap: var(--erp-space-2);
+  width: 100%;
+}
+
+.erp-skeleton span {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #eef2f0 25%, #e2e9e5 37%, #eef2f0 63%);
+  background-size: 400% 100%;
+  animation: erp-shimmer 1.4s ease infinite;
+}
+
+@keyframes erp-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes erp-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .erp-spinner,
+  .erp-btn.is-busy::after,
+  .erp-skeleton span {
+    animation-duration: 3s;
+  }
+}
+
+/* ---- Pagination ------------------------------------------------------------------ */
+
+.erp-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--erp-space-3);
+  margin-top: var(--erp-space-4);
+  color: var(--erp-muted);
+  font-size: var(--erp-text-sm);
+}
+
+/* ---- Modal ------------------------------------------------------------------------ */
+
+.erp-modal {
+  width: min(480px, calc(100% - 2rem));
+  padding: 0;
+  border: 0;
+  border-radius: var(--erp-radius-lg);
+  color: var(--erp-ink);
+  box-shadow: var(--erp-shadow-lg);
+}
+
+.erp-modal::backdrop {
+  background: rgba(10, 30, 22, 0.55);
+}
+
+.erp-modal-body {
+  padding: var(--erp-space-5);
+}
+
+.erp-modal-body h2 {
+  margin: 0 0 var(--erp-space-2);
+  font-size: var(--erp-text-xl);
+}
+
+.erp-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--erp-space-2);
+  padding: var(--erp-space-3) var(--erp-space-5) var(--erp-space-5);
+}
+
+/* ---- Utilities ------------------------------------------------------------------- */
+
+.erp-muted { color: var(--erp-muted); }
+.erp-mono { font-family: var(--erp-font-mono); }
+.erp-nowrap { white-space: nowrap; }
+.erp-link-button {
+  padding: 0;
+  border: 0;
+  color: var(--erp-accent);
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media print {
+  .erp-appbar,
+  .no-print {
+    display: none !important;
+  }
+
+  .erp-page {
+    background: #fff;
+  }
+}

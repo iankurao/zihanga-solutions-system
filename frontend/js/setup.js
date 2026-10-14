@@ -28,8 +28,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function say(text, isError) {
-    message.textContent = text || '';
-    message.style.color = isError ? '' : 'var(--accent)';
+    ErpUI.message(message, text, isError ? 'danger' : 'success');
   }
 
   function uniqueBy(rows, key, map) {
@@ -77,13 +76,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var choices = item.status === 'active' ? [['maintenance', 'Maintenance'], ['retired', 'Retire']]
       : item.status === 'maintenance' ? [['active', 'Back in use'], ['retired', 'Retire']] : [['active', 'Reinstate']];
     choices.forEach(function (choice) {
-      var button = el('button', null, choice[1]);
+      var button = el('button', 'erp-btn erp-btn--ghost erp-btn--sm', choice[1]);
       button.type = 'button';
       button.addEventListener('click', function () {
-        button.disabled = true;
-        api('/api/production/units/' + item.id + '/status', 'POST', { status: choice[0] })
+        ErpUI.busy(button, api('/api/production/units/' + item.id + '/status', 'POST', { status: choice[0] }))
           .then(function () { say(item.name + ' is now ' + choice[0] + '.'); refresh(); })
-          .catch(function (error) { say(error.message, true); button.disabled = false; });
+          .catch(function (error) { say(error.message, true); });
       });
       wrap.appendChild(button);
     });
@@ -96,13 +94,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var url = kind === 'store'
       ? '/api/inventory/locations/' + item.id + '/status'
       : '/api/locations/' + kind + '/' + item.id + '/status';
-    var button = el('button', null, next === 'inactive' ? 'Deactivate' : 'Reactivate');
+    var button = el('button', 'erp-btn erp-btn--ghost erp-btn--sm', next === 'inactive' ? 'Deactivate' : 'Reactivate');
     button.type = 'button';
     button.addEventListener('click', function () {
-      button.disabled = true;
-      api(url, 'POST', { status: next })
+      ErpUI.busy(button, api(url, 'POST', { status: next }))
         .then(function () { say(item.name + ' is now ' + next + '.'); refresh(); })
-        .catch(function (error) { say(error.message, true); button.disabled = false; });
+        .catch(function (error) { say(error.message, true); });
     });
     return button;
   }
@@ -120,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function renderTree() {
     tree.textContent = '';
     if (!model.organizations.length) {
-      tree.appendChild(el('p', 'b360-empty', 'Nothing set up yet. Start by adding an organization.'));
+      ErpUI.empty(tree, 'Nothing set up yet', 'Start by adding an organization.', { icon: 'fa-sitemap' });
       return;
     }
     var root = el('ul');
@@ -200,7 +197,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var users = Array.isArray(payload) ? payload : payload.data || payload.farmers || [];
     userSelect.replaceChildren(new Option(users.length ? 'Select a user' : 'No users yet', ''));
     users.forEach(function (u) {
-      userSelect.add(new Option((u.full_name || u.username) + ' (' + u.email + ')', u.user_id));
+      var role = u.role ? ' · ' + ErpUI.humanize(u.role) : '';
+      userSelect.add(new Option((u.full_name || u.username) + role + ' (' + u.email + ')', u.user_id));
     });
   }
 
@@ -216,18 +214,26 @@ document.addEventListener('DOMContentLoaded', function () {
         (data[scope] || []).forEach(function (item) { rows.push({ scope: scope, item: item }); });
       });
       if (!rows.length) {
-        list.appendChild(el('p', 'b360-empty', 'This user has no location access yet and sees no operational records.'));
+        list.appendChild(ErpUI.state('empty', { text: 'This user has no location access yet and sees no operational records.', compact: true }));
         return;
       }
       var ul = el('ul', 'setup-tree');
       rows.forEach(function (row) {
         var li = el('li', 'setup-node');
-        var revoke = el('button', null, 'Revoke');
+        var revoke = el('button', 'erp-btn erp-btn--ghost erp-btn--sm', 'Revoke');
         revoke.type = 'button';
         revoke.addEventListener('click', function () {
-          api('/api/locations/access', 'DELETE', { user_id: userSelect.value, scope: row.scope, scope_id: row.item.id })
-            .then(function () { say('Access revoked.'); loadAccess(); })
-            .catch(function (error) { say(error.message, true); });
+          ErpUI.confirm({
+            title: 'Revoke access to ' + row.item.name + '?',
+            text: 'The user stops seeing this ' + row.scope + "'s records at once.",
+            confirmLabel: 'Revoke access',
+            danger: true
+          }).then(function (confirmed) {
+            if (!confirmed) return;
+            api('/api/locations/access', 'DELETE', { user_id: userSelect.value, scope: row.scope, scope_id: row.item.id })
+              .then(function () { say('Access revoked.'); loadAccess(); })
+              .catch(function (error) { say(error.message, true); });
+          });
         });
         li.append(el('strong', null, row.item.name), el('small', null, row.scope), revoke);
         ul.appendChild(li);

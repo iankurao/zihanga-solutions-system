@@ -1,4 +1,4 @@
-/* Customer orders page; builds on batch-360.css and traceability.css. */
+/* Customer orders page layout; components come from erp.css. */
 
 .orders-layout {
   display: grid;
@@ -18,48 +18,7 @@
 }
 
 .orders-list-head {
-  display: flex;
-  gap: 0.5rem;
   margin-bottom: 0.8rem;
-}
-
-.orders-list-head select,
-.orders-detail input,
-.orders-detail select {
-  min-width: 0;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #cad8ce;
-  border-radius: 8px;
-  color: var(--ink);
-  background: #fff;
-  font: inherit;
-}
-
-.orders-list-head select {
-  flex: 1;
-}
-
-.orders-primary,
-.orders-secondary,
-.orders-danger {
-  padding: 0.55rem 0.9rem;
-  border: 0;
-  border-radius: 8px;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.orders-primary { color: #fff; background: var(--accent); }
-.orders-secondary { color: var(--accent); background: var(--accent-soft); }
-.orders-danger { color: var(--red); background: var(--red-soft); }
-
-.orders-primary:disabled,
-.orders-secondary:disabled,
-.orders-danger:disabled {
-  opacity: 0.55;
-  cursor: wait;
 }
 
 .orders-list {
@@ -119,8 +78,8 @@
   background: var(--accent);
 }
 
-.orders-detail > * + * {
-  margin-top: 1.1rem;
+.orders-detail > .erp-card {
+  margin: 0 0 1.1rem;
 }
 
 .order-lines {
@@ -132,14 +91,6 @@
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
   gap: 0.5rem;
-}
-
-.orders-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-top: 1rem;
 }
 
 .order-header {
@@ -160,9 +111,7 @@
 }
 
 .order-kpis {
-  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.6rem;
   margin: 1rem 0 0;
 }
 
@@ -187,13 +136,6 @@
   padding: 0.75rem;
   border-radius: 10px;
   background: #f5f9f6;
-}
-
-.b360-table td .orders-secondary,
-.b360-table td .orders-danger,
-.b360-table td .orders-primary {
-  padding: 0.35rem 0.6rem;
-  font-size: 0.82rem;
 }
 
 @media (max-width: 900px) {

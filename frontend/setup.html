@@ -5,53 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Farm Setup | Zehunger BSF Farm</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="stylesheet" href="/css/batch-360.css">
-  <link rel="stylesheet" href="/css/traceability.css">
-  <link rel="stylesheet" href="/css/orders.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="/css/setup.css">
 </head>
-<body class="b360-page">
-  <header class="b360-topbar">
-    <a class="b360-back" href="/dashboard"><i class="fas fa-arrow-left"></i> Operations</a>
-    <div class="b360-topbar-title">
-      <p class="b360-eyebrow">ADMINISTRATION</p>
-      <h1>Farm setup</h1>
-    </div>
-  </header>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-  <main class="b360-main setup-layout">
-    <p id="setupMessage" class="b360-message setup-full" role="status" aria-live="polite"></p>
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Administration</p>
+        <h1>Farm setup</h1>
+        <p class="erp-subtitle">Locations, storage, production units and who may see which farm. Roles are set in the admin portal.</p>
+      </div>
+    </header>
+    <div id="setupMessage" class="erp-inline-message" aria-live="polite"></div>
 
-    <section class="b360-card">
-      <h3><span><i class="fas fa-sitemap"></i></span> Locations</h3>
-      <p class="trace-hint">Deactivate places you no longer use; their history is kept and they stop appearing in forms.</p>
+    <div class="setup-layout">
+
+    <section class="erp-card">
+      <h3 class="erp-card-title"><span class="erp-chip"><i class="fas fa-sitemap" aria-hidden="true"></i></span> Locations</h3>
+      <p class="erp-hint">Deactivate places you no longer use; their history is kept and they stop appearing in forms.</p>
       <div id="locationTree" class="setup-tree"></div>
     </section>
 
-    <section class="b360-card">
-      <h3><span><i class="fas fa-plus"></i></span> Add a location</h3>
+    <section class="erp-card">
+      <h3 class="erp-card-title"><span class="erp-chip"><i class="fas fa-plus" aria-hidden="true"></i></span> Add a location</h3>
       <form class="setup-form" data-kind="organizations">
-        <p class="b360-subtitle">Organization</p>
+        <p class="erp-subhead">Organization</p>
         <input name="organization_code" placeholder="Code, e.g. ZEH" maxlength="30" required aria-label="Organization code">
         <input name="name" placeholder="Name" maxlength="150" required aria-label="Organization name">
-        <button class="orders-primary" type="submit">Add organization</button>
+        <button class="erp-btn" type="submit">Add organization</button>
       </form>
       <form class="setup-form" data-kind="farms">
-        <p class="b360-subtitle">Farm</p>
+        <p class="erp-subhead">Farm</p>
         <select name="organization_id" data-options="organizations" required aria-label="Organization"></select>
         <input name="farm_code" placeholder="Code, e.g. KER" maxlength="30" required aria-label="Farm code">
         <input name="name" placeholder="Farm name" maxlength="150" required aria-label="Farm name">
-        <button class="orders-primary" type="submit">Add farm</button>
+        <button class="erp-btn" type="submit">Add farm</button>
       </form>
       <form class="setup-form" data-kind="sites">
-        <p class="b360-subtitle">Site</p>
+        <p class="erp-subhead">Site</p>
         <select name="farm_id" data-options="farms" required aria-label="Farm"></select>
         <input name="site_code" placeholder="Code, e.g. MAIN" maxlength="30" required aria-label="Site code">
         <input name="name" placeholder="Site name" maxlength="150" required aria-label="Site name">
-        <button class="orders-primary" type="submit">Add site</button>
+        <button class="erp-btn" type="submit">Add site</button>
       </form>
       <form class="setup-form" data-kind="facilities">
-        <p class="b360-subtitle">Facility</p>
+        <p class="erp-subhead">Facility</p>
         <select name="site_id" data-options="sites" required aria-label="Site"></select>
         <input name="facility_code" placeholder="Code, e.g. DRY" maxlength="30" required aria-label="Facility code">
         <input name="name" placeholder="Facility name" maxlength="150" required aria-label="Facility name">
@@ -64,17 +65,17 @@
           <option value="storage">Cold / storage</option>
           <option value="warehouse">Warehouse</option>
         </select>
-        <button class="orders-primary" type="submit">Add facility</button>
+        <button class="erp-btn" type="submit">Add facility</button>
       </form>
       <form class="setup-form" data-kind="stores">
-        <p class="b360-subtitle">Storage location (for finished product)</p>
+        <p class="erp-subhead">Storage location (for finished product)</p>
         <select name="facility_id" data-options="facilities" required aria-label="Facility"></select>
         <input name="location_code" placeholder="Code, e.g. BAY-1" maxlength="30" required aria-label="Storage code">
         <input name="name" placeholder="Name, e.g. Warehouse Bay 1" maxlength="100" required aria-label="Storage name">
-        <button class="orders-primary" type="submit">Add storage location</button>
+        <button class="erp-btn" type="submit">Add storage location</button>
       </form>
       <form class="setup-form" data-kind="units">
-        <p class="b360-subtitle">Bio-pod / tray (production unit)</p>
+        <p class="erp-subhead">Bio-pod / tray (production unit)</p>
         <select name="facility_id" data-options="facilities" required aria-label="Facility"></select>
         <input name="unit_code" placeholder="Code, e.g. POD-01" maxlength="30" required aria-label="Unit code">
         <input name="name" placeholder="Name, e.g. Bio-pod 1" maxlength="100" required aria-label="Unit name">
@@ -86,31 +87,44 @@
           <option value="other">Other</option>
         </select>
         <input name="capacity_kg" type="number" min="0.001" step="0.001" placeholder="Capacity kg (optional)" aria-label="Capacity kg">
-        <button class="orders-primary" type="submit">Add unit</button>
+        <button class="erp-btn" type="submit">Add unit</button>
       </form>
     </section>
 
-    <section class="b360-card setup-full">
-      <h3><span><i class="fas fa-user-lock"></i></span> User access</h3>
-      <p class="trace-hint">Farm or organization access includes customers and orders; site or facility access covers operations only.</p>
-      <div class="inline-form">
-        <label for="accessUser">User</label>
-        <select id="accessUser" aria-label="User"></select>
+    <section class="erp-card setup-full">
+      <h3 class="erp-card-title"><span class="erp-chip"><i class="fas fa-user-lock" aria-hidden="true"></i></span> User access</h3>
+      <p class="erp-hint">Farm or organization access includes customers and orders (for roles that may see sales); site or facility access covers operations only.</p>
+      <div class="erp-form">
+        <div class="erp-field erp-field--wide">
+          <label for="accessUser">User</label>
+          <select id="accessUser"></select>
+        </div>
       </div>
       <div id="accessList"></div>
-      <form id="grantForm" class="inline-form" hidden>
-        <select id="grantScope" aria-label="Access level">
+      <form id="grantForm" class="erp-form" hidden>
+        <div class="erp-field">
+        <label for="grantScope">Access level</label>
+        <select id="grantScope">
           <option value="organization">Organization</option>
           <option value="farm" selected>Farm</option>
           <option value="site">Site</option>
           <option value="facility">Facility</option>
         </select>
-        <select id="grantTarget" required aria-label="Location"></select>
-        <button type="submit" class="orders-primary">Grant access</button>
+        </div>
+        </div>
+        <div class="erp-field erp-field--wide">
+          <label for="grantTarget">Location</label>
+          <select id="grantTarget" required></select>
+        </div>
+        <button type="submit" class="erp-btn">Grant access</button>
       </form>
     </section>
+    </div>
   </main>
 
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script src="/js/setup.js"></script>
   <script src="/js/notificationCenter.js" defer></script>
 </body>

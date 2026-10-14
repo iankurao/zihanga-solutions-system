@@ -488,3 +488,27 @@ gunicorn \
   - Super admins read the log at `/audit` (Admin portal → Audit Log),
     filtered by record type, record ID, user, action prefix and dates,
     newest first, 100 at a time.
+- **Design system (Step 25)** (`frontend/css/erp.css`, `frontend/js/ui.js`,
+  `frontend/js/appNav.js`, reference page `/design-system`):
+  - One set of tokens (colour, type, spacing, radius) and components used by
+    every page: app bar navigation, page header, buttons, segmented control,
+    tabs, form fields and filter bar, cards and KPI tiles, facts list, tables,
+    status badges, alert banners, empty / loading / error states, pager and
+    confirmation modal. Page stylesheets only lay out their own content and
+    use the tokens.
+  - `appNav.js` renders the same top navigation on every signed-in page from
+    `/api/me`, showing only links the user's role can use (the server still
+    enforces every permission). Operators get the farmer portal first.
+  - `ui.js` (`window.ErpUI`) renders status badges from one table (green =
+    done/approved, blue = in progress, amber = waiting/attention, red =
+    failed/unsafe, grey = other), states, banners, tables, busy buttons and
+    confirmations. Destructive actions (cancel order, write-off/adjustment,
+    revoke access, remove minimum) ask for confirmation.
+  - Accessibility: text >= 4.5:1 and control borders/focus ring >= 3:1
+    contrast, 44px minimum controls (48px in the farmer portal), visible
+    labels, `aria-invalid` errors, colour never the only signal.
+  - `tests/test_frontend_design.py` keeps pages on the system: erp.css and
+    the shared navigation on every page, no retired palettes or component
+    classes, token contrast, and a badge tone for every status in the schema.
+  - Template pages are cached by the server; restart it after editing HTML
+    rendered with `render_template`.

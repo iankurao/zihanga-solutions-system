@@ -3,91 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Production Batch Detail | Zehunger BSF Farm</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <style>
-    :root { --ink:#18322b; --muted:#66766f; --line:#dce8e1; --accent:#2f7d58; --soft:#f3f8f4; --danger:#a23b31; }
-    body { background:#f5f8f6; color:var(--ink); }
-    .batch-page { max-width:1160px; margin:0 auto; padding:2rem 1.25rem 4rem; }
-    .batch-header { display:flex; gap:1rem; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem; }
-    .batch-header h1 { margin:0 0 .35rem; }
-    .batch-header p { color:var(--muted); margin:0; }
-    .batch-360-link { display:inline-block; margin-top:.5rem; color:var(--accent); font-weight:700; }
-    .batch-360-link[hidden] { display:none; }
-    .batch-search { display:flex; gap:.5rem; min-width:300px; }
-    .batch-search input, .event-form input, .event-form select, .event-form textarea {
-      min-width:0; width:100%; padding:.7rem .8rem; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink);
-    }
-    .batch-search input { flex:1; }
-    button { font:inherit; }
-    .batch-search button, .event-form button { border:0; border-radius:7px; background:var(--accent); color:#fff; padding:.7rem 1rem; cursor:pointer; }
-    .batch-search button:disabled, .event-form button:disabled { opacity:.6; cursor:wait; }
-    .batch-error { color:var(--danger); background:#fff0ee; border:1px solid #f0c4bf; padding:.8rem 1rem; border-radius:7px; display:none; margin-bottom:1rem; }
-    .batch-card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1.25rem; box-shadow:0 4px 16px rgba(24,50,43,.05); }
-    .batch-overview { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; margin-bottom:1rem; }
-    .batch-metric { background:var(--soft); border-radius:8px; padding:.9rem; }
-    .batch-metric dt { color:var(--muted); font-size:.78rem; margin-bottom:.3rem; }
-    .batch-metric dd { margin:0; font-weight:700; overflow-wrap:anywhere; }
-    .status-pill { display:inline-block; padding:.3rem .6rem; border-radius:999px; background:#e2f1e7; color:#21633e; font-size:.8rem; font-weight:700; }
-    .batch-tabs { display:flex; gap:.5rem; flex-wrap:wrap; border-bottom:1px solid var(--line); margin:1.25rem 0 0; }
-    .batch-tab { border:0; background:transparent; color:var(--muted); padding:.75rem .9rem; border-bottom:3px solid transparent; cursor:pointer; font-weight:700; }
-    .batch-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
-    .batch-panel { padding-top:1.25rem; }
-    .batch-panel[hidden] { display:none; }
-    .batch-section h2 { font-size:1.05rem; margin:0 0 .8rem; }
-    .batch-inputs { width:100%; border-collapse:collapse; }
-    .batch-inputs th, .batch-inputs td { padding:.7rem .5rem; text-align:left; border-bottom:1px solid var(--line); }
-    .batch-inputs th { color:var(--muted); font-size:.78rem; font-weight:600; }
-    .empty { color:var(--muted); padding:.5rem 0; }
-    .event-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
-    .event-form .full { grid-column:1 / -1; }
-    .event-form label { display:block; font-size:.82rem; font-weight:700; margin-bottom:.35rem; }
-    .event-form .help { color:var(--muted); font-size:.78rem; margin:.25rem 0 0; }
-    .event-form button { justify-self:start; }
-    .event-list { display:grid; gap:.75rem; }
-    .event-item { border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:8px; padding:.85rem 1rem; background:#fff; }
-    .event-item header { display:flex; justify-content:space-between; gap:1rem; margin-bottom:.4rem; }
-    .event-item strong { text-transform:capitalize; }
-    .event-meta { color:var(--muted); font-size:.82rem; }
-    .event-details { display:flex; gap:1rem; flex-wrap:wrap; font-size:.9rem; }
-    .form-message { min-height:1.2rem; color:var(--danger); font-size:.85rem; }
-    .new-batch-card { margin-bottom:1rem; }
-    .new-batch-card h2 { margin:0 0 .35rem; font-size:1.15rem; }
-    .new-batch-card .help { color:var(--muted); margin:0 0 1rem; }
-    .nb-substrate-line { display:grid; grid-template-columns:auto 1fr 9rem; align-items:center; gap:.5rem; padding:.35rem 0; border-bottom:1px solid var(--line); }
-    .nb-substrate-line label { margin:0; font-weight:600; }
-    .nb-unit { display:inline-flex; align-items:center; gap:.35rem; margin:0 1rem .4rem 0; font-weight:600; }
-    .batch-search button + button { background:#fff; color:var(--accent); border:1px solid var(--accent); }
-    @media (max-width:760px) {
-      .batch-header { flex-direction:column; }
-      .batch-search { width:100%; min-width:0; }
-      .batch-overview { grid-template-columns:repeat(2,minmax(0,1fr)); }
-      .event-form { grid-template-columns:1fr; }
-      .event-form .full { grid-column:auto; }
-      .batch-inputs { display:block; overflow-x:auto; white-space:nowrap; }
-    }
-  </style>
+  <title>Production Batches | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/erp.css">
+  <link rel="stylesheet" href="/css/production-batch.css">
 </head>
-<body>
-  <main class="batch-page">
-    <div class="batch-header">
-      <div>
-        <h1>Production Batch Detail</h1>
-        <p>One lifecycle record for feeding, monitoring, health interventions, and harvests.</p>
-        <a id="batch360Link" class="batch-360-link" href="/batch-360" hidden>Open Batch 360 executive view →</a>
-      </div>
-      <form class="batch-search" id="batchSearchForm">
-        <label class="sr-only" for="batchRef">Batch number</label>
-        <input id="batchRef" name="batchRef" placeholder="BSF-2026-00001 or ID" required>
-        <button type="submit">Load</button>
-        <button type="button" id="newBatchToggle">New batch</button>
-      </form>
-    </div>
-    <div class="batch-error" id="batchError" role="alert"></div>
+<body class="erp-page">
+  <header data-erp-nav></header>
 
-    <section class="batch-card new-batch-card" id="newBatchCard" hidden>
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Production</p>
+        <h1>Production batch record</h1>
+        <p class="erp-subtitle">Feeding, monitoring, health interventions and harvests for one batch.
+          <a id="batch360Link" class="erp-link" href="/batch-360" hidden>Open Batch 360 →</a></p>
+      </div>
+      <form class="erp-form batch-lookup" id="batchSearchForm">
+        <div class="erp-field erp-field--wide">
+          <label for="batchRef">Batch number</label>
+          <input id="batchRef" name="batchRef" placeholder="BSF-2026-00001 or ID" required>
+        </div>
+        <button class="erp-btn" type="submit"><i class="fas fa-folder-open" aria-hidden="true"></i> Open</button>
+        <button class="erp-btn erp-btn--secondary" type="button" id="newBatchToggle" data-permission="production.write" hidden><i class="fas fa-plus" aria-hidden="true"></i> New batch</button>
+      </form>
+    </header>
+    <div id="batchError" class="erp-inline-message" aria-live="polite"></div>
+
+    <section class="erp-card new-batch-card" id="newBatchCard" hidden>
       <h2>New production batch</h2>
-      <p class="help">The batch starts as PLANNED. Substrate must already be prepared at the same facility.</p>
+      <p class="erp-hint">The batch starts as PLANNED. Substrate must already be prepared at the same facility.</p>
       <form class="event-form" id="newBatchForm">
         <div><label for="nbFarm">Farm</label><select id="nbFarm" required></select></div>
         <div><label for="nbSite">Site</label><select id="nbSite" required></select></div>
@@ -99,52 +44,54 @@
         <div><label for="nbStage">Starting stage</label><input id="nbStage" maxlength="20" value="STARTING"></div>
         <div class="full">
           <label>Substrate to issue</label>
-          <div id="nbSubstrate" class="empty">Select a facility to see its available substrate.</div>
+          <div id="nbSubstrate" class="erp-state erp-state--compact">Select a facility to see its available substrate.</div>
         </div>
         <div class="full">
           <label>Bio-pods / trays (optional)</label>
-          <div id="nbUnits" class="empty">Select a facility to see its free units.</div>
+          <div id="nbUnits" class="erp-state erp-state--compact">Select a facility to see its free units.</div>
         </div>
-        <div class="full"><button type="submit">Create batch</button></div>
-        <p class="form-message full" id="nbMessage" role="status" aria-live="polite"></p>
+        <div class="full"><button class="erp-btn" type="submit">Create batch</button></div>
+        <div class="full erp-inline-message" id="nbMessage" aria-live="polite"></div>
       </form>
     </section>
-    <section class="batch-card" id="batchCard" hidden>
-      <div class="batch-overview">
-        <dl class="batch-metric"><dt>Batch number</dt><dd id="batchNumber">—</dd></dl>
-        <dl class="batch-metric"><dt>Lifecycle status</dt><dd><span class="status-pill" id="batchStatus">—</span></dd></dl>
-        <dl class="batch-metric"><dt>Current stage</dt><dd id="batchStage">—</dd></dl>
-        <dl class="batch-metric"><dt>Age</dt><dd id="batchAge">—</dd></dl>
-        <dl class="batch-metric"><dt>Facility</dt><dd id="batchFacility">—</dd></dl>
-        <dl class="batch-metric"><dt>Farm / site</dt><dd id="batchSite">—</dd></dl>
-        <dl class="batch-metric"><dt>Start date</dt><dd id="batchStartDate">—</dd></dl>
-        <dl class="batch-metric"><dt>Events</dt><dd id="batchEventCount">0</dd></dl>
-        <dl class="batch-metric"><dt>Bio-pods / trays</dt><dd id="batchUnits">—</dd></dl>
+    <section class="erp-card" id="batchCard" hidden>
+      <dl class="erp-facts">
+        <div><dt>Batch number</dt><dd id="batchNumber">—</dd></div>
+        <div><dt>Lifecycle status</dt><dd><span class="erp-badge" id="batchStatus">—</span></dd></div>
+        <div><dt>Current stage</dt><dd id="batchStage">—</dd></div>
+        <div><dt>Age</dt><dd id="batchAge">—</dd></div>
+        <div><dt>Facility</dt><dd id="batchFacility">—</dd></div>
+        <div><dt>Farm / site</dt><dd id="batchSite">—</dd></div>
+        <div><dt>Start date</dt><dd id="batchStartDate">—</dd></div>
+        <div><dt>Events</dt><dd id="batchEventCount">0</dd></div>
+        <div><dt>Bio-pods / trays</dt><dd id="batchUnits">—</dd></div>
+      </dl>
+
+      <div class="erp-tabs" role="tablist" aria-label="Production batch sections">
+        <button class="erp-tab" type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" data-tab="overview">Overview</button>
+        <button class="erp-tab" type="button" role="tab" id="tab-feeding" aria-controls="panel-feeding" aria-selected="false" data-tab="feeding">Feeding</button>
+        <button class="erp-tab" type="button" role="tab" id="tab-monitoring" aria-controls="panel-monitoring" aria-selected="false" data-tab="monitoring">Monitoring</button>
+        <button class="erp-tab" type="button" role="tab" id="tab-health" aria-controls="panel-health" aria-selected="false" data-tab="health">Health</button>
+        <button class="erp-tab" type="button" role="tab" id="tab-harvest" aria-controls="panel-harvest" aria-selected="false" data-tab="harvest">Harvest</button>
+        <button class="erp-tab" type="button" role="tab" id="tab-timeline" aria-controls="panel-timeline" aria-selected="false" data-tab="timeline">Timeline</button>
       </div>
 
-      <nav class="batch-tabs" aria-label="Production Batch sections">
-        <button class="batch-tab active" type="button" data-tab="overview">Overview</button>
-        <button class="batch-tab" type="button" data-tab="feeding">Feeding</button>
-        <button class="batch-tab" type="button" data-tab="monitoring">Monitoring</button>
-        <button class="batch-tab" type="button" data-tab="health">Health</button>
-        <button class="batch-tab" type="button" data-tab="harvest">Harvest</button>
-        <button class="batch-tab" type="button" data-tab="timeline">Timeline</button>
-      </nav>
-
-      <section class="batch-panel" data-panel="overview">
+      <section class="erp-tabpanel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" data-panel="overview">
         <div class="batch-section">
           <h2>Substrate source and quantity used</h2>
-          <div id="batchInputsEmpty" class="empty" hidden>No substrate inputs recorded.</div>
-          <table class="batch-inputs" id="batchInputsTable">
-            <thead><tr><th>Substrate batch</th><th>Source</th><th>Quantity used</th></tr></thead>
-            <tbody id="batchInputs"></tbody>
-          </table>
+          <div id="batchInputsEmpty" class="erp-state erp-state--compact" hidden>No substrate inputs recorded.</div>
+          <div class="erp-table-wrap" id="batchInputsTable">
+            <table class="erp-table">
+              <thead><tr><th scope="col">Substrate batch</th><th scope="col">Source</th><th scope="col" class="is-num">Quantity used</th></tr></thead>
+              <tbody id="batchInputs"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      <section class="batch-panel" data-panel="feeding" hidden>
+      <section class="erp-tabpanel" role="tabpanel" id="panel-feeding" aria-labelledby="tab-feeding" data-panel="feeding" hidden>
         <h2>Record Feeding Event</h2>
-        <form class="event-form" id="feedingEventForm">
+        <form class="event-form" id="feedingEventForm" data-permission="production.write" hidden>
           <div><label for="feedingDate">Date</label><input id="feedingDate" name="feeding_date" type="date" required></div>
           <div><label for="feedingTime">Time (optional)</label><input id="feedingTime" name="event_time" type="time"></div>
           <div><label for="feedType">Feed type</label><input id="feedType" name="feed_type" required></div>
@@ -158,15 +105,15 @@
           <div><label for="feedingTray">Tray / unit reference (optional)</label><input id="feedingTray" name="tray_batch_id"></div>
           <div><label for="feedingOperator">Operator</label><input id="feedingOperator" name="operator" required></div>
           <div class="full"><label for="feedingNotes">Notes</label><textarea id="feedingNotes" name="notes" rows="2"></textarea></div>
-          <div class="full form-message" id="feedingMessage" role="status"></div>
-          <button type="submit">Record Feeding</button>
+          <div class="full erp-inline-message" id="feedingMessage" aria-live="polite"></div>
+          <button class="erp-btn" type="submit">Record Feeding</button>
         </form>
         <div class="batch-section"><h2>Feeding events</h2><div id="feedingEvents" class="event-list"></div></div>
       </section>
 
-      <section class="batch-panel" data-panel="monitoring" hidden>
+      <section class="erp-tabpanel" role="tabpanel" id="panel-monitoring" aria-labelledby="tab-monitoring" data-panel="monitoring" hidden>
         <h2>Record Monitoring Event</h2>
-        <form class="event-form" id="monitoringEventForm">
+        <form class="event-form" id="monitoringEventForm" data-permission="production.write" hidden>
           <div><label for="monitoringDate">Date</label><input id="monitoringDate" name="monitoring_date" type="date" required></div>
           <div><label for="monitoringTime">Time</label><input id="monitoringTime" name="monitoring_time" type="time" required></div>
           <div><label for="monitoringAsset">Facility / asset reference</label><input id="monitoringAsset" name="asset_reference" required></div>
@@ -176,15 +123,15 @@
           <div><label for="monitoringAmmonia">Ammonia (ppm, optional)</label><input id="monitoringAmmonia" name="ammonia" type="number" min="0" step="0.001"></div>
           <div><label for="ammoniaOdor">Ammonia odor</label><select id="ammoniaOdor" name="ammonia_odor"><option value="no">No</option><option value="yes">Yes</option></select></div>
           <div class="full"><label for="monitoringNotes">Notes</label><textarea id="monitoringNotes" name="notes" rows="2"></textarea></div>
-          <div class="full form-message" id="monitoringMessage" role="status"></div>
-          <button type="submit">Record Monitoring</button>
+          <div class="full erp-inline-message" id="monitoringMessage" aria-live="polite"></div>
+          <button class="erp-btn" type="submit">Record Monitoring</button>
         </form>
         <div class="batch-section"><h2>Monitoring events</h2><div id="monitoringEvents" class="event-list"></div></div>
       </section>
 
-      <section class="batch-panel" data-panel="health" hidden>
+      <section class="erp-tabpanel" role="tabpanel" id="panel-health" aria-labelledby="tab-health" data-panel="health" hidden>
         <h2>Record Health Event</h2>
-        <form class="event-form" id="healthEventForm">
+        <form class="event-form" id="healthEventForm" data-permission="production.write" hidden>
           <div><label for="healthDate">Date</label><input id="healthDate" name="health_date" type="date" required></div>
           <div><label for="healthTime">Time (optional)</label><input id="healthTime" name="event_time" type="time"></div>
           <div><label for="healthIssue">Observed issue</label><input id="healthIssue" name="observed_issue" required></div>
@@ -193,33 +140,33 @@
           <div><label for="healthFollowUp">Follow-up date</label><input id="healthFollowUp" name="follow_up_date" type="date"></div>
           <div class="full"><label for="healthAction">Action taken</label><textarea id="healthAction" name="action_taken" rows="2" required></textarea></div>
           <div class="full"><label for="healthComments">Notes</label><textarea id="healthComments" name="comments" rows="2"></textarea></div>
-          <div class="full form-message" id="healthMessage" role="status"></div>
-          <button type="submit">Record Health Event</button>
+          <div class="full erp-inline-message" id="healthMessage" aria-live="polite"></div>
+          <button class="erp-btn" type="submit">Record Health Event</button>
         </form>
         <div class="batch-section"><h2>Health events</h2><div id="healthEvents" class="event-list"></div></div>
       </section>
 
-      <section class="batch-panel" data-panel="harvest" hidden>
+      <section class="erp-tabpanel" role="tabpanel" id="panel-harvest" aria-labelledby="tab-harvest" data-panel="harvest" hidden>
         <div class="batch-section">
           <h2>Production Batch → Harvest(s)</h2>
-          <div class="batch-overview">
-            <dl class="batch-metric"><dt>Harvest limit</dt><dd id="harvestLimitSummary">Not configured</dd></dl>
-            <dl class="batch-metric"><dt>Total harvested</dt><dd id="harvestTotal">0.000 kg</dd></dl>
-            <dl class="batch-metric"><dt>Remaining</dt><dd id="harvestRemaining">—</dd></dl>
-          </div>
-          <form class="event-form" id="harvestLimitForm">
+          <dl class="erp-facts">
+            <div><dt>Harvest limit</dt><dd id="harvestLimitSummary">Not configured</dd></div>
+            <div><dt>Total harvested</dt><dd id="harvestTotal">0.000 kg</dd></div>
+            <div><dt>Remaining</dt><dd id="harvestRemaining">—</dd></div>
+          </dl>
+          <form class="event-form" id="harvestLimitForm" data-permission="production.write" hidden>
             <div>
               <label for="harvestLimitInput">Maximum harvestable wet weight (kg)</label>
               <input id="harvestLimitInput" name="harvest_limit_kg" type="number" min="0.001" step="0.001" required>
-              <p class="help">Set the batch’s approved total limit. It cannot be changed after its first harvest.</p>
+              <p class="erp-hint">Set the batch’s approved total limit. It cannot be changed after its first harvest.</p>
             </div>
-            <div class="full form-message" id="harvestLimitMessage" role="status"></div>
-            <button type="submit">Save harvest limit</button>
+            <div class="full erp-inline-message" id="harvestLimitMessage" aria-live="polite"></div>
+            <button class="erp-btn" type="submit">Save harvest limit</button>
           </form>
         </div>
         <div class="batch-section">
           <h2>Record a harvest</h2>
-          <p class="empty" id="harvestStateMessage"></p>
+          <div id="harvestStateMessage" class="erp-inline-message"></div>
           <form class="event-form" id="harvestEventForm" hidden>
             <div><label for="harvestDate">Harvest date</label><input id="harvestDate" name="harvest_date" type="date" required></div>
             <div><label for="harvestTime">Harvest time</label><input id="harvestTime" name="event_time" type="time" required></div>
@@ -229,8 +176,8 @@
             <div><label for="harvestOperator">Operator</label><input id="harvestOperator" name="operator" maxlength="100" required></div>
             <div class="full"><label for="harvestLocation">Harvest location</label><input id="harvestLocation" name="location" maxlength="200" required></div>
             <div class="full"><label for="harvestNotes">Notes</label><textarea id="harvestNotes" name="notes" rows="2"></textarea></div>
-            <div class="full form-message" id="harvestMessage" role="status"></div>
-            <button type="submit">Record harvest</button>
+            <div class="full erp-inline-message" id="harvestMessage" aria-live="polite"></div>
+            <button class="erp-btn" type="submit">Record harvest</button>
           </form>
         </div>
         <div class="batch-section">
@@ -239,28 +186,28 @@
         </div>
       </section>
 
-      <section class="batch-panel" data-panel="timeline" hidden>
+      <section class="erp-tabpanel" role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" data-panel="timeline" hidden>
         <h2>Combined Timeline</h2>
         <div id="timelineEvents" class="event-list"></div>
       </section>
     </section>
   </main>
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
   <script>
     const esc = value => String(value ?? '—').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     let activeBatchReference = '';
     let activeBatch = null;
     const field = id => document.getElementById(id);
     function showError(message) {
-      const error = field('batchError');
-      error.textContent = message;
-      error.style.display = 'block';
+      ErpUI.message(field('batchError'), message, 'danger');
       field('batchCard').hidden = true;
     }
     function showMessage(id, message, isError = true) {
-      const element = field(id);
-      element.textContent = message;
-      element.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+      ErpUI.message(field(id), message, isError ? 'danger' : 'success');
     }
+    let canRecord = false;
     function eventSummary(event) {
       const values = [];
       if (event.event_type === 'feeding') {
@@ -285,7 +232,7 @@
     function renderEvents(events, targetId, emptyText) {
       const target = field(targetId);
       if (!events.length) {
-        target.innerHTML = `<div class="empty">${esc(emptyText)}</div>`;
+        target.innerHTML = `<div class="erp-state erp-state--compact">${esc(emptyText)}</div>`;
         return;
       }
       target.innerHTML = events.map(event => `
@@ -295,14 +242,14 @@
         </article>`).join('');
     }
     function renderBatch(batch) {
-      field('batchError').style.display = 'none';
+      ErpUI.message(field('batchError'), '');
       field('batchCard').hidden = false;
       field('batch360Link').href = '/batch-360?ref=' + encodeURIComponent(batch.business_id || batch.id);
       field('batch360Link').hidden = false;
       const activeUnits = (batch.units || []).filter(unit => !unit.released_at).map(unit => unit.unit_code);
       field('batchUnits').textContent = activeUnits.length ? activeUnits.join(', ') : 'None assigned';
       field('batchNumber').textContent = batch.batch_number || batch.business_id || batch.batch_code;
-      field('batchStatus').textContent = batch.status || '—';
+      field('batchStatus').replaceWith(Object.assign(ErpUI.badge(batch.status || '—'), { id: 'batchStatus' }));
       field('batchStage').textContent = batch.current_stage || '—';
       field('batchAge').textContent = `${batch.age_days ?? '—'} day${batch.age_days === 1 ? '' : 's'}`;
       field('batchFacility').textContent = batch.facility_name || batch.facility_id || '—';
@@ -320,16 +267,16 @@
       const harvests = batch.harvests || [];
       field('harvestLimitInput').disabled = harvests.length !== 0;
       field('harvestLimitForm').querySelector('button[type="submit"]').disabled = harvests.length !== 0;
-      field('harvestStateMessage').textContent = batch.status !== 'READY_FOR_HARVEST'
-        ? 'The batch must be READY_FOR_HARVEST before recording a harvest.'
+      ErpUI.message(field('harvestStateMessage'), batch.status !== 'READY_FOR_HARVEST'
+        ? 'The batch must be ready for harvest before a harvest can be recorded.'
         : harvestLimit == null
           ? 'Set a harvest limit before recording the first harvest.'
-          : '';
-      field('harvestEventForm').hidden = batch.status !== 'READY_FOR_HARVEST' || harvestLimit == null;
+          : '', 'info');
+      field('harvestEventForm').hidden = !canRecord || batch.status !== 'READY_FOR_HARVEST' || harvestLimit == null;
       const inputs = batch.inputs || [];
       field('batchInputsEmpty').hidden = inputs.length !== 0;
       field('batchInputsTable').hidden = inputs.length === 0;
-      field('batchInputs').innerHTML = inputs.map(input => `<tr><td>${esc(input.business_id || input.batch_code || input.substrate_batch_id)}</td><td>${esc(input.batch_code || input.business_id || input.substrate_batch_id)}</td><td>${esc(input.quantity_issued)} ${esc(input.unit || 'kg')}</td></tr>`).join('');
+      field('batchInputs').innerHTML = inputs.map(input => `<tr><td>${esc(input.business_id || input.batch_code || input.substrate_batch_id)}</td><td>${esc(input.batch_code || input.business_id || input.substrate_batch_id)}</td><td class="is-num">${esc(input.quantity_issued)} ${esc(input.unit || 'kg')}</td></tr>`).join('');
       renderEvents(batch.feeding_events || [], 'feedingEvents', 'No feeding events recorded.');
       renderEvents(batch.monitoring_events || [], 'monitoringEvents', 'No monitoring events recorded.');
       renderEvents(batch.health_events || [], 'healthEvents', 'No health events recorded.');
@@ -347,6 +294,7 @@
     async function submitEvent(type, form, messageId) {
       if (!activeBatchReference) return showMessage(messageId, 'Load a Production Batch first.');
       const button = form.querySelector('button[type="submit"]');
+      button.classList.add('is-busy');
       button.disabled = true;
       showMessage(messageId, '');
       try {
@@ -368,13 +316,18 @@
       } catch (error) {
         showMessage(messageId, error.message);
       } finally {
+        button.classList.remove('is-busy');
         button.disabled = false;
       }
     }
-    document.querySelectorAll('.batch-tab').forEach(tab => tab.addEventListener('click', () => {
-      document.querySelectorAll('.batch-tab').forEach(item => item.classList.toggle('active', item === tab));
-      document.querySelectorAll('.batch-panel').forEach(panel => panel.hidden = panel.dataset.panel !== tab.dataset.tab);
+    document.querySelectorAll('.erp-tab').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('.erp-tab').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
+      document.querySelectorAll('.erp-tabpanel').forEach(panel => panel.hidden = panel.dataset.panel !== tab.dataset.tab);
     }));
+    (window.currentUser || Promise.resolve(null)).then(profile => {
+      canRecord = !!profile && (profile.permissions || []).includes('production.write');
+      if (activeBatch) renderBatch(activeBatch);
+    });
     field('batchSearchForm').addEventListener('submit', event => {
       event.preventDefault();
       const reference = field('batchRef').value.trim();

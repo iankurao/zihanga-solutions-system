@@ -30,3 +30,10 @@ def analytics():
 @super_admin_required
 def setup_page():
     return render_template('setup.html')
+
+
+@app.route('/design-system')
+@login_required
+def design_system_page():
+    """Reference page for the shared UI components (frontend/css/erp.css)."""
+    return send_from_directory(app.static_folder, 'design_system.html')

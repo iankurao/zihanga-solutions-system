@@ -140,13 +140,14 @@ document.addEventListener('DOMContentLoaded', function () {
       };
     });
     if (!inputs.length) {
-      message.textContent = 'Choose at least one substrate batch and a quantity.';
+      ErpUI.message(message, 'Choose at least one substrate batch and a quantity.', 'danger');
       return;
     }
     var expected = document.getElementById('nbExpected').value;
     var button = form.querySelector('button[type="submit"]');
+    button.classList.add('is-busy');
     button.disabled = true;
-    message.textContent = '';
+    ErpUI.message(message, '');
     try {
       var response = await fetch('/api/production/batches', {
         method: 'POST',
@@ -169,7 +170,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!response.ok) throw new Error(payload.message || 'Could not create the batch');
       window.location.href = '/production_batch.html?batch=' + encodeURIComponent(payload.record.business_id);
     } catch (error) {
-      message.textContent = error.message;
+      ErpUI.message(message, error.message, 'danger');
+      button.classList.remove('is-busy');
       button.disabled = false;
     }
   });

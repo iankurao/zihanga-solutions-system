@@ -66,21 +66,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function hideTip() { tooltip.hidden = true; }
 
   function table(target, headers, rows) {
-    var wrap = el('div', 'b360-table-wrap');
-    var t = el('table', 'b360-table');
-    var head = el('tr');
-    headers.forEach(function (h) { head.appendChild(el('th', null, h)); });
-    var thead = el('thead');
-    thead.appendChild(head);
-    var tbody = el('tbody');
-    rows.forEach(function (cells) {
-      var tr = el('tr');
-      cells.forEach(function (c) { tr.appendChild(el('td', null, c)); });
-      tbody.appendChild(tr);
-    });
-    t.append(thead, tbody);
-    wrap.appendChild(t);
-    document.getElementById(target).replaceChildren(wrap);
+    document.getElementById(target).replaceChildren(ErpUI.table(headers, rows));
   }
 
   // ---- horizontal bar chart (single hue) -----------------------------------
@@ -209,7 +195,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // ---- render ----------------------------------------------------------------
   function kpi(label, value, note, href, critical) {
-    var tile = el(href ? 'a' : 'div', 'ops-kpi' + (critical ? ' is-critical' : ''));
+    var tile = el(href ? 'a' : 'div', 'erp-kpi ops-kpi' + (critical ? ' is-critical' : ''));
     if (href) tile.href = href;
     tile.append(el('span', null, label), el('strong', null, value), el('small', null, note));
     return tile;
@@ -266,7 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var alerts = document.getElementById('opsAlerts');
     alerts.textContent = '';
-    if (!data.alerts.top.length) alerts.appendChild(el('p', 'b360-empty', 'No open alerts. Nothing needs attention right now.'));
+    if (!data.alerts.top.length) alerts.appendChild(ErpUI.state('empty', { text: 'No open alerts. Nothing needs attention right now.', compact: true }));
     data.alerts.top.forEach(function (a) {
       var row = el('a', 'ops-alert is-' + a.severity);
       row.href = a.href || '/alerts';
@@ -287,11 +273,11 @@ document.addEventListener('DOMContentLoaded', function () {
       var response = await fetch('/api/dashboard?' + params.toString(), { credentials: 'include' });
       var payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'Could not load the dashboard');
-      message.textContent = '';
+      ErpUI.message(message, '');
       render(payload.data);
       try { localStorage.setItem('zehunger.ops', JSON.stringify({ days: days, farm: farmSelect.value })); } catch (e) { /* optional */ }
     } catch (error) {
-      message.textContent = error.message;
+      ErpUI.message(message, error.message + ' The figures below may be out of date.', 'danger');
     }
   }
 
@@ -339,6 +325,7 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       fillFacilities();
     } catch (e) { /* filters stay at "all" */ }
+    ErpUI.loading(document.getElementById('opsKpis'), 'Loading live figures…', true);
     load();
     setInterval(function () { if (!document.hidden) load(); }, 5 * 60 * 1000);
   })();

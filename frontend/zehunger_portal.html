@@ -5,29 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Zehunger Solutions — Admin Portal</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/erp.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --green: #2ecc71;
-      --green-dark: #27ae60;
-      --green-light: #e9f9ef;
-      --green-muted: #d3f2df;
-      --navy: #2c3e50;
-      --navy-mid: #34495e;
-      --slate: #34495e;
-      --slate-mid: #607078;
-      --gray: #87959b;
-      --gray-light: #e1e7eb;
-      --surface: #f5f6fa;
+      /* Colours from the ERP design tokens (css/erp.css). */
+      --green: var(--erp-accent);
+      --green-dark: var(--erp-accent-hover);
+      --green-light: var(--erp-accent-soft);
+      --green-muted: #d3eadc;
+      --navy: var(--erp-ink);
+      --navy-mid: var(--erp-brand);
+      --slate: var(--erp-ink);
+      --slate-mid: var(--erp-muted);
+      --gray: var(--erp-on-brand-muted);
+      --gray-light: var(--erp-line);
+      --surface: var(--erp-page);
       --white: #ffffff;
-      --red: #e74c3c;
-      --red-light: #fde9e7;
-      --amber: #f1c40f;
-      --amber-light: #fff8dc;
-      --blue: #3498db;
-      --blue-light: #e7f2fb;
+      --red: var(--erp-danger);
+      --red-light: var(--erp-danger-soft);
+      --amber: var(--erp-warning);
+      --amber-light: var(--erp-warning-soft);
+      --blue: var(--erp-info);
+      --blue-light: var(--erp-info-soft);
       --radius: 12px;
       --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
       --shadow: 0 4px 16px rgba(0,0,0,.08);
@@ -35,7 +37,7 @@
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: var(--erp-font);
       background: var(--surface);
       color: var(--navy);
       min-height: 100vh;
@@ -122,7 +124,7 @@
     .sidebar-link { 
       display: flex; align-items: center; gap: 0.7rem;
       padding: 0.65rem 1.2rem;
-      color: #94a3b8;
+      color: var(--erp-on-brand-muted);
       text-decoration: none;
       font-size: 0.875rem;
       font-weight: 500;
@@ -176,7 +178,7 @@
     .stat-icon.green  { background: var(--green-light);  color: var(--green); }
     .stat-icon.blue   { background: var(--blue-light);   color: var(--blue); }
     .stat-icon.amber  { background: var(--amber-light);  color: var(--amber); }
-    .stat-icon.navy   { background: #ecf0f1;             color: var(--navy); }
+    .stat-icon.navy   { background: var(--erp-neutral-soft);             color: var(--navy); }
     .stat-icon.teal   { background: #ccfbf1;             color: #0d9488; }
     .stat-icon.rose   { background: #ffe4e6;             color: #e11d48; }
 
@@ -570,7 +572,12 @@
     .btn-reset:hover  { background:var(--amber); color:#fff; }
     .btn-delete:hover { background:var(--red); color:#fff; }
     @media (max-width: 768px) {
-      .sidebar { display: none; }
+      /* On phones the section menu becomes a scrollable strip instead of disappearing. */
+      .page-body { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding: .5rem; gap: .25rem; }
+      .sidebar > div { display: flex; flex-wrap: nowrap; gap: .25rem; margin: 0 !important; }
+      .sidebar-section { display: none; }
+      .sidebar-link { white-space: nowrap; width: auto; border-radius: 8px; border-right: 0; }
       .main-content { padding: 1rem; }
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .form-grid { grid-template-columns: 1fr; }
@@ -580,23 +587,8 @@
 </head>
 <body>
 
-  <!-- Top Bar -->
-  <header class="topbar">
-    <a class="brand" href="/zehunger">
-      <div class="brand-icon"><i class="fas fa-leaf"></i></div>
-      <div>
-        <div class="brand-name">Zehunger Solutions</div>
-        <div class="brand-sub">Admin Portal</div>
-      </div>
-    </a>
-    <div class="topbar-right">
-      <div class="admin-badge">
-        <div class="admin-avatar" id="adminInitials">Z</div>
-        <span>Welcome, <strong id="adminName">Admin</strong></span>
-      </div>
-      <a href="/logout" class="btn-logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
-    </div>
-  </header>
+  <!-- Shared ERP navigation -->
+  <header data-erp-nav></header>
 
   <div class="page-body">
     <!-- Sidebar -->
@@ -936,6 +928,9 @@
   <div class="toast-wrap" id="toastWrap"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="js/permissions.js"></script>
+  <script src="js/appNav.js"></script>
+  <script src="js/ui.js"></script>
   <script src="js/zehungerPortal.js"></script>
 </body>
 </html>

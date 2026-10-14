@@ -2,61 +2,22 @@
    checker (light surface): series 1-3 pass CVD/normal-vision gates; series 3
    is below 3:1 contrast, so every chart has direct labels and a table view. */
 
-.b360-page {
+.erp-page {
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
   --bar: #19804b;
   --grid: #e7ece9;
   --axis: #9aa8a0;
-  --critical: #a13b30;
-  --warning: #a86a12;
-  --info: #3b6fb6;
+  --critical: var(--erp-danger);
+  --warning: var(--erp-warning);
 }
 
-.ops-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.4rem;
-}
-
-.ops-filters select {
-  min-width: 0;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid #cad8ce;
-  border-radius: 8px;
-  color: var(--ink);
-  background: #fff;
-  font: inherit;
-}
-
-.ops-period {
-  display: inline-flex;
-  overflow: hidden;
-  border: 1px solid #cad8ce;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.ops-period button {
-  padding: 0.55rem 0.8rem;
-  border: 0;
-  color: var(--muted);
-  background: transparent;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.ops-period button[aria-checked="true"] {
-  color: #fff;
-  background: var(--brand);
+.ops-period-field {
+  flex: 0 0 auto;
 }
 
 .ops-updated {
-  margin-left: auto;
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -68,13 +29,9 @@
   margin-bottom: 1.1rem;
 }
 
+/* KPI tiles are erp-kpi; these link to the page behind the figure. */
 .ops-kpi {
-  display: block;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  color: inherit;
-  background: #fff;
+  color: inherit !important;
   text-decoration: none;
 }
 
@@ -113,6 +70,7 @@ a.ops-kpi:hover {
 
 .ops-grid > * {
   min-width: 0;
+  margin: 0;
 }
 
 .ops-wide {

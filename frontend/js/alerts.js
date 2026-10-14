@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var severitySelect = document.getElementById('alertSeverity');
   var message = document.getElementById('alertMessage');
   var isAdmin = false;
+  var canManage = false;
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -50,8 +51,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function say(text, isError) {
-    message.textContent = text || '';
-    message.style.color = isError ? '' : 'var(--accent)';
+    ErpUI.message(message, text, isError ? 'danger' : 'success');
   }
 
   function renderCounts(counts) {
@@ -71,12 +71,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var head = el('div', 'alert-card-head');
     head.appendChild(el('h3', null, alert.title));
     var pills = el('div');
-    pills.append(
-      el('span', 'b360-pill ' + (alert.severity === 'critical' ? 'is-bad' : alert.severity === 'warning' ? 'is-warn' : 'is-info'),
-        alert.severity),
-      document.createTextNode(' '),
-      el('span', 'b360-pill', alert.status.toLowerCase())
-    );
+    pills.append(ErpUI.badge(alert.severity), document.createTextNode(' '), ErpUI.badge(alert.status));
     head.appendChild(pills);
     card.append(head, el('p', null, alert.message));
 
@@ -97,34 +92,32 @@ document.addEventListener('DOMContentLoaded', function () {
       link.href = alert.href;
       actions.appendChild(link);
     }
-    if (alert.status === 'OPEN' || alert.status === 'SNOOZED') {
-      actions.appendChild(button('Acknowledge', 'orders-secondary', function () {
+    if (canManage && (alert.status === 'OPEN' || alert.status === 'SNOOZED')) {
+      actions.appendChild(button('Acknowledge', 'erp-btn erp-btn--secondary erp-btn--sm', function () {
         var note = el('input');
         note.type = 'text';
         note.maxLength = 500;
         note.placeholder = 'Note (optional)';
         note.setAttribute('aria-label', 'Acknowledgement note');
-        var save = button('Save', 'orders-primary', function () {
-          save.disabled = true;
-          send('/api/alerts/' + alert.id + '/acknowledge', 'POST', { note: note.value })
+        var save = button('Save', 'erp-btn erp-btn--sm', function () {
+          ErpUI.busy(save, send('/api/alerts/' + alert.id + '/acknowledge', 'POST', { note: note.value }))
             .then(function () { say('Alert acknowledged.'); load(); })
-            .catch(function (error) { say(error.message, true); save.disabled = false; });
+            .catch(function (error) { say(error.message, true); });
         });
         actions.replaceChildren(note, save);
         note.focus();
       }));
     }
-    if (alert.status !== 'RESOLVED') {
+    if (canManage && alert.status !== 'RESOLVED') {
       var hours = el('select');
       hours.setAttribute('aria-label', 'Snooze duration');
       [[4, '4 hours'], [24, '1 day'], [72, '3 days'], [168, '1 week']].forEach(function (pair) {
         hours.add(new Option(pair[1], pair[0]));
       });
-      var snooze = button('Snooze', 'orders-secondary', function () {
-        snooze.disabled = true;
-        send('/api/alerts/' + alert.id + '/snooze', 'POST', { hours: Number(hours.value) })
+      var snooze = button('Snooze', 'erp-btn erp-btn--secondary erp-btn--sm', function () {
+        ErpUI.busy(snooze, send('/api/alerts/' + alert.id + '/snooze', 'POST', { hours: Number(hours.value) }))
           .then(function () { say('Alert snoozed.'); load(); })
-          .catch(function (error) { say(error.message, true); snooze.disabled = false; });
+          .catch(function (error) { say(error.message, true); });
       });
       actions.append(hours, snooze);
     }
@@ -133,6 +126,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function load() {
+    if (!listNode.children.length) ErpUI.loading(listNode, 'Loading alerts…');
     try {
       var url = '/api/alerts?status=' + viewSelect.value +
         (severitySelect.value ? '&severity=' + severitySelect.value : '');
@@ -140,13 +134,16 @@ document.addEventListener('DOMContentLoaded', function () {
       renderCounts(payload.counts);
       listNode.textContent = '';
       if (!payload.data.length) {
-        listNode.appendChild(el('p', 'b360-empty',
-          viewSelect.value === 'active' ? 'No active alerts. Operations look healthy.' : 'No alerts in this view.'));
+        if (viewSelect.value === 'active') {
+          ErpUI.empty(listNode, 'No active alerts', 'Operations look healthy.', { icon: 'fa-circle-check' });
+        } else {
+          ErpUI.empty(listNode, 'No alerts in this view', 'Try another view or severity.');
+        }
         return;
       }
       payload.data.forEach(function (alert) { listNode.appendChild(alertCard(alert)); });
     } catch (error) {
-      say(error.message, true);
+      ErpUI.error(listNode, error.message, load);
     }
   }
 
@@ -156,47 +153,41 @@ document.addEventListener('DOMContentLoaded', function () {
       var payload = await api('/api/alerts/thresholds');
       target.textContent = '';
       if (!payload.data.length) {
-        target.appendChild(el('p', 'b360-empty', 'No minimums set, so no low-stock alerts are raised.'));
+        target.appendChild(ErpUI.state('empty', { text: 'No minimums set, so no low-stock alerts are raised.', compact: true }));
         return;
       }
-      var wrap = el('div', 'b360-table-wrap');
-      var table = el('table', 'b360-table');
-      var head = el('tr');
-      ['Farm', 'Product', 'Minimum', 'Updated by', ''].forEach(function (text) { head.appendChild(el('th', null, text)); });
-      var thead = el('thead');
-      thead.appendChild(head);
-      var tbody = el('tbody');
-      payload.data.forEach(function (row) {
-        var tr = el('tr');
-        tr.append(el('td', null, row.farm_name), el('td', null, row.product_type),
-          el('td', null, Number(row.minimum_kg).toLocaleString() + ' kg'),
-          el('td', null, row.updated_by + ' · ' + when(row.updated_at)));
-        var cell = el('td');
+      var columns = ['Farm', 'Product', { label: 'Minimum', numeric: true }, 'Updated by'];
+      if (isAdmin) columns.push({ label: 'Actions' });
+      target.appendChild(ErpUI.table(columns, payload.data.map(function (row) {
+        var cells = [row.farm_name, row.product_type, Number(row.minimum_kg).toLocaleString() + ' kg',
+          row.updated_by + ' · ' + when(row.updated_at)];
         if (isAdmin) {
-          cell.appendChild(button('Remove', 'orders-danger', function () {
-            send('/api/alerts/thresholds/' + row.id, 'DELETE')
-              .then(function () { say('Minimum removed.'); loadThresholds(); })
-              .catch(function (error) { say(error.message, true); });
+          cells.push(button('Remove', 'erp-btn erp-btn--danger erp-btn--sm', function () {
+            ErpUI.confirm({
+              title: 'Remove the ' + row.product_type + ' minimum for ' + row.farm_name + '?',
+              text: 'Low-stock alerts for this product stop until a new minimum is set.',
+              confirmLabel: 'Remove minimum',
+              danger: true
+            }).then(function (confirmed) {
+              if (!confirmed) return;
+              send('/api/alerts/thresholds/' + row.id, 'DELETE')
+                .then(function () { say('Minimum removed.'); loadThresholds(); })
+                .catch(function (error) { say(error.message, true); });
+            });
           }));
         }
-        tr.appendChild(cell);
-        tbody.appendChild(tr);
-      });
-      table.append(thead, tbody);
-      wrap.appendChild(table);
-      target.appendChild(wrap);
+        return cells;
+      }), 'Low-stock minimums'));
     } catch (error) {
-      target.textContent = error.message;
+      ErpUI.error(target, error.message, loadThresholds);
     }
   }
 
   async function setupThresholdForm() {
-    try {
-      await api('/api/admin/me');
-      isAdmin = true;
-    } catch (error) {
-      isAdmin = false;
-    }
+    var profile = await (window.currentUser || Promise.resolve(null));
+    // Setting minimums is a super-admin action on the server.
+    isAdmin = !!profile && profile.role === 'super_admin';
+    canManage = !!profile && (profile.permissions || []).indexOf('alerts.manage') !== -1;
     var form = document.getElementById('thresholdForm');
     form.hidden = !isAdmin;
     if (!isAdmin) return;
@@ -259,7 +250,7 @@ document.addEventListener('DOMContentLoaded', function () {
     try {
       var data = (await api('/api/notifications/email-status')).data;
       target.textContent = '';
-      var facts = el('dl', 'b360-facts');
+      var facts = el('dl', 'erp-facts');
       [['SMTP configured', data.configured ? 'Yes' : 'No — set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD'],
         ['Waiting to send', data.pending], ['Sent', data.sent], ['Failed', data.failed],
         ['Last sent', data.last_sent_at ? when(data.last_sent_at) : '—']].forEach(function (pair) {
@@ -273,36 +264,30 @@ document.addEventListener('DOMContentLoaded', function () {
           row.recipient + ' · attempt ' + row.attempts + ' · ' + row.status.toLowerCase() + ': ' + row.last_error));
       });
     } catch (error) {
-      target.textContent = error.message;
+      ErpUI.error(target, error.message, loadEmailStatus);
     }
   }
 
   document.getElementById('testEmailButton').addEventListener('click', function () {
-    var button = this;
-    button.disabled = true;
-    send('/api/notifications/test-email', 'POST')
+    ErpUI.busy(this, send('/api/notifications/test-email', 'POST'))
       .then(function () { say('Test email queued. Check your inbox in a minute.'); setTimeout(loadEmailStatus, 3000); })
-      .catch(function (error) { say(error.message, true); })
-      .finally(function () { button.disabled = false; });
+      .catch(function (error) { say(error.message, true); });
   });
 
   document.getElementById('alertRefresh').addEventListener('click', function () {
-    var refresh = this;
-    refresh.disabled = true;
-    send('/api/alerts/refresh', 'POST')
+    ErpUI.busy(this, send('/api/alerts/refresh', 'POST'))
       .then(function (payload) {
         say(payload.refreshed ? 'Checked just now.' : 'Already checked in the last few seconds.');
         return load();
       })
-      .catch(function (error) { say(error.message, true); })
-      .finally(function () { refresh.disabled = false; });
+      .catch(function (error) { say(error.message, true); });
   });
   viewSelect.addEventListener('change', load);
   severitySelect.addEventListener('change', load);
 
-  load();
   setupPreferences();
   setupThresholdForm().then(function () {
+    load();
     loadThresholds();
     loadEmailStatus();
   });
