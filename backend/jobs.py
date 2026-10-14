@@ -18,7 +18,8 @@ import logging
 import time
 
 from backend import notifications
-from backend.app import _sync_alerts, db
+from backend.core.web import db
+from backend.domains.alerts import _sync_alerts
 
 logger = logging.getLogger("backend.jobs")
 

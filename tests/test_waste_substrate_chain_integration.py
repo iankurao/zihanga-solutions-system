@@ -176,8 +176,8 @@ class WasteToSubstrateChainIntegrationTest(unittest.TestCase):
     def _as_user(self, user):
         stack = [
             patch.dict(app.config, {"LOGIN_DISABLED": False}),
-            patch("backend.app.current_user", user),
-            patch("flask_login.utils.current_user", user),
+            # current_user everywhere resolves through this one function.
+            patch("flask_login.utils._get_user", lambda: user),
         ]
 
         class _Ctx:

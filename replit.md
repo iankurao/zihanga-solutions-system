@@ -20,13 +20,31 @@ A Black Soldier Fly (BSF) farm management application built with Flask (Python 3
 .
 ├── backend/
 │   ├── __init__.py                  # Python package marker (required — all imports use backend.*)
-│   ├── app.py                       # Main Flask app: config, auth, routes, blueprints (1900+ lines)
+│   ├── app.py                       # Entry point only (gunicorn backend.app:app): imports core + every domain
+│   ├── core/                        # Shared layers - never import from domains/
+│   │   ├── web.py                   # Flask app, config, sessions, db handle, static files, error pages
+│   │   ├── http.py                  # Request parsing, JSON shaping, shared error types and response wrapper
+│   │   ├── audit.py                 # Actor description for audit triggers; audit_event()
+│   │   ├── security.py              # _can/requires/super_admin_required, CSRF check, security headers
+│   │   ├── accounts.py              # User model, user loader, sign-in throttling, sessions
+│   │   └── scope.py                 # Location access (organization/farm/site/facility) SQL helpers
+│   ├── domains/                     # One module per business area; importing it registers its routes
+│   │   ├── auth.py  admin.py  audit.py          # sign-in, admin portal API, audit viewer
+│   │   ├── waste.py  units.py  production.py    # waste lots & substrate, bio-pods, batches & events
+│   │   ├── drying.py  quality.py  inventory.py  # drying, QC & Product Lot release, stock ledger
+│   │   ├── sales.py  alerts.py                  # customers/orders/deliveries, alerts & notifications API
+│   │   ├── batch360.py  traceability.py  labels.py  reports.py  dashboard.py  farmer.py
+│   │   ├── legacy.py                # Pre-traceability forms, statistics and analytics (super admin)
+│   │   └── pages.py                 # Plain page routes not owned by one domain
+│   ├── roles.py  passwords.py       # Role/permission map and password rule (no Flask imports)
+│   ├── notifications.py  jobs.py    # Email outbox delivery; scheduled job (python -m backend.jobs)
 │   ├── config.py                    # All configuration: DB, email, API endpoints, table names
 │   ├── database.py                  # psycopg2 ThreadedConnectionPool singleton (DatabaseConnection)
 │   ├── init_db.py                   # Creates all DB tables and runs migrations on startup
-│   ├── waste_management_routes.py   # Flask Blueprint: waste & hatchery API routes
+│   ├── location_routes.py           # Flask Blueprint: organizations/farms/sites/facilities and access
+│   ├── waste_management_routes.py   # Flask Blueprint: legacy waste record reads (super admin)
 │   ├── fly_facility_routes.py       # Flask Blueprint: fly facility API routes (cage, eggs, etc.)
-│   ├── migrations/                  # Historical SQL migration files (informational, already applied)
+│   ├── migrations/                  # Repeatable SQL migrations, run in order by init_db.py
 │   └── requirements.txt             # Python dependencies (also tracked in pyproject.toml)
 ├── frontend/
 │   ├── main.html                    # Landing page — Admin vs Farmer portal selector (served at /)
@@ -235,19 +253,39 @@ Page routes:
 | `/login`     | `frontend/login.html`    | No            |
 | `/register`  | `frontend/register.html` | No            |
 
+### Code layout (Step 24)
+`backend/app.py` only builds the app: it imports `backend/core` and every
+module in `backend/domains`, and each domain registers its own routes with
+`@app.route`. Endpoint names, URLs and behaviour are unchanged from the
+single-file version.
+
+Rules (enforced by `tests/test_architecture.py`):
+- `backend/core` never imports from `backend/domains`.
+- No import cycles between modules; a domain may use core and the domains it
+  builds on (e.g. sales and quality post to the inventory ledger).
+- `backend/app.py` holds no code of its own.
+
+Where new code goes: a new route or rule belongs in the domain that owns the
+data; a helper used by several domains belongs in `core/http.py` (parsing,
+responses) or `core/scope.py` (location access); a new domain is a new module
+in `backend/domains` plus one import line in `backend/app.py`.
+
 ### Blueprint Registration
-Two Flask Blueprints must be imported AND registered in `backend/app.py`:
+Three Flask Blueprints are imported and registered in `backend/core/web.py`
+(their permission guards are added in `backend/core/security.py`):
 ```python
 from backend.waste_management_routes import waste_management
 from backend.fly_facility_routes import fly_facility
+from backend.location_routes import locations
 
 app.register_blueprint(waste_management)
 app.register_blueprint(fly_facility)
+app.register_blueprint(locations)
 ```
 If either line is missing, that entire set of API routes will return 404.
 
 ### Database Connection
-`backend/database.py` implements a singleton `DatabaseConnection` using `psycopg2.pool.ThreadedConnectionPool`. It is instantiated once at app startup (`db = DatabaseConnection()` in `app.py`) and shared across all requests. All queries use raw SQL via `db.execute_query()`, `db.fetch_all()`, and `db.fetch_one()`.
+`backend/database.py` implements a singleton `DatabaseConnection` using `psycopg2.pool.ThreadedConnectionPool`. It is instantiated once at app startup (`db = DatabaseConnection()` in `backend/core/web.py`) and shared across all requests. All queries use raw SQL via `db.execute_query()`, `db.fetch_all()`, and `db.fetch_one()`.
 
 Flask-SQLAlchemy is initialised separately (`sqlalchemy_db = SQLAlchemy(app)`) and is used **only** for Flask-Session's SQLAlchemy session table (`flask_sessions`), not for application data.
 
@@ -266,7 +304,7 @@ The `SameSite=None; Secure` cookie settings are required because Replit serves t
 
 ## API Endpoints
 
-### Auth (inline in app.py)
+### Auth (`backend/domains/auth.py`)
 | Method | Route                  | Description          |
 |--------|------------------------|----------------------|
 | GET/POST | `/login`             | Login page + form    |
@@ -345,7 +383,7 @@ gunicorn \
 
 ## Phase One reports and setup
 
-- **Reports** (`REPORTS` in `app.py`, `/api/reports`, `/api/reports/<key>`):
+- **Reports** (`REPORTS` in `backend/domains/reports.py`, `/api/reports`, `/api/reports/<key>`):
   waste received, substrate, production batches, feeding, harvest, drying,
   quality, current stock, customer orders, deliveries, product lineage and
   farm performance. Filters: `date_from`, `date_to`, `farm_id`,

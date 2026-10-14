@@ -613,8 +613,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             username="unassigned-operator",
         )
         with patch.dict(app.config, {"LOGIN_DISABLED": False}), patch(
-            "backend.app.current_user", unauthorized_user
-        ), patch("flask_login.utils.current_user", unauthorized_user):
+            "flask_login.utils._get_user", lambda: unauthorized_user
+        ):
             lot_response = self.client.post(
                 "/api/product-lots",
                 json={
@@ -1147,8 +1147,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             username="unassigned-operator",
         )
         with patch.dict(app.config, {"LOGIN_DISABLED": False}), patch(
-            "backend.app.current_user", unauthorized_user
-        ), patch("flask_login.utils.current_user", unauthorized_user):
+            "flask_login.utils._get_user", lambda: unauthorized_user
+        ):
             response = self._harvest(batch)
             listing = self.client.get("/api/feeding/harvest/all")
         self.assertEqual(response.status_code, 403, response.get_json())
@@ -3472,9 +3472,8 @@ class _UserContext:
     def __init__(self, user):
         self._patches = [
             patch.dict(app.config, {"LOGIN_DISABLED": False}),
-            patch("backend.app.current_user", user),
-            patch("backend.location_routes.current_user", user),
-            patch("flask_login.utils.current_user", user),
+            # current_user everywhere resolves through this one function.
+            patch("flask_login.utils._get_user", lambda: user),
         ]
 
     def __enter__(self):
