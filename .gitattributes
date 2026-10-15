@@ -1,0 +1,10 @@
+# Text files are stored and checked out with LF line endings on every
+# platform. Shell scripts and server configuration with CRLF endings fail on
+# Linux (e.g. "set: pipefail\r: invalid option"), and mixed endings make
+# diffs unreadable.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.svg text eol=lf
