@@ -222,6 +222,11 @@ database `/tour` and the demo endpoints answer 404.
 | `EMAIL_HOST_USER`     | SMTP username                            | —                |
 | `EMAIL_HOST_PASSWORD` | SMTP password / app password             | —                |
 | `ADMIN_EMAIL`         | Admin notification email                 | —                |
+| `APP_ENV`             | `production` refuses to start with unsafe settings (see `python -m backend.preflight`) | `development` |
+| `PUBLIC_BASE_URL`     | Address printed on QR labels, e.g. `https://erp.example.com` | request host |
+| `TRUSTED_PROXY_COUNT` | Proxies in front of the app whose `X-Forwarded-*` headers are trusted | `1` |
+| `DB_POOL_MAX`         | Database connections each process may hold | `10` |
+| `WEB_CONCURRENCY`, `GUNICORN_THREADS` | gunicorn workers and threads (`deploy/gunicorn.conf.py`) | `2`, `4` |
 | `DEMO_GUEST_ACCESS`   | `1` lets visitors explore a demo database as the read-only guest (ignored on real databases) | off |
 
 ---
@@ -351,153 +356,25 @@ All tables are created automatically by `backend/init_db.py` on first startup:
 
 ---
 
-## Ubuntu Server Deployment
+## Production Deployment
 
-### 1. Install System Dependencies
+See **[DEPLOYMENT.md](DEPLOYMENT.md)**: nginx with HTTPS, gunicorn and the
+background jobs worker under systemd, nightly verified backups with a restore
+drill, the upgrade and rollback procedure, and a post-deployment checklist.
+The ready-made files are in `deploy/` and `.env.example`.
 
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3 python3-pip python3-venv \
-    postgresql postgresql-contrib nginx git
-```
-
-### 2. Set Up PostgreSQL
+Before every deployment, with the production settings loaded:
 
 ```bash
-sudo systemctl start postgresql && sudo systemctl enable postgresql
-sudo -u postgres psql <<EOF
-CREATE USER bsf_user WITH PASSWORD 'your_strong_password';
-CREATE DATABASE bsf_farm OWNER bsf_user;
-GRANT ALL PRIVILEGES ON DATABASE bsf_farm TO bsf_user;
-EOF
+python -m backend.preflight
 ```
 
-### 3. Clone & Set Up the App
-
-```bash
-cd /opt
-sudo git clone <your-repo-url> bsf-farm
-sudo chown -R $USER:$USER /opt/bsf-farm
-cd /opt/bsf-farm
-python3 -m venv venv
-source venv/bin/activate
-pip install -r backend/requirements.txt
-```
-
-### 4. Configure Environment Variables
-
-```bash
-sudo nano /etc/bsf-farm.env
-```
-
-```env
-DATABASE_URL=postgresql://bsf_user:your_strong_password@localhost:5432/bsf_farm
-PGHOST=localhost
-PGPORT=5432
-PGUSER=bsf_user
-PGPASSWORD=your_strong_password
-PGDATABASE=bsf_farm
-SECRET_KEY=replace-with-a-long-random-string
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_HOST_USER=your@email.com
-EMAIL_HOST_PASSWORD=your-app-password
-ADMIN_EMAIL=admin@yourdomain.com
-```
-
-```bash
-sudo chmod 600 /etc/bsf-farm.env
-```
-
-### 5. Initialise the Database
-
-```bash
-export $(sudo cat /etc/bsf-farm.env | xargs)
-python -m backend.init_db
-```
-
-### 6. Create a systemd Service
-
-```bash
-sudo nano /etc/systemd/system/bsf-farm.service
-```
-
-```ini
-[Unit]
-Description=BSF Farm Management System
-After=network.target postgresql.service
-
-[Service]
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/bsf-farm
-EnvironmentFile=/etc/bsf-farm.env
-ExecStart=/opt/bsf-farm/venv/bin/gunicorn \
-    --bind 127.0.0.1:5000 \
-    --workers 2 \
-    --threads 4 \
-    --timeout 120 \
-    --access-logfile /var/log/bsf-farm/access.log \
-    --error-logfile /var/log/bsf-farm/error.log \
-    backend.app:app
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo mkdir -p /var/log/bsf-farm
-sudo chown -R www-data:www-data /var/log/bsf-farm /opt/bsf-farm
-sudo systemctl daemon-reload
-sudo systemctl enable --now bsf-farm
-sudo systemctl status bsf-farm
-```
-
-### 7. Configure Nginx
-
-```bash
-sudo nano /etc/nginx/sites-available/bsf-farm
-```
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    client_max_body_size 20M;
-
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
-    }
-}
-```
-
-```bash
-sudo ln -s /etc/nginx/sites-available/bsf-farm /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-### 8. (Optional) HTTPS with Let's Encrypt
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
-
-### Useful Commands
-
-| Task                   | Command                                       |
-|------------------------|-----------------------------------------------|
-| View app logs          | `sudo journalctl -u bsf-farm -f`              |
-| Restart the app        | `sudo systemctl restart bsf-farm`             |
-| Connect to the database| `psql -U bsf_user -d bsf_farm -h localhost`   |
-| Check Nginx config     | `sudo nginx -t`                               |
+It checks the settings (secret key, database URL, HTTPS-only cookies, ...),
+that the database is reachable with an up-to-date schema and audit triggers,
+that a super admin exists, that the jobs worker and email queue are healthy,
+and the database connection budget. With `APP_ENV=production` the app itself
+refuses to start when a setting check fails. `/healthz` and `/readyz` are
+available for uptime monitors and load balancers.
 
 ---
 

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Run a command as the zehunger service user, with the production settings,
+# from the application folder (see DEPLOYMENT.md):
+#
+#   sudo deploy/zrun python -m backend.preflight
+#   sudo deploy/zrun env RESTORE_DATABASE_URL=postgresql://... deploy/restore-check.sh <file>
+set -euo pipefail
+[ "$#" -gt 0 ] || { echo "usage: zrun <command> [args...]" >&2; exit 2; }
+exec sudo -u zehunger bash -c '
+  set -a; . /etc/zehunger/zehunger.env; set +a
+  export PATH=/opt/zehunger/venv/bin:$PATH
+  cd /opt/zehunger/app
+  exec "$@"' zrun "$@"

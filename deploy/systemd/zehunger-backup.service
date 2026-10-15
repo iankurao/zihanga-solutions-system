@@ -1,0 +1,19 @@
+# One database backup (run by zehunger-backup.timer, or by hand:
+#   sudo systemctl start zehunger-backup).
+[Unit]
+Description=Zehunger ERP database backup
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=zehunger
+Group=zehunger
+EnvironmentFile=/etc/zehunger/zehunger.env
+Environment=BACKUP_DIR=/var/backups/zehunger
+ExecStart=/opt/zehunger/app/deploy/backup.sh
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/backups/zehunger

@@ -40,6 +40,7 @@ The file lists every endpoint with its call count and any never called
 | `test_frontend_logic.py` | `js/ui.js` status tones and labels, run in Node (skipped without Node) |
 | `test_demo_seed.py` | `python -m backend.demo`: the demo dataset covers every chain state with ledger-derived stock, history and audit; refuses databases with real records; rebuilds only with `--reset`; no email from a demo; the `demo` flag on `/api/me` |
 | `test_demo_tour.py` | Investor demo mode: `/tour` and guest access exist only on a demo database; guest access needs `DEMO_GUEST_ACCESS` and an active viewer account; the guest is read only, refused cross-site and audited; staff with sales access get the orders chapter |
+| `test_deployment.py` | Deployment readiness: every unsafe setting fails and every risky one warns; `APP_ENV=production` refuses to start with unsafe settings; `DATABASE_URL` wins over `PG*`; `/healthz` and `/readyz` (fail closed, no details); `python -m backend.preflight` database checks and exit code; `deploy/backup.sh` and `restore-check.sh` with stand-in PostgreSQL tools; gunicorn, systemd, nginx and `.env.example` files; production requirements match the project pins |
 
 `support.py` is the shared harness for scenario tests: it builds locations and
 accounts through the API as a super admin and signs each user in with their own

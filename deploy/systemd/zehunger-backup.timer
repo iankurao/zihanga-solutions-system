@@ -1,0 +1,11 @@
+# Nightly database backup at 02:30 (catches up after downtime).
+[Unit]
+Description=Nightly Zehunger ERP database backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

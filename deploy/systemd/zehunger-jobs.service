@@ -1,0 +1,25 @@
+# Zehunger ERP background jobs: evaluates alerts, sends queued email and
+# trims old sign-in attempts every 5 minutes. Safe alongside the web app.
+[Unit]
+Description=Zehunger ERP background jobs (alerts and email)
+Wants=network-online.target
+After=network-online.target postgresql.service zehunger-web.service
+
+[Service]
+Type=simple
+User=zehunger
+Group=zehunger
+WorkingDirectory=/opt/zehunger/app
+EnvironmentFile=/etc/zehunger/zehunger.env
+ExecStart=/opt/zehunger/venv/bin/python -m backend.jobs --loop 300
+Restart=always
+RestartSec=30
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target

@@ -11,15 +11,11 @@ logger = logging.getLogger(__name__)
 def init_database():
     """Initialize the database and create all necessary tables."""
     try:
-        # SSL configuration for database connection
-        db_config = DB_CONFIG.copy()
-        if 'sslmode' in db_config:
-            del db_config['sslmode']
-        connection = psycopg2.connect(**db_config)
+        connection = psycopg2.connect(**DB_CONFIG)
         connection.autocommit = True
-        
+
         cursor = connection.cursor()
-        logger.info(f"Connected to database {DB_CONFIG['database']}")
+        logger.info("Connected to database %s", connection.info.dbname)
         
         # Create all necessary tables
         create_tables(cursor)

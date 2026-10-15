@@ -15,7 +15,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from backend.config import DATABASE_URL
+from backend.config import DATABASE_URL, IS_PRODUCTION
 from backend.database import DatabaseConnection
 from backend.fly_facility_routes import fly_facility
 from backend.location_routes import locations
@@ -25,6 +25,16 @@ from backend.waste_management_routes import waste_management
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# APP_ENV=production: refuse to start with settings that would run the ERP
+# insecurely (missing secret key, plain-HTTP cookies, ...). The same checks
+# are listed by `python -m backend.preflight`.
+if IS_PRODUCTION:
+    from backend.preflight import fatal_settings
+
+    _fatal = fatal_settings()
+    if _fatal:
+        raise RuntimeError('Refusing to start in production:\n- ' + '\n- '.join(_fatal))
 
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -47,8 +57,12 @@ app.json_provider_class = CustomJSONProvider
 app.json = CustomJSONProvider(app)
 
             
-# Trust proxy headers (Replit terminates SSL at proxy level)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+# Trust X-Forwarded-Proto/Host from this many proxies in front of the app
+# (nginx, Replit, a load balancer terminate HTTPS); 0 when clients connect
+# directly, so they cannot pretend to be on HTTPS.
+_proxies = int(os.getenv('TRUSTED_PROXY_COUNT', '1') or 0)
+if _proxies:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxies, x_proto=_proxies, x_host=_proxies)
 
 # Cross-origin access is off unless CORS_ORIGINS lists trusted origins
 # (comma-separated). The browser UI is served from this app and needs none.

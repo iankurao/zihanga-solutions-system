@@ -1,0 +1,38 @@
+# Zehunger ERP web application (gunicorn behind nginx).
+# Install: see DEPLOYMENT.md. Paths assume /opt/zehunger/{app,venv}.
+[Unit]
+Description=Zehunger ERP web application
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=zehunger
+Group=zehunger
+WorkingDirectory=/opt/zehunger/app
+EnvironmentFile=/etc/zehunger/zehunger.env
+# Apply new database migrations before the new code serves requests. They are
+# idempotent, so a restart without an upgrade changes nothing.
+ExecStartPre=/opt/zehunger/venv/bin/python -m backend.init_db
+ExecStart=/opt/zehunger/venv/bin/gunicorn -c deploy/gunicorn.conf.py backend.app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=40
+
+# The app writes nothing to disk: logs go to the journal, data to PostgreSQL.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

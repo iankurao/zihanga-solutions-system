@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2 import pool, extras, OperationalError
-from backend.config import DB_CONFIG
+from backend.config import DB_CONFIG, DB_POOL_MAX
 import logging
 from contextlib import contextmanager
 
@@ -23,15 +23,7 @@ class DatabaseConnection:
     @classmethod
     def _initialize_pool(cls):
         try:
-            # SSL configuration for database connection
-            db_config = DB_CONFIG.copy()
-            if 'sslmode' in db_config:
-                del db_config['sslmode']
-            cls._pool = psycopg2.pool.ThreadedConnectionPool(
-                1,
-                20,
-                **db_config
-            )
+            cls._pool = psycopg2.pool.ThreadedConnectionPool(1, DB_POOL_MAX, **DB_CONFIG)
             logger.info("PostgreSQL connection pool created successfully")
         except Exception as e:
             logger.error(f"Error creating connection pool: {e}")

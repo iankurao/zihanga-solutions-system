@@ -26,6 +26,7 @@ import backend.domains.dashboard  # noqa: F401
 import backend.domains.farmer  # noqa: F401
 import backend.domains.legacy  # noqa: F401
 import backend.domains.tour  # noqa: F401
+import backend.domains.health  # noqa: F401
 import backend.domains.pages  # noqa: F401
 
 if __name__ == '__main__':

@@ -1,5 +1,10 @@
 import os
 
+# Deployment environment. APP_ENV=production makes the web app refuse to start
+# with unsafe settings (see backend/preflight.py); anything else is development.
+APP_ENV = os.getenv('APP_ENV', 'development').strip().lower()
+IS_PRODUCTION = APP_ENV == 'production'
+
 # PostgreSQL Configuration from environment variables
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 DB_HOST = os.getenv('PGHOST', 'localhost')
@@ -8,14 +13,23 @@ DB_PASSWORD = os.getenv('PGPASSWORD', '')
 DB_NAME = os.getenv('PGDATABASE', 'bsf_farm')
 DB_PORT = os.getenv('PGPORT', '5432')
 
-# Database configuration dict
-DB_CONFIG = {
-    'host': DB_HOST,
-    'user': DB_USER,
-    'password': DB_PASSWORD,
-    'database': DB_NAME,
-    'port': DB_PORT,
-}
+# Connection settings for psycopg2. DATABASE_URL wins when set, so the
+# records and the sign-in sessions (SQLAlchemy, also DATABASE_URL) always use
+# the same database, and URL options such as ?sslmode=require are honoured.
+# Without it the PG* variables are used, as before.
+if DATABASE_URL:
+    DB_CONFIG = {'dsn': DATABASE_URL}
+else:
+    DB_CONFIG = {
+        'host': DB_HOST,
+        'user': DB_USER,
+        'password': DB_PASSWORD,
+        'database': DB_NAME,
+        'port': DB_PORT,
+    }
+
+# Most connections one process keeps open to PostgreSQL (per gunicorn worker).
+DB_POOL_MAX = max(2, int(os.getenv('DB_POOL_MAX', '10') or 10))
 
 # API configuration
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://127.0.0.1:5000')

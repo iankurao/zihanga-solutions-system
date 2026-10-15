@@ -12,7 +12,6 @@ import sys
 import getpass
 from werkzeug.security import generate_password_hash
 from backend.database import DatabaseConnection
-from backend.config import DB_CONFIG
 from backend.passwords import password_problem
 
 def main():
