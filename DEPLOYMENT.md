@@ -1,6 +1,6 @@
 # Deploying the Zehunger ERP
 
-This guide puts the ERP on one Ubuntu 22.04/24.04 server: nginx (HTTPS) in
+This guide puts the ERP on one Ubuntu 24.04 LTS server: nginx (HTTPS) in
 front of gunicorn, PostgreSQL 14+, a background jobs worker and nightly
 backups. The ready-made files are in [`deploy/`](deploy) and
 [`.env.example`](.env.example).
@@ -17,7 +17,7 @@ plain HTTP nobody can stay signed in.
 ## 1. Before you start
 
 - [ ] A domain name pointing at the server (e.g. `erp.example.com`).
-- [ ] Ubuntu with `python3-venv`, `postgresql`, `postgresql-client`, `nginx`, `certbot`.
+- [ ] Ubuntu 24.04 LTS (its Python 3.12 suits the pinned packages; the app needs Python 3.11+, so Ubuntu 22.04 with Python 3.10 does not work without a newer Python).
 - [ ] Somewhere off the server to copy backups to (another machine, object storage).
 - [ ] An SMTP account if alerts should also go out by email (optional).
 

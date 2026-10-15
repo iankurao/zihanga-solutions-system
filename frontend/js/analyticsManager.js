@@ -34,6 +34,17 @@ const AnalyticsManager = (() => {
     feedback:               '/api/analytics/feedback'
   };
 
+  // Records hold text typed into forms: always insert it as text, never HTML.
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function cellText(value) {
+    return value === undefined || value === null || value === '' ? '—' : escapeHtml(value);
+  }
+
   async function fetchRecords(key) {
     const url = BACKEND_URLS[key];
     if (!url) return [];
@@ -845,7 +856,7 @@ const AnalyticsManager = (() => {
 
     const records = await fetchRecords(key);
 
-    const colHeaders = sub.columns.map(c => `<th>${c.label}</th>`).join('');
+    const colHeaders = sub.columns.map(c => `<th>${escapeHtml(c.label)}</th>`).join('');
     const analytics = sub.getAnalytics(records);
     const charts = sub.getCharts(records);
 
@@ -853,14 +864,14 @@ const AnalyticsManager = (() => {
       <div class="bsf-card" style="border-left: 4px solid ${a.color}">
         <div class="bsf-card-icon" style="color:${a.color}"><i class="fas ${a.icon}"></i></div>
         <div class="bsf-card-content">
-          <div class="bsf-card-value">${a.value}</div>
-          <div class="bsf-card-label">${a.label}</div>
+          <div class="bsf-card-value">${escapeHtml(a.value)}</div>
+          <div class="bsf-card-label">${escapeHtml(a.label)}</div>
         </div>
       </div>`).join('');
 
     const chartsHtml = charts.map(c => `
       <div class="bsf-chart-container">
-        <h4 class="bsf-chart-title">${c.title}</h4>
+        <h4 class="bsf-chart-title">${escapeHtml(c.title)}</h4>
         <canvas id="chart-${c.id}" height="200"></canvas>
       </div>`).join('');
 
@@ -868,12 +879,12 @@ const AnalyticsManager = (() => {
       ? `<tr><td colspan="${sub.columns.length}" class="bsf-empty">No records found in the database.</td></tr>`
       : records.slice(0, 50).map(r => `
           <tr>
-            ${sub.columns.map(c => `<td title="${r[c.field] !== undefined && r[c.field] !== null ? r[c.field] : ''}">${r[c.field] !== undefined && r[c.field] !== null && r[c.field] !== '' ? r[c.field] : '—'}</td>`).join('')}
+            ${sub.columns.map(c => `<td title="${escapeHtml(r[c.field])}">${cellText(r[c.field])}</td>`).join('')}
           </tr>`).join('');
 
     container.innerHTML = `
       <div class="bsf-panel-header">
-        <span class="bsf-panel-title"><i class="fas fa-chart-bar"></i> ${sub.label}</span>
+        <span class="bsf-panel-title"><i class="fas fa-chart-bar"></i> ${escapeHtml(sub.label)}</span>
         <span class="bsf-badge">${records.length} record${records.length !== 1 ? 's' : ''}</span>
       </div>
       ${analytics.length ? `<div class="bsf-summary-cards">${cardsHtml}</div>` : ''}

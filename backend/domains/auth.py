@@ -72,6 +72,9 @@ def _safe_next(target):
     """Return ``target`` only if it is a path on this site (no open redirect)."""
     if not target or not target.startswith('/') or target.startswith('//') or '\\' in target:
         return None
+    # Never send someone who just signed in straight back out.
+    if target.split('?', 1)[0].rstrip('/') == '/logout':
+        return None
     return target
 
 
@@ -123,10 +126,12 @@ def register():
     return render_template('register.html', form=form)
 
 @app.route('/logout')
-@login_required
 def logout():
+    # No sign-in required: with an expired session, "Sign out" must still end
+    # up signed out instead of asking to sign in (and then signing out).
     from flask import session
-    audit_event('auth.sign_out', 'user', current_user.id, entity_ref=current_user.username)
+    if current_user.is_authenticated:
+        audit_event('auth.sign_out', 'user', current_user.id, entity_ref=current_user.username)
     # Clear first: logout_user() leaves a note in the session that makes
     # Flask-Login delete the remember-me cookie on this response.
     session.clear()

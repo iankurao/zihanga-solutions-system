@@ -753,7 +753,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             } catch (error) {
                 console.error('Error fetching records:', error);
-                resultsContainer.innerHTML = `<p class="text-danger">Error: ${error.message}</p>`;
+                const problem = document.createElement('p');
+                problem.className = 'text-danger';
+                problem.textContent = 'Error: ' + error.message;
+                resultsContainer.replaceChildren(problem);
                 showNotification(error.message, 'error');
             }
         });

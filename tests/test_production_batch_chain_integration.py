@@ -2988,6 +2988,18 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertTrue(to_evil.headers["Location"].endswith("/dashboard"))
         self.assertTrue(to_backslash.headers["Location"].endswith("/dashboard"))
 
+    def test_sign_out_works_with_an_expired_session_and_never_follows_sign_in(self):
+        signed_out = self.client.get("/logout")
+        self.assertEqual(signed_out.status_code, 302)
+        self.assertNotIn("next=", signed_out.headers["Location"])
+        self.assertTrue(signed_out.headers["Location"].endswith("/login"))
+        user = self._create_db_user()
+        with self._as(user):
+            back = self.client.get("/login?next=/logout")
+            back_query = self.client.get("/login?next=/logout?x=1")
+        self.assertTrue(back.headers["Location"].endswith("/dashboard"))
+        self.assertTrue(back_query.headers["Location"].endswith("/dashboard"))
+
     # ---- QR labels and scanning ----------------------------------------------------
 
     def _chain_refs(self):

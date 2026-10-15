@@ -6,7 +6,7 @@ class LocationHierarchyMigrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.migration = Path("backend/migrations/farm_site_facility.sql").read_text()
-        cls.audit = Path("FARM_FACILITY_CURRENT_STATE.md").read_text()
+        cls.audit = (Path(__file__).resolve().parents[1] / "docs" / "history" / "FARM_FACILITY_CURRENT_STATE.md").read_text()
 
     def test_migration_defines_canonical_parent_chain(self):
         expected_tables = (

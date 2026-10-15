@@ -1,42 +1,113 @@
-# BSF Farm Management System
+# Zehunger ERP
 
-A Black Soldier Fly (BSF) farm management application built with Flask (Python) and PostgreSQL, developed by **Zehunger Solutions**.
+Farm management and traceability for black soldier fly (BSF) farming, built
+for **Zehunger Solutions**. It follows every kilogram from the organic waste
+that comes in, through larvae production, harvest, drying and quality control,
+to released product lots, stock and customer deliveries, and can trace any
+bag of product back to the waste it was grown on.
+
+Flask (Python 3.11+) and PostgreSQL, with plain HTML/CSS/JavaScript pages and
+no front-end build step.
 
 ---
 
-## Project Structure
+## What it does
+
+| Area | Pages | What people do there |
+|---|---|---|
+| Waste and substrate | Data entry (`/dashboard`), Farmer portal (`/farmer`) | Record waste collections as lots; prepare substrate from them |
+| Production | Production batches (`/production_batch.html`), Batch 360 (`/batch-360`) | Start batches in bio-pods, record feeding, monitoring, health and harvest; see one batch's whole life |
+| Drying and QC | Data entry, Product lots (`/product-lot`) | Dry harvests, record outputs and quality checks; QC officers approve or reject |
+| Stock | Product lots | Released lots enter stock through a ledger of receipts, transfers, wastage and dispatches |
+| Sales | Orders (`/orders`) | Customers, orders, reservations against approved stock, dispatch and confirmed delivery |
+| Traceability | Traceability (`/traceability`), QR labels (`/labels`) | Trace any record up to its waste or down to its customers; print and scan QR labels |
+| Oversight | Operations dashboard (`/operations`), Alerts (`/alerts`), Reports (`/analytics`) | Live figures, automatic alerts (overdue harvests, health issues, failed QC, low stock, late orders) with notifications, 12 reports with CSV/Excel/PDF |
+| Administration | Admin portal (`/zehunger`), Farm setup (`/setup`), Audit log (`/audit`) | Accounts and roles, organizations, farms, sites, facilities, stores and bio-pods, the append-only audit trail |
+
+Every record belongs to an organization, farm, site and facility, and people
+see and change only the places they have been given access to.
+
+### Roles
+
+| Role | Can |
+|---|---|
+| Super admin | Everything, including setup, accounts, legacy records and the audit log |
+| Manager | Production, QC decisions, stock (including write-offs), sales, alerts |
+| Production operator / farmer | Record waste, substrate, batches, events, harvest and drying |
+| QC officer | Record quality checks and approve or reject output |
+| Inventory officer | Stock transfers and dispatches (write-offs stay with managers) |
+| Sales officer | Customers, orders and deliveries |
+| Viewer | Look only |
+
+Permissions are enforced on the server for every write (`backend/roles.py`);
+the pages only hide what a role cannot use.
+
+---
+
+## Run it locally
+
+You need Python 3.11+ and PostgreSQL 13+.
+
+```bash
+python -m venv venv
+source venv/bin/activate                 # Windows: venv\Scripts\activate
+pip install -r backend/requirements.txt pytest
+
+createdb zehunger                         # an empty database
+export DATABASE_URL=postgresql://postgres:PASSWORD@localhost:5432/zehunger
+export SECRET_KEY=any-local-value          # production needs 32+ random characters
+
+python -m backend.init_db                  # create the schema (safe to repeat)
+python -m backend.create_super_admin       # first administrator
+python -m flask --app backend.app run --port 5000
+```
+
+Open http://localhost:5000 and sign in. Sign-in cookies are HTTPS-only;
+browsers accept them on `localhost` without HTTPS, but on any other address
+use HTTPS (or `SESSION_COOKIE_SECURE=0` for local testing only).
+
+Alerts and email are processed by a background command; run it alongside the
+app when you want them:
+
+```bash
+python -m backend.jobs --loop 300
+```
+
+To try the system with realistic records, load the demonstration data into a
+separate database (see [Demonstration Data](#demonstration-data)).
+
+### Tests
+
+```bash
+python -m pytest                           # needs DATABASE_URL pointing at a test database
+```
+
+Without a database only the database-free tests run. The suite covers the
+whole chain role by role, every API route and the deployment files; see
+[`tests/README.md`](tests/README.md).
+
+---
+
+## Project layout
 
 ```
-.
-├── backend/
-│   ├── __init__.py                  # Python package marker (required for module imports)
-│   ├── app.py                       # Main Flask application — all routes, blueprints, auth
-│   ├── config.py                    # Configuration (DB URL, secret key, email, API endpoints)
-│   ├── database.py                  # PostgreSQL connection pool (psycopg2 ThreadedConnectionPool)
-│   ├── init_db.py                   # Database schema initialisation & auto-migrations on startup
-│   ├── waste_management_routes.py   # Blueprint: /api/waste-* routes
-│   ├── fly_facility_routes.py       # Blueprint: /api/fly-facility/* routes
-│   ├── migrations/                  # Historical SQL migration scripts (audit trail)
-│   └── requirements.txt             # Python dependencies
-├── frontend/
-│   ├── css/
-│   │   ├── auth.css                 # Login & register page styles
-│   │   └── styles.css               # Main dashboard styles
-│   ├── images/
-│   │   ├── logo.png                 # Zehunger Solutions logo
-│   │   └── larvae.jpg               # Background image for auth pages
-│   ├── js/
-│   │   ├── scripts.js               # Core UI logic, form handlers, section navigation
-│   │   ├── dataManager.js           # localStorage CRUD for offline form records
-│   │   ├── notificationManager.js   # In-app toast notification system
-│   │   ├── analyticsManager.js      # Analytics panels & Chart.js charts
-│   │   └── exportManager.js         # Excel (SheetJS) and PDF (jsPDF) export
-│   ├── main.html                    # Landing page — Admin vs Farmer portal selection
-│   ├── index.html                   # Main dashboard (waste, hatchery, feeding, drying, facility)
-│   ├── analytics.html               # Analytics & reporting page
-│   ├── login.html                   # Login page
-│   └── register.html                # Registration page
-└── pyproject.toml                   # Python project & dependency manifest (uv)
+backend/
+  app.py              entry point (gunicorn backend.app:app)
+  core/               shared layers: web app and settings, security, accounts, audit, scope
+  domains/            one module per business area (waste, production, drying, quality,
+                      inventory, sales, traceability, alerts, reports, dashboard, labels,
+                      farmer, admin, audit, tour, health, legacy forms)
+  migrations/         SQL applied by init_db on every start (idempotent)
+  roles.py            roles and permissions
+  notifications.py    in-app and email notifications
+  jobs.py             background jobs (alerts, email, clean-up)
+  preflight.py        deployment readiness check
+  demo.py             demonstration dataset
+  routes_doc.py       writes docs/api-routes.md
+frontend/             pages, css/erp.css design system, js/ (one script per page)
+deploy/               gunicorn, systemd, nginx, backup and restore scripts
+docs/                 route reference, engineering rules, Phase One review, history
+tests/                pytest suite
 ```
 
 ---
@@ -65,79 +136,6 @@ primary keys; legacy fields such as `batch_no`, `batch_id`, `batch_code`, and
 `lot_code` remain unchanged. Create responses return both the internal `id` and
 the canonical `business_id`, while list and analytics responses include the
 business ID for display.
-
----
-
-## Local Setup
-
-### Prerequisites
-
-- Python 3.11+
-- PostgreSQL 13+
-
-### 1. Clone the Repository
-
-```bash
-git clone <your-repo-url>
-cd <repo-folder>
-```
-
-### 2. Install Dependencies
-
-Using `uv` (recommended):
-```bash
-pip install uv
-uv sync
-```
-
-Or using pip with a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate        # macOS/Linux
-.\venv\Scripts\activate         # Windows
-pip install -r backend/requirements.txt
-```
-
-### 3. Configure Environment Variables
-
-```bash
-export DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/bsf_farm
-export PGHOST=localhost
-export PGPORT=5432
-export PGUSER=postgres
-export PGPASSWORD=yourpassword
-export PGDATABASE=bsf_farm
-export SECRET_KEY=your-secret-key-here
-```
-
-### 4. Initialise the Database
-
-```bash
-python -m backend.init_db
-```
-
-### 5. Run the Application
-
-**Development:**
-```bash
-python -m flask --app backend.app run --host 0.0.0.0 --port 5000
-```
-
-**Production (Gunicorn):** see [DEPLOYMENT.md](DEPLOYMENT.md).
-```bash
-gunicorn -c deploy/gunicorn.conf.py backend.app:app
-```
-
-The app will be at: **http://127.0.0.1:5000**
-
----
-
-## First Login
-
-1. Navigate to `/` — the landing page (Admin vs Farmer portal selector).
-2. Go to `/register` to create your account.
-3. Log in at `/login`.
-4. You will be redirected to the main dashboard at `/dashboard`.
 
 ---
 
@@ -195,17 +193,12 @@ database `/tour` and the demo endpoints answer 404.
 
 ---
 
-## Environment Variables Reference
+## Settings
 
 | Variable              | Description                              | Default          |
 |-----------------------|------------------------------------------|------------------|
-| `DATABASE_URL`        | Full PostgreSQL connection URL           | Required         |
-| `PGHOST`              | Database host                            | `localhost`      |
-| `PGPORT`              | Database port                            | `5432`           |
-| `PGUSER`              | Database user                            | `postgres`       |
-| `PGPASSWORD`          | Database password                        | Required         |
-| `PGDATABASE`          | Database name                            | `bsf_farm`       |
-| `SECRET_KEY`          | Flask secret key (or `SESSION_SECRET`)   | Auto-generated   |
+| `DATABASE_URL`        | PostgreSQL connection URL; used for everything when set (add `?sslmode=require` for a remote server) | Required |
+| `SECRET_KEY`          | Signs sessions (or `SESSION_SECRET`); 32+ random characters in production | random per start (development only) |
 | `EMAIL_HOST`          | SMTP host for email notifications        | `smtp.gmail.com` |
 | `EMAIL_PORT`          | SMTP port                                | `587`            |
 | `EMAIL_HOST_USER`     | SMTP username                            | —                |
@@ -217,140 +210,21 @@ database `/tour` and the demo endpoints answer 404.
 | `DB_POOL_MAX`         | Database connections each process may hold | `10` |
 | `WEB_CONCURRENCY`, `GUNICORN_THREADS` | gunicorn workers and threads (`deploy/gunicorn.conf.py`) | `2`, `4` |
 | `DEMO_GUEST_ACCESS`   | `1` lets visitors explore a demo database as the read-only guest (ignored on real databases) | off |
+| `SESSION_COOKIE_SECURE` | `0` allows sign-in cookies over plain HTTP (local testing only; refused in production) | `1` |
+| `CORS_ORIGINS`        | Other `https://` sites allowed to call the API (none needed for the app itself) | none |
+
+Without `DATABASE_URL`, the `PG*` variables (`PGHOST`, `PGPORT`, `PGUSER`,
+`PGPASSWORD`, `PGDATABASE`) are used. A complete production template is in
+[`.env.example`](.env.example).
 
 ---
 
-## Page Routes
-
-| Route          | Description                                        | Auth Required |
-|----------------|----------------------------------------------------|---------------|
-| `/`            | Landing page — portal selector (main.html)         | No            |
-| `/login`       | Login form                                         | No            |
-| `/register`    | Registration form                                  | No            |
-| `/dashboard`   | Main farm dashboard                                | Yes           |
-| `/analytics`   | Analytics & reporting dashboard                    | Yes           |
-| `/logout`      | Logout and redirect to login                       | Yes           |
-
----
-
-## API Endpoints
-
-### Authentication
-| Method | Endpoint               | Description |
-|--------|------------------------|-------------|
-| POST   | `/api/auth/login`      | JSON login  |
-| POST   | `/api/auth/register`   | JSON register |
-
-### Farm, Site & Facility Locations
-The canonical location hierarchy is additive and follows
-`Organization → Farm → Site → Facility`. Existing records are not assigned a
-location automatically because legacy free-text values are ambiguous.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/locations/hierarchy` | List locations visible to the signed-in user |
-| POST | `/api/locations/organizations` | Create an organization (super admin) |
-| POST | `/api/locations/farms` | Create a farm (super admin) |
-| POST | `/api/locations/sites` | Create a site (super admin) |
-| POST | `/api/locations/facilities` | Create a facility (super admin) |
-| POST/DELETE | `/api/locations/access` | Grant or revoke a user's location access (super admin) |
-| GET | `/api/locations/access/check` | Check access to a facility |
-| POST | `/api/locations/record-links` | Link an existing operational record to a facility |
-
-### Waste Management (`waste_management_routes.py` blueprint)
-| Method | Endpoint                                      | Description                     |
-|--------|-----------------------------------------------|---------------------------------|
-| POST   | `/api/waste-sourcing`                         | Record waste sourcing           |
-| GET    | `/api/waste-sourcing`                         | Fetch waste sourcing records    |
-| POST   | `/api/storage-records`                        | Record storage                  |
-| POST   | `/api/processing-records`                     | Record processing               |
-| POST   | `/api/environmental-monitoring-waste`         | Waste environmental monitoring  |
-| POST   | `/api/environmental-monitoring-larvaefeeding` | Larvae environmental monitoring |
-| POST   | `/api/substrate-preparation`                  | Substrate preparation           |
-| POST   | `/api/larvae-feeding`                         | Larvae feeding schedule         |
-| POST   | `/api/health-intervention`                    | Health intervention             |
-| POST   | `/api/harvest-yield`                          | Harvest yield                   |
-| POST   | `/api/hatchery/batch-information`             | Hatchery batch info             |
-| POST   | `/api/hatchery/feeding-records`               | Hatchery feeding records        |
-| POST   | `/api/hatchery/environmental-monitoring`      | Hatchery environmental monitoring |
-| GET    | `/api/growth-monitoring`                      | Growth monitoring data          |
-| POST   | `/api/breeding`                               | Breeding records                |
-
-### Fly Facility (`fly_facility_routes.py` blueprint)
-| Method | Endpoint                              | Description              |
-|--------|---------------------------------------|--------------------------|
-| POST   | `/api/fly-facility/cage-monitoring`   | Cage monitoring          |
-| POST   | `/api/fly-facility/maintenance`       | Facility maintenance     |
-| POST   | `/api/fly-facility/pupae-transition`  | Pupae transition         |
-| POST   | `/api/fly-facility/egg-collection`    | Egg collection           |
-| POST   | `/api/fly-facility/bait-preparation`  | Bait preparation         |
-
----
-
-## Static File Routing
-
-Flask serves all frontend assets via a `/<path:filename>` catch-all route using `send_from_directory`. `app.static_folder` is set to `../frontend` (relative to `backend/app.py`).
-
-| URL path           | File served                   |
-|--------------------|-------------------------------|
-| `/css/styles.css`  | `frontend/css/styles.css`     |
-| `/css/auth.css`    | `frontend/css/auth.css`       |
-| `/js/scripts.js`   | `frontend/js/scripts.js`      |
-| `/images/logo.png` | `frontend/images/logo.png`    |
-
----
-
-## Features
-
-- **Landing Page** — Portal selector directing users to Admin or Farmer portal
-- **User Authentication** — Secure login/registration with hashed passwords, server-side sessions
-- **Waste Management** — Sourcing, storage, processing, and environmental monitoring
-- **Hatchery Management** — Batch tracking, feeding records, environmental monitoring
-- **Larval Feeding** — Feeding schedules, health interventions, harvest yields
-- **Drying Process** — Batch management and quality control
-- **Fly Facility** — Cage monitoring, maintenance, pupae transition, egg collection, bait preparation
-- **Analytics & Reporting** — Chart.js dashboards with Excel and PDF export
-- **Notification System** — In-app toast notifications for all form submissions
-
----
-
-## Database Schema
-
-All tables are created automatically by `backend/init_db.py` on first startup:
-
-| Table                                  | Module               |
-|----------------------------------------|----------------------|
-| `users`                                | Auth                 |
-| `flask_sessions`                       | Flask-Session        |
-| `waste_sourcing`                       | Waste Management     |
-| `storage_records`                      | Waste Management     |
-| `processing_records`                   | Waste Management     |
-| `environmental_monitoring_waste`       | Waste Management     |
-| `environmental_monitoring_larvaefeeding` | Larval Feeding     |
-| `substrate_preparation`                | Larval Feeding       |
-| `larvae_feeding`                       | Larval Feeding       |
-| `health_intervention`                  | Larval Feeding       |
-| `harvest_yield`                        | Larval Feeding       |
-| `hatchery_batches`                     | Hatchery             |
-| `hatchery_feeding_records`             | Hatchery             |
-| `hatchery_environmental_monitoring`    | Hatchery             |
-| `cage_monitoring`                      | Fly Facility         |
-| `facility_maintenance`                 | Fly Facility         |
-| `pupae_transition`                     | Fly Facility         |
-| `egg_collection`                       | Fly Facility         |
-| `bait_preparation`                     | Fly Facility         |
-| `drying_batches`                       | Drying Process       |
-| `drying_quality_control`               | Drying Process       |
-| `customers`, `sales`, `deliveries`     | Sales & CRM          |
-
----
-
-## Production Deployment
+## Production deployment
 
 See **[DEPLOYMENT.md](DEPLOYMENT.md)**: nginx with HTTPS, gunicorn and the
 background jobs worker under systemd, nightly verified backups with a restore
-drill, the upgrade and rollback procedure, and a post-deployment checklist.
-The ready-made files are in `deploy/` and `.env.example`.
+drill, upgrade and rollback, and a checklist for after the first deployment.
+Ready-made files are in `deploy/` and `.env.example`.
 
 Before every deployment, with the production settings loaded:
 
@@ -358,40 +232,42 @@ Before every deployment, with the production settings loaded:
 python -m backend.preflight
 ```
 
-It checks the settings (secret key, database URL, HTTPS-only cookies, ...),
-that the database is reachable with an up-to-date schema and audit triggers,
-that a super admin exists, that the jobs worker and email queue are healthy,
-and the database connection budget. With `APP_ENV=production` the app itself
-refuses to start when a setting check fails. `/healthz` and `/readyz` are
-available for uptime monitors and load balancers.
+It checks the settings, that the database is reachable with an up-to-date
+schema and audit triggers, that a super admin exists, that the jobs worker and
+email queue are healthy, and the database connection budget. With
+`APP_ENV=production` the app itself refuses to start with unsafe settings.
+`/healthz` and `/readyz` serve uptime monitors and load balancers.
+
+---
+
+## Documentation
+
+| Document | For |
+|---|---|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Installing, upgrading, backing up and restoring a server |
+| [docs/PHASE_ONE_REVIEW.md](docs/PHASE_ONE_REVIEW.md) | What Phase One delivered, how it was verified, known limitations and open decisions |
+| [docs/api-routes.md](docs/api-routes.md) | Every route with the permission it requires (generated) |
+| [docs/engineering-rules.md](docs/engineering-rules.md) | Invariants every change must keep (ledger stock, scope, migrations) |
+| [tests/README.md](tests/README.md) | What the test suite covers |
+| [docs/history/](docs/history) | Audits and designs written while Phase One was built |
+| [docs/mern-conversion-guide.md](docs/mern-conversion-guide.md) | An earlier guide for rewriting the app as MERN (not used) |
 
 ---
 
 ## Troubleshooting
 
-**Cannot connect to database:**
-- Verify `PGPASSWORD`, `PGHOST`, and `PGDATABASE` are set correctly.
-- Confirm PostgreSQL is running: `sudo systemctl status postgresql`
+**Cannot connect to the database:** check `DATABASE_URL`, that PostgreSQL is
+running, and run `python -m backend.preflight`.
 
-**Port 5000 already in use:**
-```bash
-lsof -i :5000   # find the PID
-kill -9 <PID>
-```
+**Signed in, but sent back to the sign-in page:** the site is reached over
+plain HTTP on an address other than `localhost`, so the browser drops the
+HTTPS-only cookie. Use HTTPS (or `SESSION_COOKIE_SECURE=0` for local testing).
 
-**502 Bad Gateway from Nginx:**
-- Check app is running: `sudo systemctl status zehunger-web`
-- Check logs: `sudo journalctl -u zehunger-web -n 50`
-- Ensure Gunicorn binds to `127.0.0.1:8000` (`deploy/gunicorn.conf.py`)
+**A user sees no records:** give them access to the organization, farm, site
+or facility in the Admin portal; a role alone does not show any location.
 
-**Module not found errors:**
-- Run all commands from the project root, not from inside `backend/`.
-- Ensure the virtual environment is activated.
+**Schema errors after an upgrade:** run `python -m backend.init_db` (the
+systemd service does this on every start).
 
-**Fly facility API endpoints returning 404:**
-- Ensure `fly_facility` blueprint is imported and registered in `backend/app.py`.
-- Both lines must be present:
-  ```python
-  from backend.fly_facility_routes import fly_facility
-  app.register_blueprint(fly_facility)
-  ```
+**502 Bad Gateway from nginx:** `sudo systemctl status zehunger-web` and
+`sudo journalctl -u zehunger-web -n 50`; gunicorn listens on `127.0.0.1:8000`.

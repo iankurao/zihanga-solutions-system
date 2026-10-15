@@ -334,6 +334,13 @@ class DeploymentFilesTest(unittest.TestCase):
         self.assertRegex(example, r"(?m)^SECRET_KEY=$")
         self.assertRegex(example, r"(?m)^EMAIL_HOST_PASSWORD=$")
 
+    def test_route_reference_matches_the_application(self):
+        from backend.routes_doc import render
+
+        committed = (ROOT / "docs" / "api-routes.md").read_text(encoding="utf-8")
+        self.assertEqual(committed, render(app),
+                         "docs/api-routes.md is out of date: run python -m backend.routes_doc > docs/api-routes.md")
+
     def test_production_requirements_match_the_project_pins(self):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
         pinned = {}

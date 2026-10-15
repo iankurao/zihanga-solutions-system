@@ -199,7 +199,8 @@
           successAlert = document.createElement('div');
           successAlert.id = 'registerSuccess';
           successAlert.className = 'alert alert-success';
-          successAlert.innerHTML = `<i class="fas fa-check-circle"></i><span>${message}</span>`;
+          successAlert.innerHTML = '<i class="fas fa-check-circle"></i><span></span>';
+          successAlert.querySelector('span').textContent = message;
           registerForm.parentNode.insertBefore(successAlert, registerForm);
         } else {
           successAlert.querySelector('span').textContent = message;
