@@ -26,6 +26,8 @@ from decimal import Decimal
 
 DEMO_MARKER = 'demo_database'
 DEMO_SEEDED = 'demo_dataset_v1'
+# The read-only viewer that DEMO_GUEST_ACCESS signs visitors in as.
+GUEST_EMAIL = 'investor.guest@demo.example.com'
 
 # Tables that hold real operational or commercial records; any row in a
 # database not marked as a demo means it is not safe to seed.

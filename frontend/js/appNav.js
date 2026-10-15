@@ -111,8 +111,9 @@
       out.setAttribute('aria-label', 'Sign out');
       out.appendChild(icon('fa-right-from-bracket'));
       if (profile.demo) {
-        var demo = el('span', 'erp-badge is-warning erp-demo-badge', 'Demo data');
-        demo.title = 'Demonstration records - not real farms, customers or orders';
+        var demo = el('a', 'erp-badge is-warning erp-demo-badge', 'Demo data');
+        demo.href = '/tour';
+        demo.title = 'Demonstration records - not real farms, customers or orders. Open the guided tour.';
         user.append(demo);
       }
       user.append(name, out);
@@ -129,11 +130,79 @@
     header.appendChild(inner);
   }
 
+  // ---- Guided tour (demo databases only, see /tour) ----------------------------
+  // The tour's chapters and position live in sessionStorage, so the bar
+  // follows the visitor across pages and ends with the browser tab.
+  var TOUR_KEY = 'erpTour';
+
+  var tour = {
+    read: function () {
+      try {
+        var saved = JSON.parse(window.sessionStorage.getItem(TOUR_KEY) || 'null');
+        return saved && saved.chapters && saved.chapters.length ? saved : null;
+      } catch (e) { return null; }
+    },
+    save: function (state) {
+      try { window.sessionStorage.setItem(TOUR_KEY, JSON.stringify(state)); } catch (e) { /* tour bar is optional */ }
+    },
+    clear: function () {
+      try { window.sessionStorage.removeItem(TOUR_KEY); } catch (e) { /* nothing stored */ }
+    },
+    go: function (chapters, index) {
+      var slim = chapters.map(function (c) { return { title: c.title, url: c.url, look_for: c.look_for }; });
+      tour.save({ chapters: slim, index: index });
+      window.location.href = chapters[index].url;
+    }
+  };
+  window.ErpTour = tour;
+
+  function renderTourBar(header, profile) {
+    var old = document.querySelector('.erp-tourbar');
+    if (old) old.remove();
+    var state = profile && profile.demo ? tour.read() : null;
+    if (!state || window.location.pathname === '/tour') return;
+    var index = Math.max(0, Math.min(state.index || 0, state.chapters.length - 1));
+    var chapter = state.chapters[index];
+    var bar = el('aside', 'erp-tourbar no-print');
+    bar.setAttribute('aria-label', 'Guided tour');
+    var text = el('div', 'erp-tourbar-text');
+    text.append(el('strong', null, 'Tour ' + (index + 1) + ' of ' + state.chapters.length + ' · ' + chapter.title));
+    if (chapter.look_for) text.append(el('span', null, 'Look for: ' + chapter.look_for));
+    var actions = el('div', 'erp-tourbar-actions');
+    function button(label, iconName, onClick, secondary) {
+      var b = el('button', 'erp-btn' + (secondary ? ' erp-btn--secondary' : ''));
+      b.type = 'button';
+      if (iconName) b.appendChild(icon(iconName));
+      b.append(el('span', null, label));
+      b.addEventListener('click', onClick);
+      return b;
+    }
+    if (index > 0) actions.append(button('Back', 'fa-arrow-left', function () { tour.go(state.chapters, index - 1); }, true));
+    actions.append(button('All chapters', null, function () { window.location.href = '/tour'; }, true));
+    if (index < state.chapters.length - 1) {
+      actions.append(button('Next', 'fa-arrow-right', function () { tour.go(state.chapters, index + 1); }));
+    } else {
+      actions.append(button('Finish', 'fa-flag-checkered', function () { tour.clear(); window.location.href = '/tour?done=1'; }));
+    }
+    var exit = el('button', 'erp-tourbar-close');
+    exit.type = 'button';
+    exit.setAttribute('aria-label', 'Leave the tour');
+    exit.title = 'Leave the tour';
+    exit.appendChild(icon('fa-xmark'));
+    exit.addEventListener('click', function () { tour.clear(); bar.remove(); });
+    actions.append(exit);
+    bar.append(text, actions);
+    header.after(bar);
+  }
+
   function start() {
     var header = document.querySelector('[data-erp-nav]');
     if (!header) return;
     render(header, null);
-    (window.currentUser || Promise.resolve(null)).then(function (profile) { render(header, profile); });
+    (window.currentUser || Promise.resolve(null)).then(function (profile) {
+      render(header, profile);
+      renderTourBar(header, profile);
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

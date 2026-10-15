@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var counts = data.counts;
     var text = counts.upstream + ' upstream and ' + counts.downstream + ' downstream records linked.';
     if (counts.restricted) {
-      text += ' ' + counts.restricted + ' belong to locations you cannot access and are shown without details.';
+      text += ' ' + counts.restricted + ' are outside your access and are shown without details.';
     }
     document.getElementById('traceCounts').textContent = text;
     document.getElementById('traceTruncated').hidden = !data.truncated;
@@ -113,7 +113,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (node.restricted) {
       card.disabled = true;
       card.append(el('strong', null, 'Restricted record'),
-        el('small', null, 'Another location — no access'));
+        el('small', null, node.restricted_reason === 'sales'
+          ? 'Sales record — needs sales access' : 'Another location — no access'));
       return card;
     }
 

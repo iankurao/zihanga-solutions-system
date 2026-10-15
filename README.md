@@ -182,6 +182,28 @@ Safeguards:
 - Account passwords are random on each seed and are written only to the
   `--accounts-file` (or printed). Keep that file out of version control.
 
+### Investor demo mode
+
+On a demo database, `/tour` is a guided tour for visitors: eight short
+chapters (dashboard, one batch's life, tracing a sold product back to its
+waste, the QC gate, stock, alerts, QR labels, reports), each opening the real
+page at a real demo record. A tour bar with Back / Next follows the visitor
+across pages. The sign-in page links to the tour, and the **Demo data** badge
+opens it.
+
+To let visitors in without an account, start the demo server with:
+
+```bash
+DEMO_GUEST_ACCESS=1
+```
+
+"Explore as a guest" then signs visitors in as the read-only *Investor
+Guest* viewer: they can look at everything that role may see (no customer or
+order details) and cannot change anything. Guest sign-ins are audited. The
+switch is off by default, works only on a demo database, and refuses the
+guest account if it has been given any role other than viewer. On a real
+database `/tour` and the demo endpoints answer 404.
+
 ---
 
 ## Environment Variables Reference
@@ -200,6 +222,7 @@ Safeguards:
 | `EMAIL_HOST_USER`     | SMTP username                            | —                |
 | `EMAIL_HOST_PASSWORD` | SMTP password / app password             | —                |
 | `ADMIN_EMAIL`         | Admin notification email                 | —                |
+| `DEMO_GUEST_ACCESS`   | `1` lets visitors explore a demo database as the read-only guest (ignored on real databases) | off |
 
 ---
 

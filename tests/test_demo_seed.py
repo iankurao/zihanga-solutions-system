@@ -3,6 +3,7 @@
 Each test runs the real command in a subprocess against its own throwaway
 database, so the shared test database is never marked as a demo.
 """
+import json
 import os
 import subprocess
 import sys
@@ -21,6 +22,25 @@ except ImportError:  # pragma: no cover
     psycopg2 = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+# Signs in as the demo guest and reports the tour's links and what the trace
+# of the tour's sold lot hides from the guest.
+GUEST_TOUR_SCRIPT = """
+import json
+from backend.app import app
+
+client = app.test_client()
+https = {'base_url': 'https://localhost'}
+assert client.post('/api/demo/guest', json={}, **https).status_code == 200
+tour = client.get('/api/demo/tour', **https).get_json()['data']
+chapters = {c['key']: c['url'] for c in tour['chapters']}
+lot = chapters['trace'].split('ref=')[1].split('&')[0]
+trace = client.get('/api/traceability?type=product_lot&ref=' + lot, **https).get_json()['data']
+nodes = [n for stage in trace['stages'] for n in stage['nodes']]
+hidden = sorted({n.get('restricted_reason') for n in nodes if n.get('restricted')})
+print(json.dumps({'chapters': chapters, 'hidden': hidden}))
+"""
 
 
 def _server_dsn(database):
@@ -49,8 +69,8 @@ class DemoSeedTest(unittest.TestCase):
             cursor.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.close()
 
-    def run_python(self, database, *args):
-        env = dict(os.environ, DATABASE_URL=_server_dsn(database), PGDATABASE=database)
+    def run_python(self, database, *args, **extra_env):
+        env = dict(os.environ, DATABASE_URL=_server_dsn(database), PGDATABASE=database, **extra_env)
         return subprocess.run([sys.executable, *args], cwd=ROOT, env=env, capture_output=True,
                               text=True, timeout=600)
 
@@ -116,6 +136,19 @@ class DemoSeedTest(unittest.TestCase):
         self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr[-2000:])
         self.assertEqual(self.query(database, "SELECT count(*) AS n FROM production_batches")[0]["n"], 11)
         self.assertEqual(self.query(database, "SELECT count(*) AS n FROM organizations")[0]["n"], 1)
+
+        # The investor tour opens real records, and the guest sees the sale
+        # only as a link it lacks sales access for.
+        tour = self.run_python(database, "-c", GUEST_TOUR_SCRIPT, DEMO_GUEST_ACCESS="1")
+        self.assertEqual(tour.returncode, 0, tour.stderr[-2000:])
+        result = json.loads(tour.stdout.strip().splitlines()[-1])
+        chapters = result["chapters"]
+        self.assertRegex(chapters["batch"], r"^/batch-360\?ref=BSF-")
+        self.assertRegex(chapters["trace"], r"^/traceability\?ref=LOT-.*&type=product_lot$")
+        self.assertRegex(chapters["quality"], r"^/traceability\?ref=DRY-.*&type=drying_batch$")
+        self.assertRegex(chapters["stock"], r"^/product-lot\?ref=LOT-")
+        self.assertNotIn("orders", chapters)
+        self.assertEqual(result["hidden"], ["sales"])
 
         # No email leaves a demo database, even with a mail channel configured.
         sent = self.run_python(database, "-c", (

@@ -3104,7 +3104,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
     def test_every_write_route_declares_a_permission(self):
         # Writes a signed-in user may make on their own account only.
         self_service = {
-            "login", "register", "api_login", "api_register",
+            "login", "register", "api_login", "api_register", "demo_guest_sign_in",
             "mark_notification_read", "mark_all_notifications_read",
             "set_notification_preferences", "refresh_alerts",
         }

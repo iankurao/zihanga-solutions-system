@@ -16,6 +16,7 @@ from backend.core.scope import (
     _farm_visibility_clause,
     _scope_visibility_clause,
 )
+from backend.core.security import _can
 from backend.domains.inventory import INVENTORY_LEDGER_CTE, PRODUCT_LOT_RELEASABLE_SQL
 
 
@@ -364,11 +365,13 @@ def _trace_nodes(cursor, keys, root):
             else:
                 allowed = _trace_can_access(cursor, row['farm_id'], row['site_id'], row['facility_id'])
             if not allowed:
-                # Show that a link exists without disclosing another
-                # location's record.
+                # Show that a link exists without disclosing the record. The
+                # reason is the user's own role or access, never the record.
                 node = {
                     'key': key, 'type': kind, 'type_label': TRACE_LABELS[kind],
                     'restricted': True, 'is_root': False,
+                    'restricted_reason': ('sales' if kind in TRACE_COMMERCIAL and not _can('sales.read')
+                                          else 'location'),
                 }
             else:
                 node['restricted'] = False

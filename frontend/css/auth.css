@@ -481,3 +481,22 @@ h2 {
         font-size: 0.98rem;
     }
 } 
+/* Demonstration server: link to the guided tour (login.html). */
+.demo-entry {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--erp-line, #dfe7e2);
+  text-align: center;
+}
+
+.demo-entry p {
+  margin: 0 0 0.75rem;
+  color: var(--erp-muted, #5b6d64);
+  font-size: 0.9rem;
+}
+
+.demo-entry .btn {
+  display: inline-flex;
+  justify-content: center;
+  text-decoration: none;
+}

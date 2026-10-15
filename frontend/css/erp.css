@@ -1013,8 +1013,142 @@
   }
 }
 
-/* Demonstration database marker in the app bar (python -m backend.demo). */
+/* Demonstration database marker in the app bar (python -m backend.demo).
+   It links to the guided tour, so it overrides the app-bar icon-link sizing. */
 .erp-demo-badge {
   flex: none;
   white-space: nowrap;
+}
+
+.erp-user a.erp-demo-badge {
+  width: auto;
+  height: auto;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  color: var(--erp-warning-ink) !important;
+  text-decoration: none;
+}
+
+.erp-user a.erp-demo-badge:hover {
+  background: var(--erp-surface);
+}
+
+/* ---- Guided tour (frontend/tour.html, tour bar from js/appNav.js) ------------ */
+
+.erp-tourbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--erp-space-3);
+  padding: var(--erp-space-3) max(var(--erp-space-4), calc((100% - var(--erp-content)) / 2));
+  color: var(--erp-info-ink);
+  background: var(--erp-info-soft);
+  border-bottom: 1px solid var(--erp-line);
+}
+
+.erp-tourbar-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.erp-tourbar-text span {
+  color: var(--erp-ink);
+  font-size: var(--erp-text-sm);
+}
+
+.erp-tourbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--erp-space-2);
+}
+
+.erp-tourbar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--erp-touch);
+  height: var(--erp-touch);
+  border: 0;
+  border-radius: var(--erp-radius-sm);
+  color: var(--erp-info-ink);
+  background: transparent;
+  cursor: pointer;
+}
+
+.erp-tourbar-close:hover {
+  background: var(--erp-surface);
+}
+
+.tour-intro p {
+  max-width: 70ch;
+}
+
+.tour-intro p:first-child {
+  margin-top: 0;
+}
+
+.tour-chapters {
+  display: grid;
+  gap: var(--erp-space-3);
+  margin: var(--erp-space-5) 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: chapter;
+}
+
+.tour-chapter {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--erp-space-4);
+  padding: var(--erp-space-4) var(--erp-space-5);
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+  box-shadow: var(--erp-shadow);
+  counter-increment: chapter;
+}
+
+.tour-chapter::before {
+  content: counter(chapter);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--erp-on-brand);
+  background: var(--erp-brand);
+  font-weight: 700;
+}
+
+.tour-chapter h2 {
+  margin: 0 0 var(--erp-space-1);
+  font-size: var(--erp-text-lg);
+}
+
+.tour-chapter p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.tour-chapter .tour-look {
+  margin-top: var(--erp-space-2);
+  color: var(--erp-muted);
+  font-size: var(--erp-text-sm);
+}
+
+@media (max-width: 600px) {
+  .tour-chapter {
+    grid-template-columns: auto 1fr;
+    padding: var(--erp-space-4);
+  }
+
+  .tour-chapter .erp-btn {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
 }

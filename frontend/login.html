@@ -48,6 +48,11 @@
       <div class="links">
         Don't have an account? <a href="register.html">Register here</a>
       </div>
+      <!-- Shown only on a demonstration server (see /api/demo/info). -->
+      <div class="demo-entry hidden" id="demoEntry">
+        <p><i class="fas fa-circle-info" aria-hidden="true"></i> This is a demonstration system with invented data.</p>
+        <a href="/tour" class="btn">Take the guided tour</a>
+      </div>
     </div>
     <!-- Expanded Company Statement, free-floating -->
     <section class="company-statement">
@@ -75,6 +80,13 @@
         this.classList.toggle('fa-eye-slash');
       });
       
+      fetch('/api/demo/info', { credentials: 'include' })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (payload) {
+          if (payload && payload.data && payload.data.demo) document.getElementById('demoEntry').classList.remove('hidden');
+        })
+        .catch(function () { /* not a demo, or offline: keep the plain sign-in */ });
+
       // Show loading state on form submit
       loginForm.addEventListener('submit', function() {
         loginBtn.classList.add('loading');
