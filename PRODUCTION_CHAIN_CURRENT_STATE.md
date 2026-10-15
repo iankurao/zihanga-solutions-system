@@ -222,9 +222,3 @@ The detail API follows recorded drying inputs upstream through Harvests,
 Production Batches, Substrate Batches, and Waste Lots. Legacy Product Lots and
 text-linked drying/QC rows are not backfilled. Inventory movements, sales
 integration, and stock-balance accounting remain out of scope.
-
-## Artifact crash check
-
-The `artifacts/mockup-sandbox: Component Preview Server` workflow log ends with `sh: 1: vite: not found`. `artifacts/mockup-sandbox/package.json` declares Vite as a development dependency and its workflow runs `npm run dev`, but `artifacts/mockup-sandbox/node_modules` and `node_modules/.bin/vite` are absent. The immediate cause is that the sandbox dependencies are not installed in that artifact directory. The log does not show a Vite configuration or source-code crash; the server never reached Vite startup. No dependency installation or restart was attempted.
-
-The separate `BSF Farm Server` workflow also fails before serving: `python -m backend.init_db` cannot import `psycopg2`, and `run.sh` then cannot find `.pythonlibs/bin/gunicorn`. This is a distinct environment/dependency setup issue from the mockup artifact.

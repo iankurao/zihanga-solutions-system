@@ -1,7 +1,6 @@
 ﻿# Python
 .venv/
 venv/
-.pythonlibs/
 __pycache__/
 *.pyc
 *.py[cod]

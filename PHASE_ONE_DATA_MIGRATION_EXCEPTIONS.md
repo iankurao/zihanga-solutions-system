@@ -5,7 +5,8 @@
 
 ## Scope and database availability
 
-The reachable Replit development database (`heliumdb`, PostgreSQL 16.10) had
+The reachable development database of the original hosted workspace
+(`heliumdb`, PostgreSQL 16.10) had
 no application tables, sequences, or views. The workspace has no production
 database provisioned. Therefore:
 

@@ -1,6 +1,6 @@
 """Scheduled background work: evaluate alerts and send queued email.
 
-Run once (e.g. from cron or a Replit Scheduled Deployment every 5 minutes):
+Run once (e.g. from cron every 5 minutes):
 
     python -m backend.jobs
 

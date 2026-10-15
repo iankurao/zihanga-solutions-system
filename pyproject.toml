@@ -1,6 +1,6 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
+name = "zehunger-erp"
+version = "1.0.0"
 description = "eFarm Zehunger — Black Soldier Fly (BSF) Farm Management System by Zehunger Solutions"
 requires-python = ">=3.11"
 dependencies = [

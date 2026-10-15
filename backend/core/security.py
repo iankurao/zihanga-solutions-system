@@ -4,7 +4,7 @@ from flask import abort, jsonify, request
 from flask_login import current_user
 
 from backend.roles import PERMISSION_LABELS, ROLE_PERMISSIONS
-from backend.core.web import _cors_origins, _embedded_preview, app, logger
+from backend.core.web import _cors_origins, app, logger
 from backend.core.audit import audit_event
 
 
@@ -132,8 +132,7 @@ def _security_headers(response):
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
     response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
     response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
-    if not _embedded_preview:
-        response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
     if request.is_secure:
         response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
     if request.path.startswith('/api/'):

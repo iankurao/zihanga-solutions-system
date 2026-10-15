@@ -36,23 +36,12 @@ A Black Soldier Fly (BSF) farm management application built with Flask (Python) 
 │   ├── analytics.html               # Analytics & reporting page
 │   ├── login.html                   # Login page
 │   └── register.html                # Registration page
-├── run.sh                           # Startup script: kill stale processes → init DB → start Gunicorn
 └── pyproject.toml                   # Python project & dependency manifest (uv)
 ```
 
 ---
 
-## Quick Start (Replit)
-
-The **BSF Farm Server** workflow handles everything automatically:
-
-1. Kills any lingering Gunicorn processes that may hold port 5000
-2. Initialises the database schema via `python -m backend.init_db`
-3. Starts Gunicorn on port 5000
-
-Just press **Run**. The app will be available in the Replit preview pane.
-
-### Phase One business identifiers
+## Phase One business identifiers
 
 Phase One production records keep their existing integer primary keys for
 relationships and backward compatibility, but expose stable business IDs to
@@ -134,9 +123,9 @@ python -m backend.init_db
 python -m flask --app backend.app run --host 0.0.0.0 --port 5000
 ```
 
-**Production (Gunicorn):**
+**Production (Gunicorn):** see [DEPLOYMENT.md](DEPLOYMENT.md).
 ```bash
-bash run.sh
+gunicorn -c deploy/gunicorn.conf.py backend.app:app
 ```
 
 The app will be at: **http://127.0.0.1:5000**
@@ -384,19 +373,16 @@ available for uptime monitors and load balancers.
 - Verify `PGPASSWORD`, `PGHOST`, and `PGDATABASE` are set correctly.
 - Confirm PostgreSQL is running: `sudo systemctl status postgresql`
 
-**Port 5000 already in use (Replit):**
-- `run.sh` automatically kills stale Gunicorn processes before starting. If it still fails, restart the workflow from the Replit UI.
-
-**Port 5000 already in use (local):**
+**Port 5000 already in use:**
 ```bash
 lsof -i :5000   # find the PID
 kill -9 <PID>
 ```
 
 **502 Bad Gateway from Nginx:**
-- Check app is running: `sudo systemctl status bsf-farm`
-- Check logs: `sudo journalctl -u bsf-farm -n 50`
-- Ensure Gunicorn binds to `127.0.0.1:5000`
+- Check app is running: `sudo systemctl status zehunger-web`
+- Check logs: `sudo journalctl -u zehunger-web -n 50`
+- Ensure Gunicorn binds to `127.0.0.1:8000` (`deploy/gunicorn.conf.py`)
 
 **Module not found errors:**
 - Run all commands from the project root, not from inside `backend/`.
@@ -409,14 +395,3 @@ kill -9 <PID>
   from backend.fly_facility_routes import fly_facility
   app.register_blueprint(fly_facility)
   ```
-
-**Deployment (publish) failing with `ModuleNotFoundError` for `main`:**
-- The project has no `main.py` at the root. The correct Gunicorn entry point is `backend.app:app`, not `main:app`.
-- The deployment run command must be: `gunicorn --bind 0.0.0.0:5000 backend.app:app`
-
-**Packages not found after cloning to a new Replit:**
-- Install all dependencies from the project root:
-  ```bash
-  uv add flask flask-sqlalchemy flask-login flask-session flask-wtf flask-cors psycopg2-binary gunicorn email-validator werkzeug wtforms requests sqlalchemy
-  ```
-  All pinned versions are in `pyproject.toml`.

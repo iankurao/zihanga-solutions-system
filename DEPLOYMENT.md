@@ -58,8 +58,8 @@ sudo nano /etc/zehunger/zehunger.env
 
 Fill in at least `SECRET_KEY` (`python3 -c "import secrets; print(secrets.token_urlsafe(48))"`),
 `DATABASE_URL` and `PUBLIC_BASE_URL`. With `APP_ENV=production` the app
-refuses to start with a missing or weak secret key, plain-HTTP cookies, the
-Replit preview setting or non-HTTPS cross-origin access.
+refuses to start with a missing or weak secret key, plain-HTTP cookies or
+non-HTTPS cross-origin access.
 
 Commands run by hand use [`deploy/zrun`](deploy/zrun): it runs them as the
 `zehunger` user with these settings, from the app folder.

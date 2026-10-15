@@ -1,1 +1,0 @@
-import{j as e}from"./index-CQ_grA7E.js";function r(){return e.jsx("iframe",{title:"Admin dashboard using the farmer dashboard palette",src:"/__mockup/snapshots/admin/index.html",style:{display:"block",width:"100%",height:"100vh",border:0,pointerEvents:"none"}})}export{r as AdminTheme};

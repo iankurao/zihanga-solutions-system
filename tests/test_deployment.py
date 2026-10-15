@@ -48,7 +48,6 @@ class SettingsChecksTest(unittest.TestCase):
                            {"SECRET_KEY": "please-change-me-before-going-live-0123456789"}],
             "database_url": [{"DATABASE_URL": ""}, {"DATABASE_URL": "mysql://u@h/db"}],
             "cookies": [{"SESSION_COOKIE_SECURE": "0"}, {"SESSION_COOKIE_SECURE": "false"}],
-            "embedded_preview": [{"EMBEDDED_PREVIEW": "1"}],
             "cors": [{"CORS_ORIGINS": "*"}, {"CORS_ORIGINS": "https://ok.example, http://plain.example"}],
             "proxy": [{"TRUSTED_PROXY_COUNT": "one"}],
         }
@@ -91,11 +90,11 @@ def run_python(code, **env):
 class ProductionStartupTest(unittest.TestCase):
     def test_production_refuses_to_start_with_unsafe_settings(self):
         result = run_python("import backend.app", APP_ENV="production", SECRET_KEY="", SESSION_SECRET="",
-                            EMBEDDED_PREVIEW="1")
+                            SESSION_COOKIE_SECURE="0")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Refusing to start in production", result.stderr)
         self.assertIn("SECRET_KEY is not set", result.stderr)
-        self.assertIn("EMBEDDED_PREVIEW", result.stderr)
+        self.assertIn("SESSION_COOKIE_SECURE is off", result.stderr)
 
     def test_development_still_starts_with_the_same_settings(self):
         code = ("from unittest import mock\n"
@@ -103,7 +102,7 @@ class ProductionStartupTest(unittest.TestCase):
                 "with mock.patch.object(DatabaseConnection, '_initialize_pool', new=classmethod(lambda cls: None)):\n"
                 "    import backend.app\n"
                 "print('started')\n")
-        result = run_python(code, APP_ENV="", SECRET_KEY="", SESSION_SECRET="", EMBEDDED_PREVIEW="1")
+        result = run_python(code, APP_ENV="", SECRET_KEY="", SESSION_SECRET="", SESSION_COOKIE_SECURE="0")
         self.assertEqual(result.returncode, 0, result.stderr[-1500:])
         self.assertIn("started", result.stdout)
 
@@ -115,6 +114,23 @@ class ProductionStartupTest(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "['dsn'] 10")
         result = run_python(code, DATABASE_URL="", PGDATABASE="other", DB_POOL_MAX="6")
         self.assertEqual(result.stdout.strip(), "['database', 'host', 'password', 'port', 'user'] 6")
+
+    def test_no_hosting_platform_setting_can_weaken_cookies_or_framing(self):
+        # EMBEDDED_PREVIEW (an old hosting-preview iframe switch) is gone: an
+        # old environment file that still sets it changes nothing.
+        code = """
+from unittest import mock
+from backend.database import DatabaseConnection
+with mock.patch.object(DatabaseConnection, '_initialize_pool', new=classmethod(lambda cls: None)):
+    from backend.app import app
+c = app.config
+r = app.test_client().get('/healthz', base_url='https://localhost')
+print(c['SESSION_COOKIE_SAMESITE'], c['REMEMBER_COOKIE_SAMESITE'], c['SESSION_COOKIE_SECURE'],
+      r.headers.get('X-Frame-Options'))
+"""
+        result = run_python(code, EMBEDDED_PREVIEW="1")
+        self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+        self.assertEqual(result.stdout.strip().splitlines()[-1], "Lax Lax True SAMEORIGIN")
 
     @requires_database
     def test_the_pool_connects_to_the_database_url_even_if_pg_variables_differ(self):
@@ -312,7 +328,7 @@ class DeploymentFilesTest(unittest.TestCase):
         example = (ROOT / ".env.example").read_text()
         for name in ("APP_ENV", "SECRET_KEY", "DATABASE_URL", "PUBLIC_BASE_URL", "TRUSTED_PROXY_COUNT",
                      "WEB_CONCURRENCY", "DB_POOL_MAX", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD",
-                     "CORS_ORIGINS", "EMBEDDED_PREVIEW", "SESSION_COOKIE_SECURE", "DEMO_GUEST_ACCESS"):
+                     "CORS_ORIGINS", "SESSION_COOKIE_SECURE", "DEMO_GUEST_ACCESS"):
             self.assertRegex(example, rf"(?m)^#? ?{name}=", name)
         # The template carries no secret values.
         self.assertRegex(example, r"(?m)^SECRET_KEY=$")

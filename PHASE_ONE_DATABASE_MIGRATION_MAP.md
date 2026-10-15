@@ -6,17 +6,17 @@
 
 ## Executive result
 
-The only database available for inspection in this workspace was the
-Replit-managed **development** PostgreSQL database (`heliumdb`, PostgreSQL
+The only database available for inspection in the original hosted
+workspace was its **development** PostgreSQL database (`heliumdb`, PostgreSQL
 16.10). Its only non-system schema was `public`, which contained **0 tables,
 0 sequences, and 0 views**. There are no application rows in that database to
 profile.
 
 The workspace has **no production database** provisioned. Therefore this
 inspection does not establish the schema or data used by any separately
-deployed or external application. `replit.md` describes the app as using
-Replit-provided PostgreSQL environment variables, but the deployed endpoint
-could not be independently confirmed. Do not treat repository SQL or the empty
+deployed or external application. The project notes at the time described the
+app as using the hosting platform's PostgreSQL environment variables, but the
+deployed endpoint could not be independently confirmed. Do not treat repository SQL or the empty
 development database as proof of a production schema.
 
 No startup workflow, initializer, or migration was run. No tables, sequences,
@@ -213,7 +213,7 @@ step.
 2. **False “no data” conclusion:** zero rows are established only for the
    absence of tables in the inspected development database. Production record
    counts remain unknown.
-3. **Startup side effects:** `run.sh` invokes `backend.init_db`, which creates
+3. **Startup side effects:** the startup script invoked `backend.init_db`, which creates
    tables and executes migrations. It was not run because this audit must not
    create schema or alter data.
 4. **Incompatible roots:** repository location SQL has organization/site

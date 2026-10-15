@@ -20,7 +20,7 @@
 12. [Analytics: Migrating Chart.js](#12-analytics-migrating-chartjs)
 13. [Export: Excel & PDF in React](#13-export-excel--pdf-in-react)
 14. [Environment Variables](#14-environment-variables)
-15. [Replit-Specific Setup](#15-replit-specific-setup)
+15. [Hosting Setup](#15-hosting-setup)
 16. [Conversion Checklist](#16-conversion-checklist)
 
 ---
@@ -1547,7 +1547,7 @@ function exportToPDF(columns, rows, filename = 'export') {
 
 ## 14. Environment Variables
 
-### Server `.env` (replaces Replit PostgreSQL env vars)
+### Server `.env` (replaces the PostgreSQL env vars)
 
 ```env
 PORT=5000
@@ -1563,60 +1563,38 @@ CLIENT_URL=http://localhost:5173
 VITE_API_BASE_URL=/api
 ```
 
-> In Replit, set `MONGODB_URI` and `JWT_SECRET` as Replit Secrets. Use MongoDB Atlas (free tier) for the cloud database since Replit does not provide native MongoDB hosting.
+> Keep `MONGODB_URI` and `JWT_SECRET` in the host's secret store or a root-only environment file, never in the repository.
 
 ---
 
-## 15. Replit-Specific Setup
+## 15. Hosting Setup
 
-### MongoDB on Replit
+### MongoDB
 
-Replit does not include a managed MongoDB service. You have two options:
+Use a managed MongoDB service (for example MongoDB Atlas) or a MongoDB server
+you run yourself:
 
-**Option A — MongoDB Atlas (recommended)**
-1. Create a free cluster at [cloud.mongodb.com](https://cloud.mongodb.com)
-2. Get the connection string: `mongodb+srv://user:pass@cluster.mongodb.net/bsf_farm`
-3. Add it as a Replit Secret named `MONGODB_URI`
+1. Create the database (e.g. `bsf_farm`) and a user for the application.
+2. Put the connection string in `MONGODB_URI`:
+   `mongodb+srv://user:pass@cluster.mongodb.net/bsf_farm`
+3. Allow connections only from the application server's address.
 
-**Option B — Replit integrations**
-Check whether a MongoDB connector is available in Replit Integrations (the integrations panel in your Repl). If listed, use it to auto-provision credentials.
+### Development
 
----
-
-### Replit `.replit` workflow configuration
-
-```toml
-modules = ["web", "nodejs-20"]
-
-[nix]
-channel = "stable-25_05"
-
-[[workflows.workflow]]
-name = "MERN Dev"
-author = "agent"
-mode = "parallel"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run install:all && npm run dev"
-waitForPort = 5173
-
-[[ports]]
-localPort = 5173
-externalPort = 80
+```bash
+npm run install:all && npm run dev     # Vite on 5173, Express on 5000
 ```
 
-### Deployment (publish) command
+### Deployment command
 
 ```bash
 # Build React, then serve everything from Express on port 5000
 npm run build --prefix client && node server/index.js
 ```
 
-In production, Express serves the React build from `client/dist/`. Set `NODE_ENV=production` and point the deployment run command to `node server/index.js`.
+In production, Express serves the React build from `client/dist/`. Set
+`NODE_ENV=production`, run `node server/index.js` under a process manager
+(systemd, pm2) behind an HTTPS reverse proxy.
 
 ---
 
@@ -1637,8 +1615,8 @@ Use this to track progress when working with the converting model:
 - [ ] Create `server/index.js` entry point
 - [ ] Create `server/app.js` with middleware
 - [ ] Create `server/middleware/auth.js` JWT middleware
-- [ ] Add `MONGODB_URI` and `JWT_SECRET` to Replit Secrets
-- [ ] Set up MongoDB Atlas cluster and whitelist `0.0.0.0/0` for Replit IPs
+- [ ] Put `MONGODB_URI` and `JWT_SECRET` in the server's environment (never in the repository)
+- [ ] Create the MongoDB database and allow only the application server's address
 
 ### Phase 3 — Mongoose models (one per PostgreSQL table)
 - [ ] `User.js`
@@ -1722,7 +1700,7 @@ Use this to track progress when working with the converting model:
 
 6. **The `records` endpoint**: The `GET /api/records?date=&section=` endpoint queries multiple tables by date. In MongoDB, replicate this with parallel `Model.find({ <dateField>: { $gte: startOfDay, $lt: endOfDay } })` calls across all relevant models and combine the results.
 
-7. **CORS**: In Replit, the React dev server and Express run on different ports. The Vite proxy handles this in development. In production, Express serves the React build directly and CORS is not needed.
+7. **CORS**: In development, the React dev server and Express run on different ports. The Vite proxy handles this in development. In production, Express serves the React build directly and CORS is not needed.
 
 8. **CSS and styling**: Copy `frontend/css/styles.css` and `frontend/css/auth.css` directly into `client/src/` and import them. All class names (`btn`, `form-control`, `alert`, Bootstrap classes) remain identical since Bootstrap is still being used.
 

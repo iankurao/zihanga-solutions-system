@@ -58,7 +58,7 @@ app.json = CustomJSONProvider(app)
 
             
 # Trust X-Forwarded-Proto/Host from this many proxies in front of the app
-# (nginx, Replit, a load balancer terminate HTTPS); 0 when clients connect
+# (nginx or a load balancer terminates HTTPS); 0 when clients connect
 # directly, so they cannot pretend to be on HTTPS.
 _proxies = int(os.getenv('TRUSTED_PROXY_COUNT', '1') or 0)
 if _proxies:
@@ -98,14 +98,10 @@ app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'bsf_'
 
 # Session cookies: never readable by JavaScript, HTTPS-only, and SameSite=Lax
-# so other sites cannot ride on a signed-in session. EMBEDDED_PREVIEW=1 relaxes
-# SameSite to None for the Replit workspace preview iframe; the Origin check
-# in _reject_cross_site_writes still blocks cross-site writes then.
-_embedded_preview = os.getenv('EMBEDDED_PREVIEW', '').lower() in ('1', 'true', 'yes')
-_cookie_samesite = 'None' if _embedded_preview else 'Lax'
+# so other sites cannot ride on a signed-in session.
 _cookie_secure = os.getenv('SESSION_COOKIE_SECURE', '1').lower() not in ('0', 'false', 'no')
-app.config['SESSION_COOKIE_SAMESITE'] = _cookie_samesite
-app.config['SESSION_COOKIE_SECURE'] = _cookie_secure or _embedded_preview
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = _cookie_secure
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
@@ -113,8 +109,8 @@ app.config['SESSION_COOKIE_NAME'] = 'bsf_session'
 
 # Flask-Login remember cookie settings
 app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=7)
-app.config['REMEMBER_COOKIE_SAMESITE'] = _cookie_samesite
-app.config['REMEMBER_COOKIE_SECURE'] = _cookie_secure or _embedded_preview
+app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'
+app.config['REMEMBER_COOKIE_SECURE'] = _cookie_secure
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True
 app.config['REMEMBER_COOKIE_NAME'] = 'bsf_remember'
 # Form tokens are replaced by the Origin/Referer check for every write
@@ -132,7 +128,9 @@ sess = Session(app) if DATABASE_URL else None
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
-login_manager.session_protection = 'basic'  # Use 'basic' for Replit iframe compatibility
+# 'basic' marks a session non-fresh when the client's address or browser
+# changes; 'strong' would sign out phones that move between networks.
+login_manager.session_protection = 'basic'
 
 # Initialize database connection
 db = DatabaseConnection()

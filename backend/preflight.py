@@ -84,10 +84,6 @@ def settings_checks(env=None):
     else:
         add(PASS, 'cookies', 'Sign-in cookies are HTTPS-only.')
 
-    if _on(env, 'EMBEDDED_PREVIEW'):
-        add(FAIL, 'embedded_preview', 'EMBEDDED_PREVIEW is on: it allows the app inside other sites\' frames '
-                                      '(Replit workspace only). Remove it in production.')
-
     origins = [o.strip() for o in (env.get('CORS_ORIGINS') or '').split(',') if o.strip()]
     bad = [o for o in origins if o == '*' or not o.startswith('https://')]
     if bad:
