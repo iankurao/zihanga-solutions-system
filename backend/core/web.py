@@ -5,7 +5,7 @@ import logging
 import os
 import secrets
 
-from datetime import timedelta
+from datetime import time as dt_time, timedelta
 from flask import Flask, jsonify, request, send_from_directory
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
@@ -30,6 +30,11 @@ class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
         if isinstance(obj, decimal.Decimal):
             return float(obj)
+        # Raw rows from TIME and INTERVAL columns (legacy tables) are not JSON types.
+        if isinstance(obj, dt_time):
+            return obj.isoformat()
+        if isinstance(obj, timedelta):
+            return str(obj)
         return super().default(obj)
 
 # Named and rooted as backend/app.py (the entry point), so the frontend paths,
@@ -56,7 +61,11 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.getenv('SESSION_SECRET'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Session timeout
 
 # SQLAlchemy configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+# Without DATABASE_URL the app still imports (tooling, tests that skip the
+# database); the placeholder never connects, so any query fails loudly.
+if not DATABASE_URL:
+    logger.warning('DATABASE_URL is not set; database features will not work')
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or 'postgresql://'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
@@ -101,7 +110,9 @@ if not (os.getenv('SECRET_KEY') or os.getenv('SESSION_SECRET')):
     logger.warning('SECRET_KEY is not set; sessions will not survive a restart')
 
 # Initialize Flask-Session with SQLAlchemy instance
-sess = Session(app)
+# Server-side sessions live in PostgreSQL; with no database configured (tooling,
+# database-less test runs) Flask's signed-cookie sessions are used instead.
+sess = Session(app) if DATABASE_URL else None
 
 # Initialize Flask-Login
 login_manager = LoginManager()

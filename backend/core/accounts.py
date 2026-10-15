@@ -82,9 +82,9 @@ def create_user(username, full_name, email, password, role='viewer'):
     query = """
         INSERT INTO users (username, full_name, email, password_hash, role, created_at)
         VALUES (%s, %s, %s, %s, %s, NOW())
+        RETURNING user_id
     """
-    user_id = db.execute_query(query, (username, full_name, email, password_hash, role))
-    return user_id
+    return db.execute_returning(query, (username, full_name, email, password_hash, role))['user_id']
 
 
 _EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')

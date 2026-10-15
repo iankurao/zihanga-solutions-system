@@ -407,7 +407,8 @@ def create_drying_output():
         # Fetch the wet weight from drying_input to calculate ratio and yield
         input_query = "SELECT SUM(wet_placed_for_drying_kg) as total_wet FROM drying_input WHERE batch_id = %s"
         input_result = db.fetch_one(input_query, (data['batch_id'],))
-        total_wet_weight = input_result['total_wet'] if input_result and input_result['total_wet'] else 0
+        # NUMERIC columns come back as Decimal; mixing with float would raise TypeError.
+        total_wet_weight = float(input_result['total_wet']) if input_result and input_result['total_wet'] else 0.0
 
         dried_produced = float(data['dried_produced'])
         actual_ratio = f"{total_wet_weight}:{dried_produced}" if dried_produced > 0 else "N/A"
@@ -1270,8 +1271,8 @@ def add_sale():
         return jsonify({'success': False, 'error': 'customer_id is required'}), 400
     if not data.get('date') or not data.get('amount'):
         return jsonify({'success': False, 'error': 'date and amount are required'}), 400
-    query = "INSERT INTO sales (date, customer_id, product, quantity, amount) VALUES (%s, %s, %s, %s, %s)"
-    sale_id = db.execute_query(query, (data['date'], customer_id, data.get('product'), data.get('quantity'), data['amount']))
+    query = "INSERT INTO sales (date, customer_id, product, quantity, amount) VALUES (%s, %s, %s, %s, %s) RETURNING id"
+    sale_id = db.execute_returning(query, (data['date'], customer_id, data.get('product'), data.get('quantity'), data['amount']))['id']
     # Send email notification for sale
     customer = db.fetch_one("SELECT name, email, address FROM customers WHERE id=%s", (customer_id,))
     print("[DEBUG] Customer fetched from DB (sale):", customer)
@@ -1324,8 +1325,8 @@ def add_delivery():
         return jsonify({'success': False, 'error': 'customer_id is required'}), 400
     if not data.get('date') or not data.get('status'):
         return jsonify({'success': False, 'error': 'date and status are required'}), 400
-    query = "INSERT INTO deliveries (date, customer_id, product, quantity, status, notes) VALUES (%s, %s, %s, %s, %s, %s)"
-    delivery_id = db.execute_query(query, (data['date'], customer_id, data.get('product'), data.get('quantity'), data['status'], data.get('notes')))
+    query = "INSERT INTO deliveries (date, customer_id, product, quantity, status, notes) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id"
+    delivery_id = db.execute_returning(query, (data['date'], customer_id, data.get('product'), data.get('quantity'), data['status'], data.get('notes')))['id']
     # Send email for any status
     customer = db.fetch_one("SELECT name, email, address FROM customers WHERE id=%s", (customer_id,))
     print("[DEBUG] Customer fetched from DB (delivery):", customer)
@@ -1395,8 +1396,8 @@ def add_feedback():
     if missing:
         return jsonify({'success': False, 'error': f'Missing required fields: {", ".join(missing)}'}), 400
     try:
-        query = "INSERT INTO customer_feedback (date, customer_id, feedback, rating) VALUES (%s, %s, %s, %s)"
-        feedback_id = db.execute_query(query, (data['date'], data['customer_id'], data['feedback'], data['rating']))
+        query = "INSERT INTO customer_feedback (date, customer_id, feedback, rating) VALUES (%s, %s, %s, %s) RETURNING id"
+        feedback_id = db.execute_returning(query, (data['date'], data['customer_id'], data['feedback'], data['rating']))['id']
         return jsonify({'success': True, 'id': feedback_id})
     except Exception as e:
         logger.error(f"Error saving feedback: {e}")

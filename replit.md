@@ -512,3 +512,11 @@ gunicorn \
     classes, token contrast, and a badge tone for every status in the schema.
   - Template pages are cached by the server; restart it after editing HTML
     rendered with `render_template`.
+- **Test suite (Step 26)** (`tests/`, guide in `tests/README.md`): run
+  `python -m pytest` against a dedicated PostgreSQL test database (without one,
+  only the database-free tests run). `test_phase_one_end_to_end.py` follows one
+  batch from waste lot to confirmed delivery with real sign-in, each step done
+  by its role (operator, QC officer, inventory officer, sales officer, manager),
+  then checks traceability, mass balance, stock, Batch 360, reports, dashboard,
+  notifications, the audit trail and isolation. All 205 API endpoints are
+  exercised (`ROUTE_COVERAGE=file python -m pytest` lists any that are not).

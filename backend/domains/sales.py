@@ -702,24 +702,53 @@ def get_customers():
     customers = db.fetch_all("SELECT * FROM customers")
     return jsonify(customers)
 
+def _customer_fields(data):
+    """Validated customer fields; raises ValueError with a message for the user."""
+    name = _optional_text(data, 'name', 100)
+    if not name:
+        raise ValueError('Customer name is required')
+    return (
+        name,
+        _optional_text(data, 'contact', 50),
+        _optional_text(data, 'email', 100),
+        _optional_text(data, 'address', 2000),
+    )
+
+
 @app.route('/api/customers', methods=['POST'])
 @login_required
 @requires('sales.write')
 def add_customer():
-    data = request.get_json()
-    # Check for existing customer with same name and email
-    existing = db.fetch_one("SELECT id FROM customers WHERE name=%s AND email=%s", (data['name'], data.get('email')))
+    try:
+        name, contact, email, address = _customer_fields(request.get_json(silent=True) or {})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc), 'message': str(exc)}), 400
+    existing = db.fetch_one(
+        "SELECT id FROM customers WHERE LOWER(name) = LOWER(%s) AND email IS NOT DISTINCT FROM %s",
+        (name, email),
+    )
     if existing:
-        return jsonify({'success': False, 'error': 'Customer with this name and email already exists.'}), 409
-    query = "INSERT INTO customers (name, contact, email, address) VALUES (%s, %s, %s, %s)"
-    customer_id = db.execute_query(query, (data['name'], data.get('contact'), data.get('email'), data.get('address')))
-    return jsonify({'success': True, 'id': customer_id})
+        message = 'Customer with this name and email already exists.'
+        return jsonify({'success': False, 'error': message, 'message': message}), 409
+    row = db.execute_returning(
+        "INSERT INTO customers (name, contact, email, address) VALUES (%s, %s, %s, %s) RETURNING id",
+        (name, contact, email, address),
+    )
+    return jsonify({'success': True, 'id': row['id']}), 201
 
 @app.route('/api/customers/<int:customer_id>', methods=['PUT'])
 @login_required
 @requires('sales.write')
 def edit_customer(customer_id):
-    data = request.get_json()
-    query = "UPDATE customers SET name=%s, contact=%s, email=%s, address=%s WHERE id=%s"
-    db.execute_query(query, (data['name'], data.get('contact'), data.get('email'), data.get('address'), customer_id))
+    try:
+        name, contact, email, address = _customer_fields(request.get_json(silent=True) or {})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc), 'message': str(exc)}), 400
+    row = db.execute_returning(
+        "UPDATE customers SET name=%s, contact=%s, email=%s, address=%s, updated_at=CURRENT_TIMESTAMP "
+        "WHERE id=%s RETURNING id",
+        (name, contact, email, address, customer_id),
+    )
+    if not row:
+        return jsonify({'success': False, 'error': 'Customer not found', 'message': 'Customer not found'}), 404
     return jsonify({'success': True})

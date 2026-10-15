@@ -413,7 +413,8 @@ def _traceability(cursor, ref, record_type=None):
     root_nodes = _trace_nodes(cursor, [root], root)
     root_node = root_nodes[f'{root[0]}:{root[1]}']
     if root_node['restricted']:
-        raise ProductionEventPermissionError('You are not authorized for this record')
+        # Same answer as a missing record, so IDs at other locations cannot be probed.
+        raise RecordNotFoundError(f'No traceable record matches {ref}')
 
     upstream_keys, upstream_edges, up_truncated = _trace_walk(cursor, root, 'up')
     downstream_keys, downstream_edges, down_truncated = _trace_walk(cursor, root, 'down')

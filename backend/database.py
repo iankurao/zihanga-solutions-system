@@ -110,6 +110,8 @@ class DatabaseConnection:
             self.return_connection(conn, close=close_conn)
 
     def execute_query(self, query, params=None):
+        """Run a write and commit. The return value is not a row id (psycopg2
+        has no lastrowid); use execute_returning with RETURNING for ids."""
         conn = None
         cursor = None
         close_conn = False

@@ -1808,7 +1808,9 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         with self._as(member):
             allowed = self._trace(batch["business_id"])
             member_search = self.client.get(f"/api/traceability/search?q={prefix}")
-        self.assertEqual(denied.status_code, 403, denied.get_json())
+        # A record the user cannot see answers exactly like one that does not exist.
+        self.assertEqual(denied.status_code, 404, denied.get_json())
+        self.assertEqual(denied.get_json()["message"], f"No traceable record matches {batch['business_id']}")
         self.assertEqual(allowed.status_code, 200, allowed.get_json())
         self.assertNotIn(batch["business_id"], [r["ref"] for r in outsider_search.get_json()["data"]])
         self.assertIn(batch["business_id"], [r["ref"] for r in member_search.get_json()["data"]])

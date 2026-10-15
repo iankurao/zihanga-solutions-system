@@ -35,8 +35,9 @@ class LoginForm(FlaskForm):
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[
         DataRequired(), 
-        Length(min=3, max=20, message='Username must be between 3 and 20 characters'),
-        Regexp(r'^[a-zA-Z0-9_]+$', message='Username can only contain letters, numbers, and underscores')
+        # Same limits as the JSON API (_account_field_problem).
+        Length(min=3, max=50, message='Username must be between 3 and 50 characters'),
+        Regexp(r'^[A-Za-z0-9_.-]+$', message='Username can only contain letters, numbers, dots, dashes and underscores')
     ])
     full_name = StringField('Full Name', validators=[
         DataRequired(),
@@ -46,12 +47,9 @@ class RegistrationForm(FlaskForm):
         DataRequired(), 
         Email(message='Please enter a valid email address')
     ])
-    password = PasswordField('Password', validators=[
-        DataRequired(),
-        Length(min=8, message='Password must be at least 8 characters long'),
-        Regexp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]', 
-               message='Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character')
-    ])
+    # The password rule itself is password_problem() (backend/passwords.py), checked
+    # in the view, so the form, the JSON API and admin resets all agree.
+    password = PasswordField('Password', validators=[DataRequired()])
     confirm_password = PasswordField('Confirm Password', validators=[
         DataRequired(), 
         EqualTo('password', message='Passwords must match')

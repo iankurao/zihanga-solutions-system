@@ -3,7 +3,7 @@
 import decimal
 import re
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as dt_time, timezone
 from decimal import Decimal, InvalidOperation
 from flask import jsonify
 from flask_login import current_user
@@ -126,7 +126,7 @@ def _jsonable(value):
         return {key: _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(item) for item in value]
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, (datetime, date, dt_time)):
         return value.isoformat()
     return value
 
