@@ -9,10 +9,11 @@ following [DEPLOYMENT.md](../DEPLOYMENT.md). The full chain from waste to
 customer delivery works end to end, is enforced on the server, traceable both
 ways and audited, and the automated test suite passes in full.
 
-It is **not yet proven with real farm data or real infrastructure**: no real
-records have been migrated, backups have not been dumped and restored with
-real PostgreSQL tools, and email has not been sent through a real mail
-server. Those three checks belong in the first week of the pilot (see
+It is **not yet proven with real farm data or a real server**: no real
+records have been migrated and email has not been sent through a real mail
+server. The backup and restore drill has passed with real PostgreSQL 16.6
+tools on the development machine and should be repeated once on the server.
+Those checks belong in the first week of the pilot (see
 [Before go-live](#before-go-live)).
 
 ## What Phase One delivers
@@ -92,10 +93,15 @@ server. Those three checks belong in the first week of the pilot (see
 
 ## Before go-live
 
-1. **Restore drill with real tools:** take a backup with `deploy/backup.sh`
+1. **Restore drill on the server:** take a backup with `deploy/backup.sh`
    and restore it with `deploy/restore-check.sh` (DEPLOYMENT.md section 10).
-   On the development machine these scripts were only exercised with
-   stand-in PostgreSQL tools.
+   On the development machine (15 October 2026, PostgreSQL 16.6 tools) the
+   demo database was backed up (356 KB, verified), restored into an empty
+   database with identical record counts including 223 audit entries, the
+   restored audit log still refused deletion, and the readiness check passed
+   on the copy. The drill found and fixed a bug: `restore-check.sh` passed
+   options to `psql` after the database address, which some `psql` builds
+   ignore, so it would never restore.
 2. **Email:** configure SMTP, trigger a test alert and confirm it arrives.
 3. **Real data:** decide what of the old records to bring over. The original
    hosted development database was empty when inspected

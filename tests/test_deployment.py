@@ -222,7 +222,10 @@ if [ "$1" = "--list" ]; then
 fi
 echo restored >> "$STUB_LOG"
 """
+# Like psql builds without argument reordering (e.g. Windows): options after
+# the database are ignored, so the scripts must name it with --dbname=.
 STUB_PSQL = """#!/usr/bin/env bash
+case "$1" in --dbname=*) ;; *) echo "psql: options after the database were ignored" >&2; exit 2;; esac
 echo "${STUB_TABLE_COUNT:-0}"
 """
 
@@ -296,6 +299,16 @@ class BackupScriptTest(unittest.TestCase):
         self.assertFalse(self.log.exists(), "nothing may be restored into a database with tables")
         missing = self.bash("restore-check.sh", RESTORE_DATABASE_URL="postgresql://u@localhost/x")
         self.assertNotEqual(missing.returncode, 0)
+
+    def test_restore_drill_restores_into_an_empty_database(self):
+        dump = self.backups / "zehunger-20260101T000000Z.dump"
+        dump.write_text("PGDMP")
+        # The readiness check at the end runs against the fake address and
+        # fails; what matters here is that the restore itself happened.
+        result = self.bash("restore-check.sh", self.posix(dump),
+                           RESTORE_DATABASE_URL="postgresql://u@localhost/scratch", STUB_TABLE_COUNT="0")
+        self.assertIn("Restored", result.stdout, result.stderr)
+        self.assertEqual(self.log.read_text().split(), ["restored"])
 
 
 # ---- deployment files -------------------------------------------------------------------
