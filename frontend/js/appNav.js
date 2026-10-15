@@ -110,6 +110,11 @@
       out.title = 'Sign out';
       out.setAttribute('aria-label', 'Sign out');
       out.appendChild(icon('fa-right-from-bracket'));
+      if (profile.demo) {
+        var demo = el('span', 'erp-badge is-warning erp-demo-badge', 'Demo data');
+        demo.title = 'Demonstration records - not real farms, customers or orders';
+        user.append(demo);
+      }
       user.append(name, out);
     } else {
       var signIn = el('a');

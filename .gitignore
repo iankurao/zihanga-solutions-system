@@ -17,6 +17,7 @@ __pycache__/
 
 # Credentials (never commit)
 admin_credentials.txt
+demo-accounts.txt
 
 # Node
 node_modules/

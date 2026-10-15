@@ -6,6 +6,7 @@ from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, StringField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, Length, Regexp, ValidationError
 
+from backend.demo import is_demo_database
 from backend.passwords import password_problem
 from backend.roles import ROLE_LABELS
 from backend.core.web import app, db, logger
@@ -211,4 +212,6 @@ def current_user_profile():
         'role_label': ROLE_LABELS.get(current_user.role, current_user.role),
         'permissions': _permissions_for(current_user.role),
         'home': _landing_page(current_user.role),
+        # Demonstration database (python -m backend.demo); pages show a badge.
+        'demo': is_demo_database(db),
     }})

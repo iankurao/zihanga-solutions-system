@@ -198,7 +198,13 @@ def _safe_error(exc):
 def deliver_pending(db, *, limit=50, channel=None):
     """Send due emails one at a time; safe to run from several workers."""
     channel = channel or channel_factory()
-    stats = {'sent': 0, 'retry': 0, 'failed': 0, 'skipped_unconfigured': False}
+    stats = {'sent': 0, 'retry': 0, 'failed': 0, 'skipped_unconfigured': False, 'skipped_demo': False}
+    from backend.demo import is_demo_database
+
+    if is_demo_database(db):
+        # Demo records name invented customers and staff: never email from them.
+        stats['skipped_demo'] = True
+        return stats
     if not channel.configured:
         stats['skipped_unconfigured'] = True
         return stats

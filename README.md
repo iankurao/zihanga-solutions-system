@@ -152,6 +152,38 @@ The app will be at: **http://127.0.0.1:5000**
 
 ---
 
+## Demonstration Data
+
+A separate database can be filled with about three months of linked,
+invented records for demonstrations and training:
+
+```bash
+createdb zehunger_demo
+DATABASE_URL=postgresql://user@host:5432/zehunger_demo PGDATABASE=zehunger_demo   python -m backend.demo seed --accounts-file demo-accounts.txt
+python -m backend.demo status            # is this a demo database?
+python -m backend.demo seed --reset      # rebuild it from scratch (demo databases only)
+```
+
+What it contains: the Zehunger Demo Co-operative with two farms (Kericho and
+Nakuru), bio-pods, stores and seven staff accounts, one per role. Batches are
+in every state: delivered to a customer, on the road, failed QC, in stock and
+reserved, awaiting a QC decision, harvest overdue, an open health issue, ready
+to harvest and just planned. Customers, orders, deliveries, stock movements,
+alerts and the audit trail all come from the same records.
+
+Safeguards:
+
+- Seeding refuses any database that already holds farms, customers or orders
+  and is not marked as a demo. `--reset` works only on a demo database.
+- Everything is entered through the application's API by the matching role,
+  so the demo follows every business rule.
+- A demo database shows a **Demo data** badge in the app bar and never sends
+  email. All addresses end in `example.com`.
+- Account passwords are random on each seed and are written only to the
+  `--accounts-file` (or printed). Keep that file out of version control.
+
+---
+
 ## Environment Variables Reference
 
 | Variable              | Description                              | Default          |

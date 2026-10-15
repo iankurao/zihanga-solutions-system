@@ -38,6 +38,7 @@ The file lists every endpoint with its call count and any never called
 | `test_architecture.py` | Module boundaries: core never imports domains, no import cycles, thin entry point |
 | `test_frontend_design.py` | Every page uses the design system and shared navigation; no retired palettes or classes; WCAG token contrast; a badge tone for every schema status |
 | `test_frontend_logic.py` | `js/ui.js` status tones and labels, run in Node (skipped without Node) |
+| `test_demo_seed.py` | `python -m backend.demo`: the demo dataset covers every chain state with ledger-derived stock, history and audit; refuses databases with real records; rebuilds only with `--reset`; no email from a demo; the `demo` flag on `/api/me` |
 
 `support.py` is the shared harness for scenario tests: it builds locations and
 accounts through the API as a super admin and signs each user in with their own

@@ -1012,3 +1012,9 @@
     background: #fff;
   }
 }
+
+/* Demonstration database marker in the app bar (python -m backend.demo). */
+.erp-demo-badge {
+  flex: none;
+  white-space: nowrap;
+}
