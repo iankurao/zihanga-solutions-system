@@ -17,7 +17,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend.config import DATABASE_URL, IS_PRODUCTION
 from backend.database import DatabaseConnection
-from backend.fly_facility_routes import fly_facility
 from backend.location_routes import locations
 from backend.waste_management_routes import waste_management
 
@@ -137,7 +136,6 @@ db = DatabaseConnection()
 
 # Register blueprints
 app.register_blueprint(waste_management)
-app.register_blueprint(fly_facility)
 app.register_blueprint(locations)
 
 # Route to serve static files

@@ -69,7 +69,7 @@
       <div data-permission="production.write" hidden class="nav-link" onclick="showSection('feeding', this)">
         <i class="fas fa-utensils"></i><span>Larval Feeding</span>
       </div>
-      <div data-permission="production.write" hidden class="nav-link" onclick="showSection('drying', this)">
+      <div data-permission="production.write|quality.decide" hidden class="nav-link" onclick="showSection('drying', this)">
         <i class="fas fa-wind"></i><span>Drying Process</span>
       </div>
       <div data-permission="production.write" hidden class="nav-link" onclick="showSection('hatchery', this)">
@@ -85,21 +85,9 @@
         <i class="fas fa-chart-pie"></i><span>Reports</span>
       </div>
     </div>
-    <div data-permission="sales.read" hidden class="sidebar-section-header clickable" onclick="toggleSidebarSection('sales-links')">Sales</div>
-    <div id="sales-links" class="sidebar-links-group" style="display:none;">
-      <div data-permission="sales.read" hidden class="nav-link" onclick="showSection('customers', this)">
-        <i class="fas fa-users"></i><span>Customers</span>
-      </div>
-      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('sales', this)">
-        <i class="fas fa-cash-register"></i><span>Sales</span>
-      </div>
-      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('deliveries', this)">
-        <i class="fas fa-truck"></i><span>Deliveries</span>
-      </div>
-      <div data-permission="legacy.read" hidden class="nav-link" onclick="showSection('feedback', this)">
-        <i class="fas fa-comment-dots"></i><span>Customer Feedback</span>
-      </div>
-    </div>
+    <a data-permission="sales.read" hidden class="nav-link" href="/orders" style="text-decoration:none;display:flex;align-items:center;gap:10px;color:inherit;">
+      <i class="fas fa-truck"></i><span>Customer orders</span>
+    </a>
     <a class="nav-link analytics-nav-link" href="/analytics" style="text-decoration:none;display:flex;align-items:center;gap:10px;color:inherit;">
       <i class="fas fa-chart-line"></i><span>Analytics Dashboard</span>
     </a>
@@ -268,6 +256,23 @@
         <div class="subsection">
           <h2><i class="fas fa-box"></i> Storage Records</h2>
           <form id="storageRecordsForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="storageRecordsFarmId" class="required">Farm</label>
+                <select id="storageRecordsFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="storageRecordsSiteId" class="required">Site</label>
+                <select id="storageRecordsSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="storageRecordsFacilityId" class="required">Facility</label>
+                <select id="storageRecordsFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="storageDate" class="required">Storage Date</label>
@@ -332,6 +337,23 @@
         <div class="subsection">
           <h2><i class="fas fa-cogs"></i> Processing Records</h2>
           <form id="processingRecordsForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="processingRecordsFarmId" class="required">Farm</label>
+                <select id="processingRecordsFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="processingRecordsSiteId" class="required">Site</label>
+                <select id="processingRecordsSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="processingRecordsFacilityId" class="required">Facility</label>
+                <select id="processingRecordsFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="processingDate" class="required">Processing Date</label>
@@ -386,6 +408,23 @@
         <div class="subsection">
           <h2><i class="fas fa-temperature-low"></i> Waste Monitoring</h2>
           <form id="wasteEnvironmentalMonitoringForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="wasteEnvironmentalMonitoringFarmId" class="required">Farm</label>
+                <select id="wasteEnvironmentalMonitoringFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="wasteEnvironmentalMonitoringSiteId" class="required">Site</label>
+                <select id="wasteEnvironmentalMonitoringSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="wasteEnvironmentalMonitoringFacilityId" class="required">Facility</label>
+                <select id="wasteEnvironmentalMonitoringFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="monitoring_date" class="required">Monitoring Date *</label>
@@ -882,163 +921,169 @@
           </div>
         </div>
 
-        <!-- Drying Batch Information Subsection -->
+        <!-- Drying works on recorded harvests: every batch belongs to a farm,
+             site and facility, and every step below is checked by the server
+             (backend/domains/drying.py). -->
         <div class="subsection">
-          <h2><i class="fas fa-clipboard-list"></i> Batch Information</h2>
+          <h2><i class="fas fa-clipboard-list"></i> Start a Drying Batch</h2>
+          <p class="help-text">Choose where the larvae are dried and the harvest going in. Harvests can be dried
+            at any facility on the same farm.</p>
           <form id="dryingBatchForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="dryingBatchFarmId" class="required">Farm</label>
+                <select id="dryingBatchFarmId" name="farmId" class="form-control location-farm" required></select>
+              </div>
+              <div class="form-group">
+                <label for="dryingBatchSiteId" class="required">Site</label>
+                <select id="dryingBatchSiteId" name="siteId" class="form-control location-site" required></select>
+              </div>
+              <div class="form-group">
+                <label for="dryingBatchFacilityId" class="required">Drying facility</label>
+                <select id="dryingBatchFacilityId" name="facilityId" class="form-control location-facility" required></select>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="batchId" class="required">Batch ID</label>
-                <input type="text" id="batchId" name="batchId" class="form-control" required>
-                <div class="invalid-feedback">Please enter a batch ID</div>
+                <label for="dryingBatchCode" class="required">Batch Code</label>
+                <input type="text" id="dryingBatchCode" name="batchCode" class="form-control" maxlength="50" placeholder="e.g. SOLAR-0915" required>
               </div>
               <div class="form-group">
                 <label for="dryingDate" class="required">Drying Date</label>
                 <input type="date" id="dryingDate" name="dryingDate" class="form-control" required>
-                <div class="invalid-feedback">Please select a drying date</div>
               </div>
             </div>
-            
             <div class="form-row">
               <div class="form-group">
                 <label for="dryingMethod" class="required">Drying Method</label>
                 <select id="dryingMethod" name="dryingMethod" class="form-control" required>
                   <option value="">Select drying method</option>
-                  <option value="sand_drying">Sand Drying</option>
-                  <option value="sun_drying">Sun Drying</option>
+                  <option value="sand_drying">Sand drying</option>
+                  <option value="sun_drying">Sun drying</option>
+                  <option value="solar_drying">Solar dryer</option>
+                  <option value="drum_drying">Drum dryer</option>
                   <option value="roasting">Roasting</option>
-                  <option value="sand">Sand</option>
-                  <option value="sun">Sun</option>
                 </select>
-                <div class="invalid-feedback">Please select a drying method</div>
               </div>
               <div class="form-group">
                 <label for="personnel" class="required">Personnel</label>
-                <input type="text" id="personnel" name="personnel" class="form-control" required>
-              </div>
-              <div class="form-group">
-                <label for="status" class="required">Status</label>
-                <select id="status" name="status" class="form-control" required>
-                  <option value="in_progress" selected>In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                <input type="text" id="personnel" name="personnel" class="form-control" maxlength="100" required>
               </div>
             </div>
-            <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Create Batch</button>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="dryingHarvest" class="required">Harvest</label>
+                <select id="dryingHarvest" name="harvestId" class="form-control drying-harvest" required></select>
+              </div>
+              <div class="form-group">
+                <label for="dryingHarvestKg" class="required">Wet larvae put in (kg)</label>
+                <input type="number" id="dryingHarvestKg" name="quantityKg" class="form-control" step="0.001" min="0.001" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Start Batch</button>
           </form>
         </div>
 
-        <!-- Input Records Subsection -->
         <div class="subsection">
-          <h2><i class="fas fa-box-open"></i> Input Records</h2>
+          <h2><i class="fas fa-box-open"></i> Add a Harvest to a Drying Batch</h2>
+          <p class="help-text">Only batches that have not started drying can take more harvest.</p>
           <form id="dryingInputForm">
             <div class="form-row">
               <div class="form-group">
-                <label for="batchIdInput" class="required">Batch ID</label>
-                <input type="text" id="batchIdInput" name="batchId" class="form-control" required>
-                <div class="invalid-feedback">Please enter a batch ID</div>
+                <label for="dryingInputBatch" class="required">Drying Batch</label>
+                <select id="dryingInputBatch" name="dryingBatch" class="form-control drying-batch" data-status="DRAFT,RECEIVED" required></select>
               </div>
               <div class="form-group">
-                <label for="wetHarvested" class="required">Wet Harvested (kg)</label>
-                <input type="number" id="wetHarvested" name="wetHarvested" class="form-control" step="0.1" min="0" required>
-                <div class="invalid-feedback">Please enter valid weight</div>
+                <label for="dryingInputHarvest" class="required">Harvest</label>
+                <select id="dryingInputHarvest" name="harvestId" class="form-control drying-harvest" required></select>
               </div>
             </div>
-            
             <div class="form-row">
               <div class="form-group">
-                <label for="wetPlaced" class="required">Wet Placed for Drying (kg)</label>
-                <input type="number" id="wetPlaced" name="wetPlaced" class="form-control" step="0.1" min="0" required>
-                <div class="invalid-feedback">Please enter valid weight</div>
+                <label for="dryingInputKg" class="required">Wet larvae put in (kg)</label>
+                <input type="number" id="dryingInputKg" name="quantityKg" class="form-control" step="0.001" min="0.001" required>
               </div>
               <div class="form-group">
-                <label for="driedByPersonnel" class="required">Dried by Personnel</label>
-                <input type="number" id="driedByPersonnel" name="driedByPersonnel" class="form-control" step="0.1" min="0" required>
-                <div class="invalid-feedback">Please enter valid weight</div>
+                <label for="dryingInputMoisture">Incoming moisture (%)</label>
+                <input type="number" id="dryingInputMoisture" name="moisturePercent" class="form-control" step="0.1" min="0" max="100">
               </div>
             </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="sandUsed" class="required">Sand Used (kg)</label>
-                <input type="number" id="sandUsed" name="sandUsed" class="form-control" step="0.1" min="0" required>
-                <div class="invalid-feedback">Please enter valid weight</div>
-              </div>
-              <div class="form-group">
-                <label for="sandReused">Sand Reused? (kg)</label>
-                <input type="number" id="sandReused" name="sandReused" class="form-control" step="0.1" min="0">
-              </div>
-            </div>
-            
             <div class="form-group">
               <label for="inputNotes">Notes</label>
               <textarea id="inputNotes" name="notes" class="form-control" rows="2"></textarea>
             </div>
-            
-            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Input Records</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Add Harvest</button>
           </form>
         </div>
 
-        <!-- Output Records Subsection -->
         <div class="subsection">
-          <h2><i class="fas fa-box"></i> Output Records</h2>
+          <h2><i class="fas fa-forward"></i> Move a Drying Batch to its Next Stage</h2>
+          <p class="help-text">Draft, then Received, Drying, Waiting for QC and Completed. A batch can only
+            complete after its output passes QC and is approved.</p>
+          <form id="dryingStatusForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="dryingStatusBatch" class="required">Drying Batch</label>
+                <select id="dryingStatusBatch" name="dryingBatch" class="form-control drying-batch" data-status="DRAFT,RECEIVED,DRYING,QC_PENDING" required></select>
+              </div>
+              <div class="form-group">
+                <label for="dryingStatusNote">Note</label>
+                <input type="text" id="dryingStatusNote" name="reason" class="form-control" maxlength="200">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="dryingStatusButton"><i class="fas fa-forward"></i> Move to Next Stage</button>
+          </form>
+        </div>
+
+        <div class="subsection">
+          <h2><i class="fas fa-box"></i> Record Dried Output</h2>
+          <p class="help-text">Weigh the dried larvae when the batch comes off the dryer (the batch must be Drying).</p>
           <form id="dryingOutputForm">
             <div class="form-row">
               <div class="form-group">
-                <label for="batchIdOutput" class="required">Batch ID</label>
-                <input type="text" id="batchIdOutput" name="batchId" class="form-control" required>
-                <div class="invalid-feedback">Please enter a batch ID</div>
+                <label for="dryingOutputBatch" class="required">Drying Batch</label>
+                <select id="dryingOutputBatch" name="dryingBatch" class="form-control drying-batch" data-status="DRYING" required></select>
               </div>
               <div class="form-group">
-                <label for="driedProduced" class="required">Dried Produced (kg)</label>
-                <input type="number" id="driedProduced" name="driedProduced" class="form-control" step="0.1" min="0" required>
-                <div class="invalid-feedback">Please enter valid weight</div>
+                <label for="driedProduced" class="required">Dried larvae (kg)</label>
+                <input type="number" id="driedProduced" name="quantityKg" class="form-control" step="0.001" min="0.001" required>
+              </div>
+              <div class="form-group">
+                <label for="dryingOutputMoisture">Moisture (%)</label>
+                <input type="number" id="dryingOutputMoisture" name="moisturePercent" class="form-control" step="0.1" min="0" max="100">
               </div>
             </div>
-            
             <div class="form-row">
               <div class="form-group">
-                <label for="siloBagStored">Stored in Silo Bag (kg)</label>
-                <input type="number" id="siloBagStored" name="siloBagStored" class="form-control" step="0.1" min="0">
+                <label for="dryingOutputDate" class="required">Output Date</label>
+                <input type="date" id="dryingOutputDate" name="outputDate" class="form-control" required>
               </div>
               <div class="form-group">
-                <label for="driedSold">Sold (kg)</label>
-                <input type="number" id="driedSold" name="driedSold" class="form-control" step="0.1" min="0">
+                <label for="dryingOutputOperator" class="required">Weighed by</label>
+                <input type="text" id="dryingOutputOperator" name="operator" class="form-control" maxlength="100" required>
               </div>
             </div>
-            
             <div class="form-group">
               <label for="outputNotes">Notes</label>
               <textarea id="outputNotes" name="notes" class="form-control" rows="2"></textarea>
             </div>
-            
-            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Output Records</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Output</button>
           </form>
         </div>
 
-        <!-- Quality Control Subsection -->
         <div class="subsection">
           <h2><i class="fas fa-check-circle"></i> Quality Control</h2>
           <form id="qualityControlForm">
             <div class="form-row">
               <div class="form-group">
-                <label for="batchIdQC" class="required">Batch ID</label>
-                <input type="text" id="batchIdQC" name="batchId" class="form-control" required>
-                <div class="invalid-feedback">Please enter a batch ID</div>
-              </div>
-              <div class="form-group">
-                <label for="qualityOutputId">Drying Output ID</label>
-                <input type="number" id="qualityOutputId" name="dryingOutputId" class="form-control" min="1" step="1">
-                <div class="help-text">Link this QC check to one output so it can be released as a Product Lot.</div>
+                <label for="qualityOutputId" class="required">Dried Output</label>
+                <select id="qualityOutputId" name="dryingOutputId" class="form-control drying-output" data-stage="check" required></select>
               </div>
               <div class="form-group">
                 <label for="qcDate" class="required">QC Date</label>
                 <input type="date" id="qcDate" name="qcDate" class="form-control" required>
-                <div class="invalid-feedback">Please select a QC date</div>
               </div>
             </div>
-            
             <div class="form-row">
               <div class="form-group">
                 <label for="sandRemoval" class="required">Sand Removal Status</label>
@@ -1048,7 +1093,6 @@
                   <option value="partial">Partial</option>
                   <option value="poor">Poor</option>
                 </select>
-                <div class="invalid-feedback">Please select sand removal status</div>
               </div>
               <div class="form-group">
                 <label for="contaminantsFound">Contaminants Found</label>
@@ -1063,7 +1107,6 @@
                 <div class="help-text">Hold Ctrl/Cmd to select multiple items</div>
               </div>
             </div>
-            
             <div class="form-row">
               <div class="form-group">
                 <label for="colorQuality" class="required">Color Quality</label>
@@ -1074,7 +1117,6 @@
                   <option value="fair">Fair</option>
                   <option value="poor">Poor (Dark)</option>
                 </select>
-                <div class="invalid-feedback">Please select color quality</div>
               </div>
               <div class="form-group">
                 <label for="moistureLevel" class="required">Moisture Level</label>
@@ -1085,7 +1127,6 @@
                   <option value="moist">Moist</option>
                   <option value="wet">Wet</option>
                 </select>
-                <div class="invalid-feedback">Please select moisture level</div>
               </div>
               <div class="form-group">
                 <label for="qcCheckStatus" class="required">QC Result</label>
@@ -1101,69 +1142,45 @@
                 <input type="number" id="qcMoisturePercent" name="qcMoisturePercent" class="form-control" min="0" max="100" step="0.01">
               </div>
             </div>
-            
             <div class="form-group">
               <label for="qcPersonnel" class="required">QC Personnel</label>
-              <input type="text" id="qcPersonnel" name="qcPersonnel" class="form-control" required>
-              <div class="invalid-feedback">Please enter QC personnel name</div>
+              <input type="text" id="qcPersonnel" name="qcPersonnel" class="form-control" maxlength="100" required>
             </div>
-            
             <div class="form-group">
               <label for="qcNotes">QC Notes</label>
               <textarea id="qcNotes" name="notes" class="form-control" rows="3"></textarea>
             </div>
-            
-            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save QC Records</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save QC Check</button>
           </form>
         </div>
 
-        <!-- Review & Approval Subsection -->
         <div class="subsection">
-          <h2><i class="fas fa-clipboard-check"></i> Review & Approval</h2>
+          <h2><i class="fas fa-clipboard-check"></i> QC Decision</h2>
           <form id="reviewApprovalForm">
             <div class="form-row">
               <div class="form-group">
-                <label for="batchIdReview" class="required">Batch ID</label>
-                <input type="text" id="batchIdReview" name="batchId" class="form-control" required>
-                <div class="invalid-feedback">Please enter a batch ID</div>
-              </div>
-              <div class="form-group">
-                <label for="qualityCheckId">Quality Check ID</label>
-                <input type="number" id="qualityCheckId" name="qualityCheckId" class="form-control" min="1" step="1">
-                <div class="help-text">Required to approve a canonical Drying Output for Product Lot release.</div>
+                <label for="qualityCheckId" class="required">Quality Check</label>
+                <select id="qualityCheckId" name="qualityCheckId" class="form-control drying-check" required></select>
               </div>
               <div class="form-group">
                 <label for="reviewedBy" class="required">Reviewed By</label>
-                <input type="text" id="reviewedBy" name="reviewedBy" class="form-control" required>
-                <div class="invalid-feedback">Please enter reviewer name</div>
-              </div>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="reviewDate" class="required">Review Date</label>
-                <input type="date" id="reviewDate" name="reviewDate" class="form-control" required>
-                <div class="invalid-feedback">Please select a review date</div>
+                <input type="text" id="reviewedBy" name="reviewedBy" class="form-control" maxlength="100" required>
               </div>
               <div class="form-group">
-                <label for="approvalStatus" class="required">Approval Status</label>
+                <label for="approvalStatus" class="required">Decision</label>
                 <select id="approvalStatus" name="approvalStatus" class="form-control" required>
-                  <option value="">Select status</option>
+                  <option value="">Select decision</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
                   <option value="conditional">Conditional</option>
-                  <option value="revoked">Revoked</option>
                 </select>
-                <div class="invalid-feedback">Please select approval status</div>
               </div>
             </div>
-            
             <div class="form-group">
               <label for="approvalComments">Comments</label>
               <textarea id="approvalComments" name="comments" class="form-control" rows="3"></textarea>
             </div>
-            
-            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Review</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Decision</button>
           </form>
         </div>
 
@@ -1176,8 +1193,8 @@
           <form id="productLotReleaseForm">
             <div class="form-row">
               <div class="form-group">
-                <label for="productLotOutputId" class="required">Drying Output ID</label>
-                <input type="number" id="productLotOutputId" name="dryingOutputId" class="form-control" min="1" step="1" required>
+                <label for="productLotOutputId" class="required">Approved Output</label>
+                <select id="productLotOutputId" name="dryingOutputId" class="form-control drying-output" data-stage="release" required></select>
               </div>
               <div class="form-group">
                 <label for="productLotType" class="required">Product Type</label>
@@ -1281,6 +1298,23 @@
         <div class="subsection">
           <h2><i class="fas fa-exchange-alt"></i> Pupae Transition</h2>
           <form id="pupaeTransitionForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="pupaeTransitionFarmId" class="required">Farm</label>
+                <select id="pupaeTransitionFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="pupaeTransitionSiteId" class="required">Site</label>
+                <select id="pupaeTransitionSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="pupaeTransitionFacilityId" class="required">Facility</label>
+                <select id="pupaeTransitionFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="transitionDate" class="required">Date</label>
@@ -1372,6 +1406,23 @@
         <div class="subsection">
           <h2><i class="fas fa-flask"></i> Bait Preparation</h2>
           <form id="baitPreparationForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="baitPreparationFarmId" class="required">Farm</label>
+                <select id="baitPreparationFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="baitPreparationSiteId" class="required">Site</label>
+                <select id="baitPreparationSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="baitPreparationFacilityId" class="required">Facility</label>
+                <select id="baitPreparationFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="required">Barrel ID Range</label>
@@ -1436,6 +1487,23 @@
         <div class="subsection">
           <h2><i class="fas fa-egg"></i> Egg Collection</h2>
           <form id="eggCollectionForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="eggCollectionFarmId" class="required">Farm</label>
+                <select id="eggCollectionFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="eggCollectionSiteId" class="required">Site</label>
+                <select id="eggCollectionSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="eggCollectionFacilityId" class="required">Facility</label>
+                <select id="eggCollectionFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="eggCollectionDate" class="required">Date</label>
@@ -1533,6 +1601,23 @@
         <div class="subsection">
           <h2><i class="fas fa-clipboard-check"></i> Facility Cage Monitoring</h2>
           <form id="cageMonitoringForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="cageMonitoringFarmId" class="required">Farm</label>
+                <select id="cageMonitoringFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="cageMonitoringSiteId" class="required">Site</label>
+                <select id="cageMonitoringSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="cageMonitoringFacilityId" class="required">Facility</label>
+                <select id="cageMonitoringFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="monitoringDate" class="required">Date</label>
@@ -1632,6 +1717,23 @@
         <div class="subsection">
           <h2><i class="fas fa-tools"></i> Facility Maintenance</h2>
           <form id="facilityMaintenanceForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="facilityMaintenanceFarmId" class="required">Farm</label>
+                <select id="facilityMaintenanceFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="facilityMaintenanceSiteId" class="required">Site</label>
+                <select id="facilityMaintenanceSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="facilityMaintenanceFacilityId" class="required">Facility</label>
+                <select id="facilityMaintenanceFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="maintenanceDate" class="required">Date</label>
@@ -1720,6 +1822,23 @@
         <div class="subsection">
           <h2><i class="fas fa-clipboard-list"></i> Batch Information</h2>
           <form id="batchInformationForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="batchInformationFarmId" class="required">Farm</label>
+                <select id="batchInformationFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="batchInformationSiteId" class="required">Site</label>
+                <select id="batchInformationSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="batchInformationFacilityId" class="required">Facility</label>
+                <select id="batchInformationFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="batchDate" class="required">Date</label>
@@ -1727,8 +1846,8 @@
                 <div class="invalid-feedback">Please select a date</div>
               </div>
               <div class="form-group">
-                <label for="batchNumber" class="required">Batch Number</label>
-                <input type="text" id="batchNumber" name="batch_number" class="form-control" required>
+                <label for="batchNumber">Batch Number</label>
+                <input type="text" id="batchNumber" name="batch_number" class="form-control" maxlength="100" placeholder="Assigned when saved (HAT-YYYY-00001)">
                 <div class="invalid-feedback">Please enter batch number</div>
               </div>
             </div>
@@ -1783,6 +1902,23 @@
         <div class="subsection">
           <h2><i class="fas fa-utensils"></i> Feeding Records</h2>
           <form id="feedingRecordsForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="feedingRecordsFarmId" class="required">Farm</label>
+                <select id="feedingRecordsFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="feedingRecordsSiteId" class="required">Site</label>
+                <select id="feedingRecordsSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="feedingRecordsFacilityId" class="required">Facility</label>
+                <select id="feedingRecordsFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="feedingDate" class="required">Date</label>
@@ -1790,16 +1926,9 @@
                 <div class="invalid-feedback">Please select a date</div>
               </div>
               <div class="form-group">
-                <label for="batchId" class="required">Batch ID</label>
-                <div class="input-group">
-                  <input type="text" id="batchId" name="batch_id" class="form-control" readonly required>
-                  <div class="input-group-append">
-                    <button type="button" class="btn btn-outline-secondary" id="refreshBatchId" title="Refresh Batch ID">
-                      <i class="fas fa-sync-alt"></i>
-                    </button>
-                  </div>
-                </div>
-                <div class="invalid-feedback">Please enter batch ID</div>
+                <label for="hatcheryFeedingBatch" class="required">Hatchery Batch</label>
+                <select id="hatcheryFeedingBatch" name="batch_id" class="form-control" required></select>
+                <div class="invalid-feedback">Please choose the hatchery batch being fed</div>
               </div>
             </div>
             
@@ -1850,6 +1979,23 @@
         <div class="subsection">
           <h2><i class="fas fa-thermometer-half"></i> Environmental Monitoring</h2>
           <form id="hatcheryEnvironmentalMonitoringForm" class="needs-validation" novalidate>
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="hatcheryEnvironmentalMonitoringFarmId" class="required">Farm</label>
+                <select id="hatcheryEnvironmentalMonitoringFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="hatcheryEnvironmentalMonitoringSiteId" class="required">Site</label>
+                <select id="hatcheryEnvironmentalMonitoringSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="hatcheryEnvironmentalMonitoringFacilityId" class="required">Facility</label>
+                <select id="hatcheryEnvironmentalMonitoringFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="monitoringDate" class="required">Date</label>
@@ -1884,6 +2030,23 @@
         <div class="subsection">
           <h2><i class="fas fa-broom"></i> Cleaning & Sanitation</h2>
           <form id="cleaningForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="cleaningFarmId" class="required">Farm</label>
+                <select id="cleaningFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="cleaningSiteId" class="required">Site</label>
+                <select id="cleaningSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="cleaningFacilityId" class="required">Facility</label>
+                <select id="cleaningFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="cleaningDate" class="required">Date</label>
@@ -1927,6 +2090,23 @@
         <div class="subsection">
           <h2><i class="fas fa-exclamation-triangle"></i> Problems & Solutions</h2>
           <form id="problemsSolutionsForm">
+            <div class="form-row location-picker">
+              <div class="form-group">
+                <label for="problemsSolutionsFarmId" class="required">Farm</label>
+                <select id="problemsSolutionsFarmId" name="farmId" class="form-control location-farm" required></select>
+                <div class="invalid-feedback">Please select the farm</div>
+              </div>
+              <div class="form-group">
+                <label for="problemsSolutionsSiteId" class="required">Site</label>
+                <select id="problemsSolutionsSiteId" name="siteId" class="form-control location-site" required></select>
+                <div class="invalid-feedback">Please select the site</div>
+              </div>
+              <div class="form-group">
+                <label for="problemsSolutionsFacilityId" class="required">Facility</label>
+                <select id="problemsSolutionsFacilityId" name="facilityId" class="form-control location-facility" required></select>
+                <div class="invalid-feedback">Please select the facility</div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="problemDate" class="required">Date</label>
@@ -1991,222 +2171,6 @@
       </div>
 
       <!-- Customers Section -->
-      <div id="customers" class="section">
-        <h1><i class="fas fa-users"></i> Customers</h1>
-        <form id="customerForm">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="customerName" class="required">Name</label>
-              <input type="text" id="customerName" name="name" class="form-control" required>
-              <div class="invalid-feedback">Please enter customer name</div>
-            </div>
-            <div class="form-group">
-              <label for="customerContact">Contact</label>
-              <input type="text" id="customerContact" name="contact" class="form-control">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="customerEmail">Email</label>
-              <input type="email" id="customerEmail" name="email" class="form-control">
-            </div>
-            <div class="form-group">
-              <label for="customerAddress">Address</label>
-              <input type="text" id="customerAddress" name="address" class="form-control">
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary">Add Customer</button>
-        </form>
-        <h2>Customer List</h2>
-        <table class="table" id="customerTable">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Contact</th>
-              <th>Email</th>
-              <th>Address</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Customer records will go here -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Sales Section -->
-      <div id="sales" class="section">
-        <h1><i class="fas fa-cash-register"></i> Sales</h1>
-        <div class="alert alert-info">
-          These sales and delivery records are history and are not linked to stock.
-          Record new sales as <a href="/orders">Customer Orders</a> so each delivery reserves,
-          dispatches and traces specific product lots.
-        </div>
-        <form id="salesForm">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="saleDate" class="required">Date</label>
-              <input type="date" id="saleDate" name="date" class="form-control" required>
-              <div class="invalid-feedback">Please select a date</div>
-            </div>
-            <div class="form-group">
-              <label for="saleCustomer" class="required">Customer</label>
-              <select id="saleCustomer" name="customer" class="form-control" required>
-                <option value="">Select customer</option>
-                <!-- Customer options will be populated dynamically -->
-              </select>
-              <div class="invalid-feedback">Please select a customer</div>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="saleProduct">Product/Service</label>
-              <input type="text" id="saleProduct" name="product" class="form-control">
-            </div>
-            <div class="form-group">
-              <label for="saleQuantity">Quantity</label>
-              <input type="number" id="saleQuantity" name="quantity" class="form-control" step="1" min="1">
-            </div>
-            <div class="form-group">
-              <label for="saleAmount" class="required">Amount</label>
-              <input type="number" id="saleAmount" name="amount" class="form-control" step="0.01" min="0" required>
-              <div class="invalid-feedback">Please enter amount</div>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-success">Add Sale</button>
-        </form>
-        <h2>Sales Records</h2>
-        <table class="table" id="salesTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Product/Service</th>
-              <th>Quantity</th>
-              <th>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Sales records will go here -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Deliveries Section -->
-      <div id="deliveries" class="section">
-        <h1><i class="fas fa-truck"></i> Deliveries</h1>
-        <form id="deliveryForm">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="deliveryDate" class="required">Date</label>
-              <input type="date" id="deliveryDate" name="date" class="form-control" required>
-              <div class="invalid-feedback">Please select a date</div>
-            </div>
-            <div class="form-group">
-              <label for="deliveryCustomer" class="required">Customer</label>
-              <select id="deliveryCustomer" name="customer" class="form-control" required>
-                <option value="">Select customer</option>
-                <!-- Customer options will be populated dynamically -->
-              </select>
-              <div class="invalid-feedback">Please select a customer</div>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="deliveryProduct">Product/Service</label>
-              <input type="text" id="deliveryProduct" name="product" class="form-control">
-            </div>
-            <div class="form-group">
-              <label for="deliveryQuantity">Quantity</label>
-              <input type="number" id="deliveryQuantity" name="quantity" class="form-control" step="1" min="1">
-            </div>
-            <div class="form-group">
-              <label for="deliveryStatus" class="required">Delivery Status</label>
-              <select id="deliveryStatus" name="status" class="form-control" required>
-                <option value="">Select status</option>
-                <option value="Pending">Pending</option>
-                <option value="Delivered">Delivered</option>
-                <option value="Cancelled">Cancelled</option>
-              </select>
-              <div class="invalid-feedback">Please select a status</div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="deliveryNotes">Notes</label>
-            <textarea id="deliveryNotes" name="notes" class="form-control" rows="2"></textarea>
-          </div>
-          <button type="submit" class="btn btn-primary">Add Delivery</button>
-        </form>
-        <h2>Delivery Records</h2>
-        <table class="table" id="deliveryTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Product/Service</th>
-              <th>Quantity</th>
-              <th>Status</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Delivery records will go here -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Customer Feedback Section -->
-      <div id="feedback" class="section">
-        <h1><i class="fas fa-comment-dots"></i> Customer Feedback</h1>
-        <form id="feedbackForm">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="feedbackDate" class="required">Date</label>
-              <input type="date" id="feedbackDate" name="date" class="form-control" required>
-              <div class="invalid-feedback">Please select a date</div>
-            </div>
-            <div class="form-group">
-              <label for="feedbackCustomer" class="required">Customer</label>
-              <select id="feedbackCustomer" name="customer" class="form-control" required>
-                <option value="">Select customer</option>
-                <!-- Customer options will be populated dynamically -->
-              </select>
-              <div class="invalid-feedback">Please select a customer</div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="feedbackText" class="required">Feedback</label>
-            <textarea id="feedbackText" name="feedback" class="form-control" rows="3" required></textarea>
-            <div class="invalid-feedback">Please enter feedback</div>
-          </div>
-          <div class="form-group">
-            <label for="feedbackRating" class="required">Rating</label>
-            <select id="feedbackRating" name="rating" class="form-control" required>
-              <option value="">Select rating</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-            </select>
-            <div class="invalid-feedback">Please select a rating</div>
-          </div>
-          <button type="submit" class="btn btn-success">Submit Feedback</button>
-        </form>
-        <h2>Feedback Records</h2>
-        <table class="table" id="feedbackTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Feedback</th>
-              <th>Rating</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Feedback records will go here -->
-          </tbody>
-        </table>
-      </div>
     </div>
   </div>
 

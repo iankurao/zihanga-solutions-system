@@ -220,22 +220,3 @@ class DatabaseConnection:
                 cursor.close()
             if conn:
                 self.return_connection(conn, close=close_conn)
-
-# Example usage:
-if __name__ == "__main__":
-    try:
-        db = DatabaseConnection()
-        # Example SELECT query
-        results = db.fetch_all("SELECT * FROM waste_sourcing LIMIT 5")
-        print("Query results:", results)
-        # Example INSERT query
-        insert_query = """
-        INSERT INTO waste_sourcing 
-        (collection_date, source_type, waste_type, weight) 
-        VALUES (%s, %s, %s, %s)
-        """
-        params = ('2024-03-20', 'Restaurant', 'Food Waste', 50.5)
-        affected_rows = db.execute_query(insert_query, params)
-        print(f"Inserted {affected_rows} rows")
-    except Exception as e:
-        print(f"Database error: {e}") 

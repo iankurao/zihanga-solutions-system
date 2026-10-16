@@ -2,6 +2,7 @@
 // every permission; this only keeps the screen honest.
 //
 //   <a data-permission="sales.read">…</a>   shown only with that permission
+//   <a data-permission="production.write|quality.decide">…</a>   with either
 //
 // Elements start hidden (add the `hidden` attribute in the markup) so nothing
 // flashes before the profile loads. window.currentUser resolves to the
@@ -15,7 +16,9 @@
   function apply(profile) {
     var granted = (profile && profile.permissions) || [];
     document.querySelectorAll('[data-permission]').forEach(function (node) {
-      node.hidden = granted.indexOf(node.getAttribute('data-permission')) === -1;
+      node.hidden = !node.getAttribute('data-permission').split('|').some(function (permission) {
+        return granted.indexOf(permission) !== -1;
+      });
     });
   }
 

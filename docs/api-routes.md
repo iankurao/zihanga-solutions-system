@@ -84,11 +84,21 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 
 | Method | Path | Access |
 |---|---|---|
+| GET | `/api/drying/available-harvests` | signed in |
+| GET | `/api/drying/batches` | signed in |
 | POST | `/api/drying/batches` | production.write |
 | GET | `/api/drying/batches/<string:batch_ref>` | signed in |
 | POST | `/api/drying/batches/<string:batch_ref>/inputs` | production.write |
 | POST | `/api/drying/batches/<string:batch_ref>/outputs` | production.write |
 | POST | `/api/drying/batches/<string:batch_ref>/status` | production.write |
+
+## farm_operations
+
+| Method | Path | Access |
+|---|---|---|
+| GET | `/api/farm-operations` | signed in |
+| GET | `/api/farm-operations/<string:kind>` | signed in |
+| POST | `/api/farm-operations/<string:kind>` | production.write |
 
 ## farmer
 
@@ -96,16 +106,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 |---|---|---|
 | GET | `/api/farmer/overview` | signed in |
 | GET | `/farmer` | signed in |
-
-## fly_facility_routes
-
-| Method | Path | Access |
-|---|---|---|
-| POST | `/api/fly-facility/bait-preparation` | production.write |
-| POST | `/api/fly-facility/cage-monitoring` | production.write |
-| POST | `/api/fly-facility/egg-collection` | production.write |
-| POST | `/api/fly-facility/maintenance` | production.write |
-| POST | `/api/fly-facility/pupae-transition` | production.write |
 
 ## health
 
@@ -161,47 +161,19 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/analytics/waste-monitoring` | legacy.read |
 | GET | `/api/analytics/waste-sourcing` | legacy.read |
 | GET | `/api/deliveries` | legacy.read |
-| POST | `/api/deliveries` | legacy.write |
-| PUT | `/api/deliveries/<int:delivery_id>` | legacy.write |
-| POST | `/api/drying/batch` | production.write |
-| POST | `/api/drying/input` | production.write |
 | GET | `/api/drying/input/all` | legacy.read |
-| POST | `/api/drying/output` | production.write |
 | GET | `/api/drying/output/all` | legacy.read |
-| POST | `/api/drying/qc` | quality.decide |
 | GET | `/api/drying/qc/all` | legacy.read |
-| POST | `/api/drying/quality-control` | quality.decide |
-| POST | `/api/drying/remarks` | production.write |
 | GET | `/api/drying/remarks/all` | legacy.read |
-| POST | `/api/drying/review` | quality.decide |
 | GET | `/api/drying/review/all` | legacy.read |
-| POST | `/api/facility/bait-preparation` | production.write |
-| POST | `/api/facility/cage-monitoring` | production.write |
-| POST | `/api/facility/egg-collection` | production.write |
-| POST | `/api/facility/maintenance` | production.write |
-| POST | `/api/facility/pupae-transition` | production.write |
 | GET | `/api/feedback` | legacy.read |
-| POST | `/api/feedback` | legacy.write |
-| PUT | `/api/feedback/<int:feedback_id>` | legacy.write |
 | POST | `/api/feeding/environmental-monitoring` | production.write |
 | POST | `/api/feeding/harvest-yield` | production.write |
 | GET | `/api/feeding/harvest/all` | legacy.read |
 | POST | `/api/feeding/health-intervention` | production.write |
 | POST | `/api/feeding/schedule` | production.write |
-| POST | `/api/hatchery/batch` | production.write |
-| POST | `/api/hatchery/batch-information` | production.write |
-| POST | `/api/hatchery/cleaning` | production.write |
-| POST | `/api/hatchery/environmental-monitoring` | production.write |
-| POST | `/api/hatchery/feeding` | production.write |
-| POST | `/api/hatchery/feeding-records` | production.write |
-| POST | `/api/hatchery/health` | production.write |
-| POST | `/api/hatchery/monitoring` | production.write |
-| GET | `/api/hatchery/next-batch-id` | signed in |
-| POST | `/api/hatchery/problems` | production.write |
 | GET | `/api/records` | legacy.read |
 | GET | `/api/sales` | legacy.read |
-| POST | `/api/sales` | legacy.write |
-| PUT | `/api/sales/<int:sale_id>` | legacy.write |
 | POST | `/api/send-harvest-report` | legacy.read |
 | GET | `/api/statistics/daily-report` | legacy.read |
 | GET | `/api/statistics/environmental` | legacy.read |
@@ -209,7 +181,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/statistics/larval-growth` | legacy.read |
 | GET | `/api/statistics/system-efficiency` | legacy.read |
 | GET | `/api/statistics/waste-processing` | legacy.read |
-| POST | `/api/waste-monitoring` | production.write |
 | GET | `/api/waste-sourcing/all` | legacy.read |
 
 ## location_routes
@@ -320,8 +291,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 
 | Method | Path | Access |
 |---|---|---|
-| POST | `/api/processing-records` | production.write |
-| POST | `/api/storage-records` | production.write |
 | GET | `/api/substrate-batches` | signed in |
 | POST | `/api/substrate-preparation` | production.write |
 | GET | `/api/substrate/batches/<string:batch_no>` | signed in |

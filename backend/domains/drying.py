@@ -8,6 +8,7 @@ from flask_login import login_required
 from backend.core.web import app, db, logger
 from backend.core.http import (
     ProductionEventPermissionError,
+    _jsonable,
     _event_decimal,
     _event_unit,
     _parse_positive_integer,
@@ -15,7 +16,11 @@ from backend.core.http import (
     normalize_keys,
 )
 from backend.core.security import requires
-from backend.core.scope import _assert_production_location, _assert_production_scope_access
+from backend.core.scope import (
+    _assert_production_location,
+    _assert_production_scope_access,
+    _scope_visibility_clause,
+)
 
 
 DRYING_BATCH_STATUSES = {'DRAFT', 'RECEIVED', 'DRYING', 'QC_PENDING', 'COMPLETED'}
@@ -445,6 +450,108 @@ def create_canonical_drying_batch():
     except Exception:
         logger.exception('Error creating canonical Drying Batch')
         return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
+
+
+DRYING_STATUSES = ('DRAFT', 'RECEIVED', 'DRYING', 'QC_PENDING', 'COMPLETED', 'CANCELLED')
+
+
+@app.route('/api/drying/batches', methods=['GET'])
+@login_required
+def list_canonical_drying_batches():
+    """Drying batches at locations the caller may see, newest first, with
+    their outputs, the quality checks on each output, the decision on each
+    check and the Product Lot released from it (for the data-entry forms)."""
+    statuses = [s.strip().upper() for s in (request.args.get('status') or '').split(',') if s.strip()]
+    if any(s not in DRYING_STATUSES for s in statuses):
+        return jsonify({'success': False, 'message': 'Unknown drying status'}), 400
+    visibility, params = _scope_visibility_clause('b')
+    clauses, values = ['b.facility_id IS NOT NULL', visibility], list(params)
+    if statuses:
+        clauses.append('UPPER(b.status) = ANY(%s)')
+        values.append(statuses)
+    batches = db.fetch_all(
+        f"""
+        SELECT b.id, b.business_id, b.batch_code, UPPER(b.status) AS status, b.drying_date,
+               b.farm_id, b.site_id, b.facility_id, f.name AS farm_name, fa.name AS facility_name,
+               COALESCE((SELECT SUM(CASE WHEN di.unit = 'kg' THEN di.quantity ELSE di.quantity / 1000 END)
+                         FROM drying_inputs AS di WHERE di.drying_batch_id = b.id), 0) AS input_kg
+        FROM drying_batches AS b
+        JOIN farms AS f ON f.id = b.farm_id
+        JOIN facilities AS fa ON fa.id = b.facility_id
+        WHERE {' AND '.join(clauses)}
+        ORDER BY b.drying_date DESC, b.id DESC
+        LIMIT 200
+        """,
+        tuple(values),
+    )
+    ids = [b['id'] for b in batches]
+    outputs = db.fetch_all(
+        """
+        SELECT o.id, o.drying_batch_id, o.line_no, o.quantity, o.unit, o.moisture_percent, o.output_date,
+               (SELECT pl.business_id FROM product_lots AS pl WHERE pl.drying_output_id = o.id LIMIT 1) AS product_lot
+        FROM drying_outputs AS o WHERE o.drying_batch_id = ANY(%s) ORDER BY o.line_no
+        """,
+        (ids,),
+    ) if ids else []
+    checks = db.fetch_all(
+        """
+        SELECT q.id, q.check_code, q.drying_output_id, LOWER(q.status) AS status, q.checked_at,
+               (SELECT LOWER(a.decision) FROM quality_approvals AS a
+                WHERE a.quality_check_id = q.id ORDER BY a.id DESC LIMIT 1) AS decision
+        FROM quality_checks AS q WHERE q.drying_batch_id = ANY(%s) ORDER BY q.id
+        """,
+        (ids,),
+    ) if ids else []
+    by_output = {}
+    for check in checks:
+        by_output.setdefault(check['drying_output_id'], []).append(dict(check))
+    by_batch = {}
+    for output in outputs:
+        row = dict(output)
+        row['checks'] = by_output.get(output['id'], [])
+        by_batch.setdefault(output['drying_batch_id'], []).append(row)
+    data = []
+    for batch in batches:
+        row = dict(batch)
+        row['outputs'] = by_batch.get(batch['id'], [])
+        data.append(row)
+    return jsonify({'success': True, 'data': _jsonable(data)})
+
+
+@app.route('/api/drying/available-harvests', methods=['GET'])
+@login_required
+def list_harvests_available_for_drying():
+    """Recorded harvests the caller may see that still have wet larvae left
+    to put into a Drying Batch (wet weight minus what drying inputs used)."""
+    visibility, params = _scope_visibility_clause('pe')
+    clauses, values = [visibility], list(params)
+    if request.args.get('farm_id'):
+        try:
+            values.append(_parse_positive_integer(request.args['farm_id'], 'farm_id'))
+        except ValueError as exc:
+            return jsonify({'success': False, 'message': str(exc)}), 400
+        clauses.append('pe.farm_id = %s')
+    rows = db.fetch_all(
+        f"""
+        SELECT * FROM (
+            SELECT h.id, h.harvest_code, pe.occurred_at, pb.business_id AS production_batch,
+                   pe.farm_id, pe.site_id, pe.facility_id, fa.name AS facility_name,
+                   (CASE WHEN h.unit = 'kg' THEN h.wet_weight ELSE h.wet_weight / 1000 END)
+                   - COALESCE((SELECT SUM(CASE WHEN di.unit = 'kg' THEN di.quantity ELSE di.quantity / 1000 END)
+                               FROM drying_inputs AS di WHERE di.harvest_id = h.id), 0) AS remaining_kg
+            FROM harvests AS h
+            JOIN production_events AS pe ON pe.id = h.production_event_id
+            JOIN production_batches AS pb ON pb.id = pe.production_batch_id
+            JOIN facilities AS fa ON fa.id = pe.facility_id
+            WHERE pe.event_type = 'harvest' AND pe.status = 'recorded' AND {' AND '.join(clauses)}
+        ) AS available
+        WHERE remaining_kg > 0
+        ORDER BY occurred_at DESC, id DESC
+        LIMIT 200
+        """,
+        tuple(values),
+    )
+    return jsonify({'success': True, 'data': _jsonable([dict(r) for r in rows])})
 
 
 @app.route('/api/drying/batches/<string:batch_ref>', methods=['GET'])

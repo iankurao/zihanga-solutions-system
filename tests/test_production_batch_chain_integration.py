@@ -761,9 +761,9 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         harvest_id = harvest.get_json()["harvest"]["id"]
 
         batch_response = self.client.post(
-            "/api/drying/batch",
+            "/api/drying/batches",
             json={
-                "batch_id": f"drying-{uuid4().hex[:18]}",
+                "batch_code": f"drying-{uuid4().hex[:18]}",
                 "drying_date": "2026-09-25",
                 "drying_method": "sun_drying",
                 "personnel": self.actor,
@@ -773,7 +773,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             },
         )
         self.assertEqual(batch_response.status_code, 201, batch_response.get_json())
-        drying_ref = batch_response.get_json()["business_id"]
+        drying_ref = batch_response.get_json()["data"]["business_id"]
 
         overdraw = self.client.post(
             f"/api/drying/batches/{drying_ref}/inputs",
@@ -3203,7 +3203,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                 patch("flask_login.utils._get_user", lambda: anonymous):
             # The legacy blueprints used to answer without any sign-in.
             self.assertEqual(self.client.get("/api/waste-sourcing").status_code, 401)
-            self.assertEqual(self.client.post("/api/fly-facility/egg-collection", json={}).status_code, 401)
+            self.assertEqual(self.client.post("/api/farm-operations/egg-collection", json={}).status_code, 401)
 
     def test_cross_site_writes_are_refused(self):
         refused = [

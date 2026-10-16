@@ -13,6 +13,23 @@ Stock on hand is the sum of posted `inventory_movements` per Product Lot and inv
 
 **How to apply:** Post a validated movement through `_record_inventory_movement` (or `_insert_inventory_movement` inside an existing transaction that already locked the lot). Never update `product_lots.available_quantity_kg`. Customer dispatches post `DISPATCH` movements; free stock = on hand minus outstanding `order_allocations` (`ALLOCATION_STATE_CTE`).
 
+## Every record has a location
+
+*New records always carry a farm, site and facility the user may access.*
+
+Every write route takes `farm_id`, `site_id` and `facility_id`, checks them with
+`_assert_production_location` and `_assert_production_scope_access`, and reads
+are filtered with `_scope_visibility_clause`. Farm operation log tables also
+refuse rows without a location in the database (`*_scope_required` CHECK
+constraints, `migrations/farm_operation_logs.sql`).
+
+**Why:** A record without a location cannot be traced, cannot be limited to the
+people allowed to see it and cannot count in stock or reports.
+
+**How to apply:** Add new record types to a scoped module (e.g. the `KINDS`
+registry in `domains/farm_operations.py`), never as a free-standing legacy
+form. Rows from before locations stay read-only history for super admins.
+
 ## Production scope ownership
 
 *Canonical ownership rules for new BSF production records.*

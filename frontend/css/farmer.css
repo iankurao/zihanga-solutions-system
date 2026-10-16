@@ -193,3 +193,16 @@
   grid-template-columns: 1fr 1fr;
   gap: 0.6rem;
 }
+
+/* Links to the hatchery, fly facility and waste-handling logs. */
+.farmer-logs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.6rem;
+}
+
+.farmer-logs .erp-btn {
+  justify-content: center;
+  min-height: 52px;
+  text-decoration: none;
+}

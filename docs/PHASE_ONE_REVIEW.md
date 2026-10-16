@@ -40,9 +40,9 @@ Those checks belong in the first week of the pilot (see
 
 ## How it was verified
 
-- **Automated tests:** 155 tests pass against PostgreSQL 16 (plus 134
+- **Automated tests:** 159 tests pass against PostgreSQL 16 (plus 164
   subtests), including the whole chain performed role by role with real
-  sign-ins. All 211 of the application's endpoints are called by the suite
+  sign-ins. All 180 of the application's endpoints are called by the suite
   (`ROUTE_COVERAGE`).
 - **Browser:** every page loaded as the super admin on the demo database with
   no failed requests or script errors; the investor tour walked end to end as
@@ -63,12 +63,42 @@ Those checks belong in the first week of the pilot (see
 | Replit workspace files, preview-iframe setting and project name | Platform lock-in; a setting that weakened cookies and framing | Removed (`EMBEDDED_PREVIEW` now has no effect); attachments moved out of the repository |
 | Agent memory notes in `.agents/` | Useful rules hidden in a tool folder | Kept as [engineering-rules.md](engineering-rules.md) |
 
+## Retiring the forms without a location (16 October 2026)
+
+After the review the owner chose to retire every form whose records had no
+farm, site and facility. Checking each form showed the problem was larger
+than the review said: besides the hatchery, fly facility, waste-handling and
+legacy sales forms, the **drying batch, input and output forms** also wrote
+records without a location, and no page could create a traceable drying
+batch at all. That was only possible through the API, so in practice the
+drying, QC and release steps could not be run from the screens. The review's
+verdict above should be read with that correction.
+
+| Before | Now |
+|---|---|
+| 13 hatchery, fly facility and waste-handling forms wrote rows with no location | Same forms, same fields, now with a farm / site / facility picker; records saved through `/api/farm-operations/<kind>` with type and range checks, location access, the audit log, and a database rule that refuses new rows without a location. Readable by everyone with access to the location (`GET /api/farm-operations/<kind>`) |
+| Hatchery feeding filled its batch field with a newly generated batch number (every page load used one up) | Feeding is chosen from the farm's real hatchery batches; numbers are assigned when a batch is saved |
+| Drying batch / input / output forms wrote rows with no location; QC, approval and release asked for internal ID numbers | Start a drying batch (facility + harvest), add harvests, move to the next stage, record output, QC check, QC decision and release: all from pick-lists fed by `GET /api/drying/batches` and `GET /api/drying/available-harvests`, through the scoped drying API |
+| QC officers could not reach the drying section from the menu | The drying menu entry shows for production and QC roles |
+| Legacy sales, deliveries and feedback forms | Removed; old records stay as read-only history for super admins; new sales are customer orders |
+| 31 old write routes (plus a duplicate fly-facility blueprint) | Removed; a test checks every one answers 404/405 |
+
+The farmer portal links to the hatchery, fly facility and waste-handling
+forms. Every screen in the system now records a farm, site and facility,
+except compatibility copies the scoped waste and substrate flows write
+alongside their scoped records.
+
+Checked in the browser on the demo database as a farmer and a QC officer: a
+harvest from the farmer portal, a hatchery batch and its feeding, a cage
+check, then a drying batch through every stage, QC check, approval and
+release of LOT-2026-00005, which traces back to its waste lot.
+
 ## Known limitations
 
-1. **Legacy forms still exist.** The older data-entry forms (hatchery, fly
-   facility, legacy drying, sales) write to legacy tables without a
-   farm/site/facility. Those records are kept and readable by super admins,
-   but they are not part of traceability, stock or the location rules.
+1. **Old records have no location.** Hatchery, fly facility, waste-handling
+   and drying records entered before 16 October 2026 have no farm, site and
+   facility (unless an administrator mapped them). They stay as history for
+   super admins and are not part of traceability or stock.
 2. **Stock receipt time is the release time.** A lot enters stock at the
    moment QC releases it; it cannot be backdated. This matters when entering
    historical records (and is why demo stock movements are dated the day the
@@ -117,12 +147,12 @@ Those checks belong in the first week of the pilot (see
 |---|---|
 | Self-registration | Keep (accounts wait for an administrator) or turn off so only administrators create accounts |
 | Notification routing | Keep location-based, or route each alert type to chosen roles |
-| Legacy forms | Keep for history, or retire them once their data is mapped or archived |
 | Backdated stock entry | Needed for importing history? It would require a controlled "opening balance" movement type |
 
 ## Suggested Phase Two
 
-- Retire or migrate the legacy forms so every record has a location.
+- Hatchery and fly-facility records as linked batches (egg batch to larvae
+  batch), like the production chain.
 - Opening-balance and backdated stock movements for data import.
 - Role-based notification routing; SMS or WhatsApp for critical alerts.
 - Sign-out by POST; optional switch to disable self-registration.

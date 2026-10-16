@@ -22,7 +22,7 @@ ROUTE_COVERAGE=route-coverage.txt python -m pytest
 ```
 
 The file lists every endpoint with its call count and any never called
-(currently 211 of 211 are exercised).
+(currently 180 of 180 are exercised).
 
 ## Files
 
@@ -30,7 +30,8 @@ The file lists every endpoint with its call count and any never called
 |---|---|
 | `test_phase_one_end_to_end.py` | **The full chain** Waste Lot > Substrate > Production > Harvest > Drying > QC > Product Lot > Inventory > Order > Delivery, with real sign-in and each step done by its role, then traceability both ways, mass balance, ledger, Batch 360, reports, dashboard, notifications, audit trail, label scan and outsider isolation |
 | `test_access_and_admin.py` | Facility / site / farm / organization isolation matrix, admin portal API, location setup and grants, low-stock minimums, HTML sign-in and registration forms, page routes and static files |
-| `test_legacy_records.py` | Every legacy (pre-traceability) form: role refusal, 400 on empty input, stored record; legacy reads are super-admin only; legacy sales history; legacy feeding routes write canonical events |
+| `test_legacy_records.py` | The retired write routes (no location) are gone; legacy reads are super-admin only; legacy sales history is read-only; legacy feeding routes write canonical events |
+| `test_farm_operations.py` | Hatchery, fly facility and waste-handling logs: every kind needs a location and access, is validated, stored with its location and audited; outsiders cannot see them; the database refuses rows without a location; hatchery numbering and feeding checks; the drying pick-lists follow a batch from harvest to approval |
 | `test_production_batch_chain_integration.py` | Detailed rules for each stage (validation, limits, transitions, concurrency), inventory ledger, orders, traceability, alerts, notifications, reports, dashboard, units, farmer portal, QR labels, roles and security, audit log |
 | `test_waste_substrate_chain_integration.py` | Waste lots and substrate preparation: scope, lineage, over-consumption, concurrency |
 | `test_business_identifiers.py`, `test_location_hierarchy.py` | Business ID sequences and the location hierarchy migration |

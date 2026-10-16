@@ -17,7 +17,7 @@ ROLE_LABELS = {
 }
 
 PERMISSION_LABELS = {
-    'production.write': 'Record waste, substrate, batches, feeding, harvest and drying',
+    'production.write': 'Record waste, substrate, batches, feeding, harvest, drying and farm operation logs',
     'quality.decide': 'Record quality checks and approve or reject lots',
     'inventory.write': 'Post stock transfers and dispatches',
     'inventory.adjust': 'Post stock adjustments and wastage',
@@ -26,7 +26,6 @@ PERMISSION_LABELS = {
     'alerts.manage': 'Acknowledge and snooze alerts',
     # Super admin only:
     'legacy.read': 'See legacy (pre-traceability) records and analytics',
-    'legacy.write': 'Edit legacy sales, deliveries and feedback',
     'setup.manage': 'Manage locations, units, thresholds and users',
     'audit.read': 'Read the audit log',
 }

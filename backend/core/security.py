@@ -14,11 +14,6 @@ _BLUEPRINT_PERMISSIONS = {
     'waste_management.get_storage_records': 'legacy.read',
     'waste_management.get_processing_records': 'legacy.read',
     'waste_management.get_environmental_monitoring': 'legacy.read',
-    'fly_facility.cage_monitoring': 'production.write',
-    'fly_facility.facility_maintenance': 'production.write',
-    'fly_facility.pupae_transition': 'production.write',
-    'fly_facility.egg_collection': 'production.write',
-    'fly_facility.bait_preparation': 'production.write',
 }
 
 

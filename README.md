@@ -15,9 +15,10 @@ no front-end build step.
 
 | Area | Pages | What people do there |
 |---|---|---|
-| Waste and substrate | Data entry (`/dashboard`), Farmer portal (`/farmer`) | Record waste collections as lots; prepare substrate from them |
+| Waste and substrate | Data entry (`/dashboard`), Farmer portal (`/farmer`) | Record waste collections as lots; prepare substrate from them; waste storage, processing and environment checks |
+| Hatchery and fly facility | Data entry (`/dashboard#hatchery`, `#facility`), linked from the Farmer portal | Hatchery batches, feeding, checks, cleaning and problems; cage checks, maintenance, pupae transition, egg collection, bait |
 | Production | Production batches (`/production_batch.html`), Batch 360 (`/batch-360`) | Start batches in bio-pods, record feeding, monitoring, health and harvest; see one batch's whole life |
-| Drying and QC | Data entry, Product lots (`/product-lot`) | Dry harvests, record outputs and quality checks; QC officers approve or reject |
+| Drying and QC | Data entry (`/dashboard#drying`), Product lots (`/product-lot`) | Start drying batches from harvests, move them through their stages, record dried output; QC officers check, decide and release lots |
 | Stock | Product lots | Released lots enter stock through a ledger of receipts, transfers, wastage and dispatches |
 | Sales | Orders (`/orders`) | Customers, orders, reservations against approved stock, dispatch and confirmed delivery |
 | Traceability | Traceability (`/traceability`), QR labels (`/labels`) | Trace any record up to its waste or down to its customers; print and scan QR labels |
@@ -96,7 +97,8 @@ backend/
   core/               shared layers: web app and settings, security, accounts, audit, scope
   domains/            one module per business area (waste, production, drying, quality,
                       inventory, sales, traceability, alerts, reports, dashboard, labels,
-                      farmer, admin, audit, tour, health, legacy forms)
+                      farmer, farm operation logs, admin, audit, tour, health,
+                      legacy history)
   migrations/         SQL applied by init_db on every start (idempotent)
   roles.py            roles and permissions
   notifications.py    in-app and email notifications

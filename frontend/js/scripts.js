@@ -89,28 +89,27 @@ document.addEventListener('DOMContentLoaded', function() {
     // API endpoints
     const apiEndpoints = {
         'wasteSourcing': 'waste-sourcing',
-        'storageRecords': 'storage-records',
-        'processingRecords': 'processing-records',
-        // Environmental Monitoring Endpoints
-        'wasteEnvironmentalMonitoring': 'waste-monitoring',
-        'feedingEnvironmentalMonitoring': 'feeding/environmental-monitoring',
-        'batchInfo': 'hatchery/batch',
-        'feedingRecords': 'hatchery/feeding',
-        'hatcheryMonitoring': 'hatchery/monitoring',
-        'hatcheryEnvironmentalMonitoring': 'hatchery/monitoring',
-        'hatcheryCleaning': 'hatchery/cleaning',
-        'cleaningSanitation': 'hatchery/cleaning',
-        'hatcheryProblems': 'hatchery/problems',
-        'problemsSolutions': 'hatchery/problems',
-        'cageMonitoring': 'facility/cage-monitoring',
-        'facilityMaintenance': 'facility/maintenance',
-        'pupaeTransition': 'facility/pupae-transition',
-        'eggCollection': 'facility/egg-collection',
-        'baitPreparation': 'facility/bait-preparation',
         'substratePreparation': 'substrate-preparation',
+        // Larval batches: canonical production events.
+        'feedingEnvironmentalMonitoring': 'feeding/environmental-monitoring',
         'healthIntervention': 'feeding/health-intervention',
         'harvestYield': 'feeding/harvest-yield',
-        'feedingSchedule': 'feeding/schedule'
+        'feedingSchedule': 'feeding/schedule',
+        // Farm operation logs (backend/domains/farm_operations.py): each
+        // record carries the farm, site and facility chosen on the form.
+        'storageRecords': 'farm-operations/waste-storage',
+        'processingRecords': 'farm-operations/waste-processing',
+        'wasteEnvironmentalMonitoring': 'farm-operations/waste-monitoring',
+        'batchInfo': 'farm-operations/hatchery-batch',
+        'feedingRecords': 'farm-operations/hatchery-feeding',
+        'hatcheryEnvironmentalMonitoring': 'farm-operations/hatchery-monitoring',
+        'cleaningSanitation': 'farm-operations/hatchery-cleaning',
+        'problemsSolutions': 'farm-operations/hatchery-problem',
+        'cageMonitoring': 'farm-operations/cage-monitoring',
+        'facilityMaintenance': 'farm-operations/facility-maintenance',
+        'pupaeTransition': 'farm-operations/pupae-transition',
+        'eggCollection': 'farm-operations/egg-collection',
+        'baitPreparation': 'farm-operations/bait-preparation'
     };
 
     // Notification function
@@ -142,6 +141,8 @@ document.addEventListener('DOMContentLoaded', function() {
         uniqueBy(rows, idKey).forEach(row => select.add(new Option(row[nameKey], row[idKey])));
         if ([...select.options].some(option => option.value === previousValue && previousValue)) {
             select.value = previousValue;
+        } else if (select.options.length === 2) {
+            select.selectedIndex = 1;
         }
     }
 
@@ -181,6 +182,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         pickers.forEach(renderLocationPicker);
         refreshWasteLotSelects();
+        renderHatcheryBatches();
+        document.dispatchEvent(new Event('locations-loaded'));
     }
 
     document.querySelectorAll('.location-picker').forEach(picker => {
@@ -615,8 +618,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (formType === 'wasteSourcing' || formType === 'substratePreparation') {
                 window.refreshSubstrateChainData();
             }
-            if (formType === 'feedingRecords') {
-                fetchNextHatcheryBatchId();
+            if (formType === 'batchInfo' || formType === 'feedingRecords') {
+                loadHatcheryBatches();
             }
         } catch (error) {
             console.error('Error details:', error);
@@ -691,29 +694,35 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Auto-fetch and populate next Hatchery Batch ID for Feeding Records
-    async function fetchNextHatcheryBatchId() {
-        const batchIdInput = document.getElementById('batchId');
-        if (!batchIdInput) return;
+    // Hatchery feeding: choose one of the farm's hatchery batches (batches
+    // recorded before locations are listed too, so running batches go on).
+    let hatcheryBatches = [];
+    async function loadHatcheryBatches() {
+        const select = document.getElementById('hatcheryFeedingBatch');
+        if (!select) return;
         try {
-            const response = await fetch('/api/hatchery/next-batch-id', { credentials: 'include' });
-            if (response.ok) {
-                const data = await response.json();
-                batchIdInput.value = data.next_batch_id || 'HAT-1';
-            }
+            const response = await fetch('/api/farm-operations/hatchery-batch?limit=500', { credentials: 'include' });
+            hatcheryBatches = response.ok ? ((await response.json()).data || []) : [];
         } catch (e) {
-            console.error('Could not fetch next hatchery batch ID:', e);
+            console.error('Could not load hatchery batches:', e);
+            hatcheryBatches = [];
         }
+        renderHatcheryBatches();
     }
-
-    fetchNextHatcheryBatchId();
-
-    const refreshBatchIdBtn = document.getElementById('refreshBatchId');
-    if (refreshBatchIdBtn) {
-        refreshBatchIdBtn.addEventListener('click', function() {
-            fetchNextHatcheryBatchId();
-        });
+    function renderHatcheryBatches() {
+        const select = document.getElementById('hatcheryFeedingBatch');
+        if (!select) return;
+        const farmId = document.getElementById('feedingRecordsFarmId')?.value || '';
+        const rows = hatcheryBatches.filter(b => !b.farm_id || String(b.farm_id) === farmId);
+        const previous = select.value;
+        select.replaceChildren(new Option(
+            !farmId ? 'Select a farm first' : rows.length ? 'Select hatchery batch' : 'No hatchery batches on this farm yet', ''));
+        rows.forEach(b => select.add(new Option(`${b.batch_number} · ${b.batch_date}`, b.batch_number)));
+        if (rows.some(b => b.batch_number === previous)) select.value = previous;
     }
+    document.getElementById('feedingRecordsFarmId')?.addEventListener('change', renderHatcheryBatches);
+    document.getElementById('feedingRecordsForm')?.addEventListener('reset', () => setTimeout(renderHatcheryBatches, 0));
+    loadHatcheryBatches();
 
     // Handle records filtering
     const recordsFilterForm = document.getElementById('recordsFilterForm');
@@ -890,271 +899,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- Customers, Sales, Deliveries, Feedback Section Logic ---
-    const customerForm = document.getElementById('customerForm');
-    const customerTableBody = document.querySelector('#customerTable tbody');
-    const salesForm = document.getElementById('salesForm');
-    const salesTableBody = document.querySelector('#salesTable tbody');
-    const saleCustomerSelect = document.getElementById('saleCustomer');
-    const deliveryForm = document.getElementById('deliveryForm');
-    const deliveryTableBody = document.querySelector('#deliveryTable tbody');
-    const deliveryCustomerSelect = document.getElementById('deliveryCustomer');
-    const feedbackForm = document.getElementById('feedbackForm');
-    const feedbackTableBody = document.querySelector('#feedbackTable tbody');
-    const feedbackCustomerSelect = document.getElementById('feedbackCustomer');
-
-    let customers = [];
-    let sales = [];
-    let deliveries = [];
-    let feedbacks = [];
-
-    // Record text is user-entered; escape it before building table HTML.
-    function escapeCell(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-
-    // Fetch customers from backend and update all dropdowns
-    async function fetchCustomers() {
-      const res = await fetch('/api/customers', { credentials: 'include' });
-      customers = res.ok ? await res.json() : [];
-      updateCustomerDropdowns();
-      renderCustomers();
-    }
-    function updateCustomerDropdowns() {
-      const options = '<option value="">Select customer</option>' + customers.map(c => `<option value="${Number(c.id)}">${escapeCell(c.name)}</option>`).join('');
-      if (saleCustomerSelect) saleCustomerSelect.innerHTML = options;
-      if (deliveryCustomerSelect) deliveryCustomerSelect.innerHTML = options;
-      if (feedbackCustomerSelect) feedbackCustomerSelect.innerHTML = options;
-    }
-
-    // Fetch and render sales
-    async function fetchSales() {
-      const res = await fetch('/api/sales', { credentials: 'include' });
-      sales = res.ok ? await res.json() : [];
-      renderSales();
-    }
-    // Fetch and render deliveries
-    async function fetchDeliveries() {
-      const res = await fetch('/api/deliveries', { credentials: 'include' });
-      deliveries = res.ok ? await res.json() : [];
-      renderDeliveries();
-    }
-    // Fetch and render feedback
-    async function fetchFeedback() {
-      const res = await fetch('/api/feedback', { credentials: 'include' });
-      feedbacks = res.ok ? await res.json() : [];
-      renderFeedback();
-    }
-
-    // Render functions
-    function renderCustomers() {
-      if (!customerTableBody) return;
-      customerTableBody.innerHTML = '';
-      customers.forEach(c => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${escapeCell(c.name)}</td><td>${escapeCell(c.contact)}</td><td>${escapeCell(c.email)}</td><td>${escapeCell(c.address)}</td><td><button class='btn btn-sm btn-warning' onclick='editCustomer(${Number(c.id)})'>Edit</button></td>`;
-        customerTableBody.appendChild(row);
-      });
-    }
-    function renderSales() {
-      if (!salesTableBody) return;
-      salesTableBody.innerHTML = '';
-      sales.forEach(s => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${escapeCell(s.date)}</td><td>${escapeCell(s.customer_name)}</td><td>${escapeCell(s.product)}</td><td>${escapeCell(s.quantity)}</td><td>${escapeCell(s.amount)}</td><td><button class='btn btn-sm btn-warning' onclick='editSale(${Number(s.id)})'>Edit</button></td>`;
-        salesTableBody.appendChild(row);
-      });
-    }
-    function renderDeliveries() {
-      if (!deliveryTableBody) return;
-      deliveryTableBody.innerHTML = '';
-      deliveries.forEach(d => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${escapeCell(d.date)}</td><td>${escapeCell(d.customer_name)}</td><td>${escapeCell(d.product)}</td><td>${escapeCell(d.quantity)}</td><td>${escapeCell(d.status)}</td><td>${escapeCell(d.notes)}</td><td><button class='btn btn-sm btn-warning' onclick='editDelivery(${Number(d.id)})'>Edit</button></td>`;
-        deliveryTableBody.appendChild(row);
-      });
-    }
-    function renderFeedback() {
-      if (!feedbackTableBody) return;
-      feedbackTableBody.innerHTML = '';
-      feedbacks.forEach(f => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${escapeCell(f.date)}</td><td>${escapeCell(f.customer_name)}</td><td>${escapeCell(f.feedback)}</td><td>${escapeCell(f.rating)}</td><td><button class='btn btn-sm btn-warning' onclick='editFeedback(${Number(f.id)})'>Edit</button></td>`;
-        feedbackTableBody.appendChild(row);
-      });
-    }
-
-    // Add record handlers
-    if (customerForm) {
-      // Remove any existing submit event listeners (defensive, in case of hot reloads or multiple DOMContentLoaded)
-      customerForm.replaceWith(customerForm.cloneNode(true));
-      const newCustomerForm = document.getElementById('customerForm');
-      newCustomerForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const btn = newCustomerForm.querySelector('button[type="submit"]');
-        if (btn) btn.disabled = true;
-        const data = {
-          name: newCustomerForm.name.value.trim(),
-          contact: newCustomerForm.contact.value.trim(),
-          email: newCustomerForm.email.value.trim(),
-          address: newCustomerForm.address.value.trim()
-        };
-        await fetch('/api/customers', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data), credentials: 'include'});
-        newCustomerForm.reset();
-        if (btn) btn.disabled = false;
-        fetchCustomers();
-      }, { once: true });
-    }
-    if (salesForm) {
-      salesForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const data = {
-          date: salesForm.date.value,
-          customer_id: salesForm.customer.value, // Use customer_id
-          product: salesForm.product.value.trim(),
-          quantity: salesForm.quantity.value,
-          amount: salesForm.amount.value
-        };
-        await fetch('/api/sales', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data), credentials: 'include'});
-        salesForm.reset();
-        fetchSales();
-      });
-    }
-    if (deliveryForm) {
-      deliveryForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const data = {
-          date: deliveryForm.date.value,
-          customer_id: deliveryForm.customer.value, // Use customer_id
-          product: deliveryForm.product.value.trim(),
-          quantity: deliveryForm.quantity.value,
-          status: deliveryForm.status.value,
-          notes: deliveryForm.notes.value.trim()
-        };
-        await fetch('/api/deliveries', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data), credentials: 'include'});
-        deliveryForm.reset();
-        fetchDeliveries();
-      });
-    }
-    if (feedbackForm) {
-      feedbackForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const data = {
-          date: feedbackForm.date.value,
-          customer_id: feedbackForm.customer.value,
-          feedback: feedbackForm.feedback.value.trim(),
-          rating: feedbackForm.rating.value
-        };
-        await fetch('/api/feedback', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data), credentials: 'include'});
-        feedbackForm.reset();
-        fetchFeedback();
-      });
-    }
-
-    // Edit handlers (simple prompt-based for now)
-    window.editCustomer = async function(id) {
-      const c = customers.find(x => x.id === id);
-      if (!c) return;
-      const name = prompt('Edit Name:', c.name);
-      if (name === null) return;
-      const contact = prompt('Edit Contact:', c.contact || '');
-      if (contact === null) return;
-      const email = prompt('Edit Email:', c.email || '');
-      if (email === null) return;
-      const address = prompt('Edit Address:', c.address || '');
-      if (address === null) return;
-      await fetch(`/api/customers/${id}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, contact, email, address}), credentials: 'include'});
-      fetchCustomers();
-    };
-    window.editSale = async function(id) {
-      const s = sales.find(x => x.id === id);
-      if (!s) return;
-      const date = prompt('Edit Date:', s.date);
-      if (date === null) return;
-      const customer_id = prompt('Edit Customer ID:', s.customer_id);
-      if (customer_id === null) return;
-      const product = prompt('Edit Product:', s.product || '');
-      if (product === null) return;
-      const quantity = prompt('Edit Quantity:', s.quantity || '');
-      if (quantity === null) return;
-      const amount = prompt('Edit Amount:', s.amount);
-      if (amount === null) return;
-      await fetch(`/api/sales/${id}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({date, customer_id, product, quantity, amount}), credentials: 'include'});
-      fetchSales();
-    };
-    window.editDelivery = async function(id) {
-      const d = deliveries.find(x => x.id === id);
-      if (!d) return;
-      const date = prompt('Edit Date:', d.date);
-      if (date === null) return;
-      const customer_id = prompt('Edit Customer ID:', d.customer_id);
-      if (customer_id === null) return;
-      const product = prompt('Edit Product:', d.product || '');
-      if (product === null) return;
-      const quantity = prompt('Edit Quantity:', d.quantity || '');
-      if (quantity === null) return;
-      const status = prompt('Edit Status:', d.status);
-      if (status === null) return;
-      const notes = prompt('Edit Notes:', d.notes || '');
-      if (notes === null) return;
-      await fetch(`/api/deliveries/${id}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({date, customer_id, product, quantity, status, notes}), credentials: 'include'});
-      fetchDeliveries();
-    };
-    window.editFeedback = async function(id) {
-      const f = feedbacks.find(x => x.id === id);
-      if (!f) return;
-      const date = prompt('Edit Date:', f.date);
-      if (date === null) return;
-      const customer_id = prompt('Edit Customer ID:', f.customer_id);
-      if (customer_id === null) return;
-      const feedback = prompt('Edit Feedback:', f.feedback);
-      if (feedback === null) return;
-      const rating = prompt('Edit Rating:', f.rating);
-      if (rating === null) return;
-      await fetch(`/api/feedback/${id}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({date, customer_id, feedback, rating}), credentials: 'include'});
-      fetchFeedback();
-    };
-
-    // Ensure correct rendering when switching sections
-    window.showSection = function(sectionId, element) {
-      // Hide all sections
-      document.querySelectorAll('.section').forEach(section => {
-        section.classList.remove('active');
-      });
-      // Remove active class from all nav links
-      document.querySelectorAll('.nav-link').forEach(link => {
-        link.classList.remove('active');
-      });
-      // Show selected section
-      const section = document.getElementById(sectionId);
-      if (section) {
-        section.classList.add('active');
-        // If switching to customers or sales, re-render to ensure up-to-date display
-        if (sectionId === 'customers') {
-          renderCustomers();
-        } else if (sectionId === 'sales') {
-          renderCustomers(); // update dropdown
-          renderSales();
+    // Open the section named in the address (e.g. /dashboard#hatchery from
+    // the farmer portal), also when only the #part changes.
+    function openLinkedSection() {
+        const linkedSection = window.location.hash.slice(1);
+        if (linkedSection && document.getElementById(linkedSection)?.classList.contains('section')) {
+            const link = document.querySelector(`.nav-link[onclick*="'${linkedSection}'"]`);
+            showSection(linkedSection, link);
         }
-      }
-      // Add active class to clicked nav link
-      if (element) {
-        element.classList.add('active');
-      }
-    };
-
-    // Initial load: only what this role may see (the server enforces it too).
-    (window.currentUser || Promise.resolve(null)).then(function (profile) {
-      var granted = (profile && profile.permissions) || [];
-      if (granted.indexOf('sales.read') !== -1) fetchCustomers();
-      if (granted.indexOf('legacy.read') !== -1) {
-        fetchSales();
-        fetchDeliveries();
-        fetchFeedback();
-      }
-    });
+    }
+    openLinkedSection();
+    window.addEventListener('hashchange', openLinkedSection);
 });
 
 // Drying Process Section
@@ -1227,13 +982,166 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Drying records for the forms: batches with their outputs, the quality
+  // checks on each output, the decision on each check and the lot released
+  // from it; and harvests that still have wet larvae left to dry.
+  var dryingState = { batches: [], harvests: [] };
+  var NEXT_STAGE = { DRAFT: 'RECEIVED', RECEIVED: 'DRYING', DRYING: 'QC_PENDING', QC_PENDING: 'COMPLETED' };
+  var STAGE_LABEL = {
+    DRAFT: 'Draft', RECEIVED: 'Received', DRYING: 'Drying', QC_PENDING: 'Waiting for QC', COMPLETED: 'Completed'
+  };
+
+  function kgText(value) {
+    var n = Number(value);
+    return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 3 }) + ' kg' : '';
+  }
+
+  function findDryingBatch(ref) {
+    return dryingState.batches.find(function(b) { return b.business_id === ref; });
+  }
+
+  function fillDryingSelect(select, items, placeholder, emptyText) {
+    var previous = select.value;
+    select.replaceChildren(new Option(items.length ? placeholder : emptyText, ''));
+    items.forEach(function(item) {
+      var option = new Option(item.label, item.value);
+      if (item.batch) option.dataset.batch = item.batch;
+      select.add(option);
+    });
+    if (items.some(function(item) { return String(item.value) === previous; })) select.value = previous;
+  }
+
+  function renderDryingSelects() {
+    document.querySelectorAll('select.drying-batch').forEach(function(select) {
+      var statuses = (select.dataset.status || '').split(',');
+      fillDryingSelect(select, dryingState.batches
+        .filter(function(b) { return statuses.indexOf(b.status) !== -1; })
+        .map(function(b) {
+          return { value: b.business_id,
+                   label: b.business_id + ' · ' + b.batch_code + ' · ' + STAGE_LABEL[b.status] + ' · ' + b.facility_name };
+        }), 'Select drying batch', 'No drying batches at this stage');
+    });
+
+    // Harvests come from the farm chosen on the start form, or the farm of
+    // the drying batch being added to.
+    var inputBatch = findDryingBatch((document.getElementById('dryingInputBatch') || {}).value);
+    [['dryingHarvest', (document.getElementById('dryingBatchFarmId') || {}).value || '', 'Select a farm first'],
+     ['dryingInputHarvest', inputBatch ? String(inputBatch.farm_id) : '', 'Select a drying batch first']
+    ].forEach(function(spec) {
+      var select = document.getElementById(spec[0]);
+      if (!select) return;
+      var farmId = spec[1];
+      var items = !farmId ? [] : dryingState.harvests
+        .filter(function(h) { return String(h.farm_id) === farmId; })
+        .map(function(h) {
+          return { value: h.id,
+                   label: h.harvest_code + ' · ' + h.production_batch + ' · ' + kgText(h.remaining_kg) + ' left' };
+        });
+      fillDryingSelect(select, items, 'Select harvest',
+        farmId ? 'No harvest with larvae left on this farm' : spec[2]);
+    });
+
+    var toCheck = [], toRelease = [], undecided = [];
+    dryingState.batches.forEach(function(b) {
+      b.outputs.forEach(function(o) {
+        var label = b.business_id + ' · output ' + o.line_no + ' · ' + kgText(o.quantity);
+        var latest = o.checks[o.checks.length - 1];
+        var approved = latest && latest.status === 'passed' && latest.decision === 'approved';
+        if (!o.product_lot && approved) toRelease.push({ value: o.id, label: label });
+        // The server takes quality checks only once a batch waits for QC.
+        if (!o.product_lot && !approved && b.status === 'QC_PENDING') {
+          toCheck.push({ value: o.id, label: label, batch: b.business_id });
+        }
+        o.checks.forEach(function(c) {
+          if (!c.decision) undecided.push({ value: c.id, label: c.check_code + ' · ' + label + ' · ' + c.status });
+        });
+      });
+    });
+    document.querySelectorAll('select.drying-output').forEach(function(select) {
+      var release = select.dataset.stage === 'release';
+      fillDryingSelect(select, release ? toRelease : toCheck, 'Select output',
+        release ? 'No approved output waiting for release' : 'No dried output waiting for QC');
+    });
+    document.querySelectorAll('select.drying-check').forEach(function(select) {
+      fillDryingSelect(select, undecided, 'Select quality check', 'No quality check waiting for a decision');
+    });
+
+    var stageButton = document.getElementById('dryingStatusButton');
+    var stageBatch = findDryingBatch((document.getElementById('dryingStatusBatch') || {}).value);
+    if (stageButton) {
+      var next = stageBatch && NEXT_STAGE[stageBatch.status];
+      stageButton.lastChild.textContent = next ? ' Move to ' + STAGE_LABEL[next] : ' Move to Next Stage';
+    }
+  }
+
+  async function loadDryingData() {
+    try {
+      var responses = await Promise.all([
+        fetch('/api/drying/batches', { credentials: 'include' }),
+        fetch('/api/drying/available-harvests', { credentials: 'include' })
+      ]);
+      dryingState.batches = responses[0].ok ? ((await responses[0].json()).data || []) : [];
+      dryingState.harvests = responses[1].ok ? ((await responses[1].json()).data || []) : [];
+    } catch (err) {
+      console.error('Could not load drying records:', err);
+    }
+    renderDryingSelects();
+  }
+
+  ['dryingBatchFarmId', 'dryingInputBatch', 'dryingStatusBatch'].forEach(function(id) {
+    var select = document.getElementById(id);
+    if (select) select.addEventListener('change', renderDryingSelects);
+  });
+  // The farm list arrives later and may pick the only farm by itself.
+  document.addEventListener('locations-loaded', renderDryingSelects);
+  loadDryingData();
+
+  function harvestInput(data) {
+    var input = { harvest_id: data.harvestId, quantity: data.quantityKg, unit: 'kg' };
+    if (data.moisturePercent) input.incoming_moisture_percent = data.moisturePercent;
+    return input;
+  }
+
+  // Each form turns its fields into one request to the scoped drying API.
   var dryingForms = [
-    { id: 'dryingBatchForm', endpoint: 'drying/batch' },
-    { id: 'dryingInputForm', endpoint: 'drying/input' },
-    { id: 'dryingOutputForm', endpoint: 'drying/output' },
-    { id: 'qualityControlForm', endpoint: 'drying/qc' },
-    { id: 'reviewApprovalForm', endpoint: 'drying/review' },
-    { id: 'productLotReleaseForm', endpoint: 'product-lots' }
+    { id: 'dryingBatchForm', request: function(data) {
+      return { url: '/api/drying/batches', body: {
+        farm_id: data.farmId, site_id: data.siteId, facility_id: data.facilityId,
+        batch_code: data.batchCode, drying_date: data.dryingDate, drying_method: data.dryingMethod,
+        personnel: data.personnel, inputs: [harvestInput(data)] } };
+    } },
+    { id: 'dryingInputForm', request: function(data) {
+      return { url: '/api/drying/batches/' + encodeURIComponent(data.dryingBatch) + '/inputs',
+               body: { inputs: [harvestInput(data)], notes: data.notes } };
+    } },
+    { id: 'dryingStatusForm', request: function(data) {
+      var batch = findDryingBatch(data.dryingBatch);
+      return { url: '/api/drying/batches/' + encodeURIComponent(data.dryingBatch) + '/status',
+               body: { status: batch && NEXT_STAGE[batch.status], reason: data.reason } };
+    } },
+    { id: 'dryingOutputForm', request: function(data) {
+      return { url: '/api/drying/batches/' + encodeURIComponent(data.dryingBatch) + '/outputs', body: {
+        quantity: data.quantityKg, unit: 'kg', moisture_percent: data.moisturePercent || null,
+        output_date: data.outputDate, operator: data.operator, notes: data.notes } };
+    } },
+    { id: 'qualityControlForm', request: function(data, form) {
+      var option = form.querySelector('select.drying-output').selectedOptions[0];
+      return { url: '/api/drying/outputs/' + encodeURIComponent(data.dryingOutputId) + '/quality-checks', body: {
+        drying_batch_id: option ? option.dataset.batch : undefined,
+        status: data.checkStatus, inspector: data.qcPersonnel, checked_at: data.qcDate,
+        moisture_percent: data.qcMoisturePercent || null,
+        parameters: { sand_removal: data.sandRemoval, contaminants_found: data.contaminantsFound || [],
+                      color_quality: data.colorQuality, moisture_level: data.moistureLevel },
+        notes: data.notes } };
+    } },
+    { id: 'reviewApprovalForm', request: function(data) {
+      return { url: '/api/drying/quality-approvals', body: {
+        quality_check_id: data.qualityCheckId, decision: data.approvalStatus,
+        approver: data.reviewedBy, rationale: data.comments } };
+    } },
+    { id: 'productLotReleaseForm', request: function(data) {
+      return { url: '/api/product-lots', body: data };
+    } }
   ];
 
   var dryingSuccessAlert = document.createElement('div');
@@ -1312,56 +1220,19 @@ document.addEventListener('DOMContentLoaded', function() {
           data[key] = value;
         }
       });
-      if (item.id === 'dryingOutputForm') {
-        var wetPlaced = parseFloat(document.getElementById('wetPlaced') ? document.getElementById('wetPlaced').value : 0) || 0;
-        var driedProduced = parseFloat(document.getElementById('driedProduced') ? document.getElementById('driedProduced').value : 0) || 0;
-        if (wetPlaced && driedProduced) {
-          var ratio = (wetPlaced / driedProduced).toFixed(2);
-          var yieldPercent = ((driedProduced / wetPlaced) * 100).toFixed(2);
-          if (document.getElementById('actualRatio')) document.getElementById('actualRatio').value = ratio;
-          if (document.getElementById('yieldPercentage')) document.getElementById('yieldPercentage').value = yieldPercent;
-          data.actualRatio = ratio;
-          data.yieldPercentage = yieldPercent;
-        }
-      }
-      var endpointUrl = '/api/' + item.endpoint;
-      var requestData = data;
-      if (item.id === 'qualityControlForm' && data.dryingOutputId) {
-        endpointUrl = '/api/drying/outputs/' + encodeURIComponent(data.dryingOutputId) + '/quality-checks';
-        requestData = {
-          drying_batch_id: data.batchId,
-          status: data.checkStatus,
-          inspector: data.qcPersonnel,
-          checked_at: data.qcDate,
-          moisture_percent: data.qcMoisturePercent || null,
-          parameters: {
-            sand_removal: data.sandRemoval,
-            contaminants_found: data.contaminantsFound || [],
-            color_quality: data.colorQuality,
-            moisture_level: data.moistureLevel
-          },
-          notes: data.notes
-        };
-      } else if (item.id === 'reviewApprovalForm' && data.qualityCheckId) {
-        endpointUrl = '/api/drying/quality-approvals';
-        requestData = {
-          quality_check_id: data.qualityCheckId,
-          decision: data.approvalStatus,
-          approver: data.reviewedBy,
-          rationale: data.comments
-        };
-      }
+      var request = item.request(data, form);
       try {
-        var response = await fetch(endpointUrl, {
+        var response = await fetch(request.url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestData),
+          body: JSON.stringify(request.body),
           credentials: 'include'
         });
         var result = await response.json();
         if (response.ok) {
           showDryingAlert('success', result.message || 'Data saved successfully!');
           form.reset();
+          loadDryingData();
           if (item.id === 'productLotReleaseForm' && result.data) {
             var createdLink = document.getElementById('productLotCreatedLink');
             if (createdLink) {
