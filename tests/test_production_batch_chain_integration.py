@@ -1865,7 +1865,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                 "farm_id": self.farm_id,
                 "requested_delivery_date": "2026-10-30",
                 "lines": [
-                    {"product_type": product_type, "quantity_kg": quantity}
+                    {"product_type": product_type, "quantity_kg": quantity, "unit_price": "400"}
                     for quantity in quantities
                 ],
             },
@@ -2038,7 +2038,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         negative = self.client.post(
             "/api/orders",
             json={"customer_id": self._customer(), "farm_id": self.farm_id,
-                  "lines": [{"product_type": "dried_larvae", "quantity_kg": "-1"}]},
+                  "lines": [{"product_type": "dried_larvae", "quantity_kg": "-1", "unit_price": "400"}]},
         )
         self.assertEqual(negative.status_code, 400)
 
@@ -2090,7 +2090,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             create = self.client.post(
                 "/api/orders",
                 json={"customer_id": self._customer(), "farm_id": self.farm_id,
-                      "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.1"}]},
+                      "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.1", "unit_price": "400"}]},
             )
             trace = self._trace(lot["business_id"])
             batch360 = self._get_360(
@@ -2242,7 +2242,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             json={
                 "customer_id": self._customer(), "farm_id": self.farm_id,
                 "order_date": "2026-09-01", "requested_delivery_date": "2026-09-02",
-                "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.500"}],
+                "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.500", "unit_price": "400"}],
             },
         )
         order = response.get_json()["data"]
@@ -2291,7 +2291,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             json={
                 "customer_id": self._customer(), "farm_id": self.farm_id,
                 "order_date": "2026-09-01", "requested_delivery_date": str(date.today() - timedelta(days=1)),
-                "lines": [{"product_type": "dried_larvae", "quantity_kg": "1"}],
+                "lines": [{"product_type": "dried_larvae", "quantity_kg": "1", "unit_price": "400"}],
             },
         )
         order = response.get_json()["data"]
@@ -2337,7 +2337,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             "/api/orders",
             json={"customer_id": self._customer(), "farm_id": self.farm_id,
                   "order_date": "2026-09-01", "requested_delivery_date": "2026-09-02",
-                  "lines": [{"product_type": "dried_larvae", "quantity_kg": "1"}]},
+                  "lines": [{"product_type": "dried_larvae", "quantity_kg": "1", "unit_price": "400"}]},
         )
         alerts = self._alerts("active")
         production_alert = self._by_rule(alerts, "harvest_overdue")[0]
@@ -2786,6 +2786,117 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertIn("farm_operations", [r["key"] for r in catalog])
         self.assertEqual(self.client.get("/analytics").status_code, 200)
 
+    # ---- Order prices and revenue -------------------------------------------------
+
+    def _new_order(self, lines):
+        return self.client.post("/api/orders", json={
+            "customer_id": self._customer(), "farm_id": self.farm_id, "lines": lines})
+
+    def test_every_order_line_needs_a_valid_price(self):
+        missing = self._new_order([{"product_type": "dried_larvae", "quantity_kg": "1"}])
+        self.assertEqual(missing.status_code, 400)
+        self.assertIn("unit_price is required", missing.get_json()["message"])
+        for bad, message in (("-1", "zero or more"), ("12.345", "two decimals"), ("abc", "must be a number")):
+            with self.subTest(price=bad):
+                response = self._new_order([{"product_type": "dried_larvae", "quantity_kg": "1", "unit_price": bad}])
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.get_json()["message"])
+        # The database refuses new lines without a price as well.
+        order = self._new_order([{"product_type": "dried_larvae", "quantity_kg": "1", "unit_price": "0"}])
+        self.assertEqual(order.status_code, 201, order.get_json())
+        with self.assertRaises(psycopg2.errors.CheckViolation):
+            db.execute_query(
+                "INSERT INTO customer_order_lines (order_id, line_no, product_type, quantity_kg) "
+                "VALUES (%s, 9, 'dried_larvae', 1)", (order.get_json()["data"]["id"],))
+
+    def test_prices_give_order_values_and_revenue_on_delivery(self):
+        admin = SimpleNamespace(is_authenticated=True, id=0, role="super_admin", username="admin")
+
+        def revenue():
+            with self._as(admin):
+                return self.client.get("/api/admin/overview").get_json()["data"]
+
+        before = revenue()
+        self.assertEqual(before["currency"], "KES")
+        lot = self._release_lot(output_quantity="0.600")
+        created = self._new_order([
+            {"product_type": "dried_larvae", "quantity_kg": "0.500", "unit_price": "420.50"},
+            {"product_type": "dried_larvae", "quantity_kg": "0.100", "unit_price": "0"},
+        ])
+        self.assertEqual(created.status_code, 201, created.get_json())
+        order = created.get_json()["data"]
+        self.assertEqual([line["line_value"] for line in order["lines"]], [210.25, 0.0])
+        self.assertEqual((order["totals"]["order_value"], order["totals"]["currency"]), (210.25, "KES"))
+        ref = order["business_id"]
+
+        # Agreed a different price before anything left: allowed and audited.
+        line_id = order["lines"][0]["id"]
+        repriced = self.client.put(f"/api/orders/{ref}/lines/{line_id}/price", json={"unit_price": "400"})
+        self.assertEqual(repriced.status_code, 200, repriced.get_json())
+        self.assertEqual(repriced.get_json()["data"]["totals"]["order_value"], 200.0)
+        change = db.fetch_one(
+            "SELECT old_value ->> 'unit_price' AS old, new_value ->> 'unit_price' AS new FROM audit_log "
+            "WHERE action = 'customer_order_lines.updated' AND entity_id = %s ORDER BY id DESC LIMIT 1",
+            (str(line_id),))
+        self.assertEqual((float(change["old"]), float(change["new"])), (420.5, 400.0))
+        order = repriced.get_json()["data"]
+
+        allocation = self._allocate(order, lot, "0.300").get_json()["data"]["allocations"][0]
+        delivery_ref = self._dispatch(order, allocation["id"], "0.300").get_json()["data"]["created_delivery"]
+        # Fixed once dispatched; dispatched but unconfirmed is not revenue yet.
+        locked = self.client.put(f"/api/orders/{ref}/lines/{line_id}/price", json={"unit_price": "1"})
+        self.assertEqual(locked.status_code, 409)
+        self.assertIn("fixed once the line has been dispatched", locked.get_json()["message"])
+        self.assertAlmostEqual(revenue()["total_revenue"], before["total_revenue"])
+
+        self.client.post(f"/api/deliveries/{delivery_ref}/confirm", json={"received_by": "Stores"})
+        detail = self.client.get(f"/api/orders/{ref}").get_json()["data"]
+        self.assertEqual(detail["totals"]["delivered_value"], 120.0)  # 0.3 kg x 400
+        self.assertEqual(detail["lines"][0]["delivered_value"], 120.0)
+        after = revenue()
+        self.assertAlmostEqual(after["total_revenue"] - before["total_revenue"], 120.0)
+        self.assertAlmostEqual(after["total_delivered_kg"] - before["total_delivered_kg"], 0.3)
+
+        listed = next(o for o in self.client.get("/api/orders").get_json()["data"] if o["business_id"] == ref)
+        self.assertEqual((float(listed["order_value"]), listed["currency"]), (200.0, "KES"))
+        sales = next(r for r in self.client.get("/api/reports/sales").get_json()["data"] if r["order_ref"] == ref)
+        self.assertEqual((float(sales["order_value"]), float(sales["delivered_value"])), (200.0, 120.0))
+        delivery = next(r for r in self.client.get("/api/reports/deliveries").get_json()["data"]
+                        if r["delivery"] == delivery_ref)
+        self.assertEqual(float(delivery["value"]), 120.0)
+        farm = self.client.get(f"/api/reports/farm_performance?farm_id={self.farm_id}").get_json()["data"]
+        self.assertGreaterEqual(float(farm[0]["revenue"]), 120.0)
+        cancelled = self._new_order([{"product_type": "dried_larvae", "quantity_kg": "1", "unit_price": "50"}])
+        cancelled_ref = cancelled.get_json()["data"]["business_id"]
+        self.client.post(f"/api/orders/{cancelled_ref}/cancel", json={"reason": "Customer changed supplier"})
+        row = next(r for r in self.client.get("/api/reports/sales").get_json()["data"] if r["order_ref"] == cancelled_ref)
+        self.assertIsNone(row["order_value"])  # not counted in the sales totals
+
+    def test_orders_from_before_prices_can_be_priced(self):
+        order = self._new_order([{"product_type": "dried_larvae", "quantity_kg": "0.200", "unit_price": "10"}])
+        data = order.get_json()["data"]
+        # A line entered before prices existed: the rule is NOT VALID, so such
+        # rows stay; recreate one the way the migration found them.
+        db.execute_query("ALTER TABLE customer_order_lines DROP CONSTRAINT customer_order_lines_unit_price_required")
+        try:
+            db.execute_query(
+                "INSERT INTO customer_order_lines (order_id, line_no, product_type, quantity_kg) "
+                "VALUES (%s, 2, 'dried_larvae', 0.300)", (data["id"],))
+        finally:
+            db.execute_query(
+                "ALTER TABLE customer_order_lines ADD CONSTRAINT customer_order_lines_unit_price_required "
+                "CHECK (unit_price IS NOT NULL) NOT VALID")
+        ref = data["business_id"]
+        detail = self.client.get(f"/api/orders/{ref}").get_json()["data"]
+        old_line = detail["lines"][1]
+        self.assertEqual((old_line["unit_price"], old_line["line_value"]), (None, None))
+        self.assertEqual((detail["totals"]["unpriced_lines"], detail["totals"]["order_value"]), (1, 2.0))
+        priced = self.client.put(f"/api/orders/{ref}/lines/{old_line['id']}/price", json={"unit_price": "15"})
+        self.assertEqual(priced.status_code, 200, priced.get_json())
+        self.assertEqual((priced.get_json()["data"]["totals"]["unpriced_lines"],
+                          priced.get_json()["data"]["totals"]["order_value"]), (0, 6.5))
+        self.assertEqual(self.client.put(f"/api/orders/{ref}/lines/999999999/price",
+                                         json={"unit_price": "1"}).status_code, 404)
     # ---- Operations dashboard ----------------------------------------------------
 
     def _make_chain_recent(self):

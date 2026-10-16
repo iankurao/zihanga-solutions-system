@@ -415,12 +415,15 @@ class DemoBuilder:
                 'address': 'Demonstration customer - not a real business'})['id']
         farm = self.farms['KER']['farm']['id']
 
+        # Agreed prices per kg of dried larvae (demonstration figures).
+        prices = {'Demo Poultry Feeds Ltd': '420', 'Demo Aquafarm Kenya': '450', 'Demo Pig Unit Co-operative': '400'}
+
         def order(customer, kg, requested, reference):
             return self.sales.post('/api/orders', {
                 'customer_id': customers[customer], 'farm_id': farm, 'order_date': self.day(min(requested - 7, 0)),
                 'requested_delivery_date': self.day(requested),
                 'customer_reference': reference,
-                'lines': [{'product_type': 'dried_larvae', 'quantity_kg': kg}]})['data']
+                'lines': [{'product_type': 'dried_larvae', 'quantity_kg': kg, 'unit_price': prices[customer]}]})['data']
 
         def reserve(o, lot, kg):
             return self.sales.post(f"/api/orders/{o['business_id']}/allocations", {

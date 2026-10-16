@@ -72,6 +72,11 @@ async function loadOverview(days) {
       stat('fa-seedling',    'navy',  fmt(d.total_harvest_kg) + ' kg',   'Larvae Harvested'),
       stat('fa-box',         'teal',  fmt(d.total_dried_kg) + ' kg',     'Dried Output'),
       stat('fa-truck',       'rose',  fmt(d.total_delivered_kg) + ' kg', 'Delivered to Customers'),
+      // Revenue is counted when a delivery is confirmed (delivered kg x price).
+      stat('fa-coins',       'green', d.currency + ' ' + Number(d.total_revenue || 0).toLocaleString(undefined,
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        'Revenue (delivered)' + (d.total_unpriced_delivered_kg > 0
+          ? ' · excl. ' + fmt(d.total_unpriced_delivered_kg) + ' kg without a price' : '')),
     ].join('');
   } catch (e) {
     console.error('Overview error:', e);

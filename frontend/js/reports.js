@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', function () {
     switch (column.type) {
       case 'kg': return Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 });
       case 'percent': return Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
+      case 'money': return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       case 'number': return Number(value).toLocaleString();
       case 'date': return new Date(String(value).slice(0, 10) + 'T00:00:00').toLocaleDateString();
       case 'datetime': return new Date(value).toLocaleString();
@@ -46,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function numeric(column) {
-    return column.type === 'kg' || column.type === 'percent' || column.type === 'number';
+    return ['kg', 'percent', 'number', 'money'].indexOf(column.type) !== -1;
   }
 
   async function api(url) {

@@ -89,7 +89,7 @@
 
 .order-line {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 0.5rem;
 }
 
@@ -161,6 +161,7 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .order-line .order-line-product,
   .order-line button {
     grid-column: 1 / -1;
   }

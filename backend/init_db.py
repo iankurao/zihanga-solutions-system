@@ -661,6 +661,8 @@ def create_tables(cursor):
     # After audit_log.sql: attaches its audit trigger to the farm operation logs.
     farm_logs_migration_path = Path(__file__).parent / "migrations" / "farm_operation_logs.sql"
     cursor.execute(farm_logs_migration_path.read_text(encoding="utf-8"))
+    order_prices_migration_path = Path(__file__).parent / "migrations" / "order_prices.sql"
+    cursor.execute(order_prices_migration_path.read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     init_database()

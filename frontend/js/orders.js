@@ -24,6 +24,13 @@ document.addEventListener('DOMContentLoaded', function () {
     return Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 }) + ' kg';
   }
 
+  var currency = 'KES';
+  function money(value) {
+    if (value == null || value === '') return '—';
+    return currency + ' ' + Number(value).toLocaleString(undefined,
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   function when(value, withTime) {
     if (!value) return '—';
     var date = new Date(value.length === 10 ? value + 'T00:00:00' : value);
@@ -84,6 +91,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  function put(url, body) {
+    return api(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+  }
+
   function showMessage(text, isError) {
     ErpUI.message(message, text, isError ? 'danger' : 'success');
   }
@@ -112,6 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       payload.data.forEach(function (order) {
+        if (order.currency) currency = order.currency;
         var item = el('button', 'order-item' + (order.business_id === activeRef ? ' is-active' : ''));
         item.type = 'button';
         var top = el('div', 'order-item-top');
@@ -125,7 +141,8 @@ document.addEventListener('DOMContentLoaded', function () {
         item.append(
           top,
           el('small', null, order.customer_name + ' · ' + order.farm_name),
-          el('small', null, kg(dispatched) + ' of ' + kg(ordered) + ' dispatched'),
+          el('small', null, kg(dispatched) + ' of ' + kg(ordered) + ' dispatched' +
+            (order.order_value != null ? ' · ' + money(order.order_value) : '')),
           bar
         );
         item.addEventListener('click', function () { openOrder(order.business_id); });
@@ -143,7 +160,10 @@ document.addEventListener('DOMContentLoaded', function () {
     product.className = 'order-line-product';
     var quantity = input('number', { min: '0.001', step: '0.001', placeholder: 'kg', required: '' });
     quantity.className = 'order-line-qty';
-    row.append(product, quantity, button('Remove', 'erp-btn erp-btn--danger', function () {
+    var price = input('number', { min: '0', step: '0.01', placeholder: currency + ' per kg', required: '' });
+    price.className = 'order-line-price';
+    price.setAttribute('aria-label', 'Price per kg');
+    row.append(product, quantity, price, button('Remove', 'erp-btn erp-btn--danger', function () {
       if (document.querySelectorAll('.order-line').length > 1) row.remove();
     }));
     document.getElementById('orderLines').appendChild(row);
@@ -203,7 +223,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var lines = [].map.call(document.querySelectorAll('.order-line'), function (row) {
       return {
         product_type: row.querySelector('.order-line-product').value.trim(),
-        quantity_kg: row.querySelector('.order-line-qty').value
+        quantity_kg: row.querySelector('.order-line-qty').value,
+        unit_price: row.querySelector('.order-line-price').value
       };
     });
     submit.disabled = true;
@@ -249,6 +270,7 @@ document.addEventListener('DOMContentLoaded', function () {
     detailNode.textContent = '';
     var open = order.status === 'OPEN';
     var base = '/api/orders/' + encodeURIComponent(order.business_id);
+    if (order.totals.currency) currency = order.totals.currency;
 
     // Header
     var summary = el('section', 'erp-card trace-summary');
@@ -279,7 +301,17 @@ document.addEventListener('DOMContentLoaded', function () {
         tile.append(el('span', null, pair[0]), el('strong', null, kg(pair[1])));
         kpis.appendChild(tile);
       });
+    [['Order value', order.totals.order_value], ['Delivered value (revenue)', order.totals.delivered_value]]
+      .forEach(function (pair) {
+        var tile = el('div', 'erp-kpi');
+        tile.append(el('span', null, pair[0]), el('strong', null, money(pair[1])));
+        kpis.appendChild(tile);
+      });
     summary.append(header, facts, kpis);
+    if (order.totals.unpriced_lines) {
+      summary.appendChild(el('p', 'erp-hint', order.totals.unpriced_lines +
+        ' line(s) have no price yet and are left out of the values. Set a price below.'));
+    }
     detailNode.appendChild(summary);
 
     // Lines and allocation
@@ -291,10 +323,20 @@ document.addEventListener('DOMContentLoaded', function () {
           showStockPicker(order, line, pickerHost);
         }));
       }
-      return [line.line_no, line.product_type, kg(line.quantity_kg), kg(line.outstanding_allocated_kg),
-        kg(line.dispatched_kg), kg(line.remaining_to_allocate_kg), actionCell];
+      // The price can be set or corrected until anything on the line is dispatched.
+      if (order.status !== 'CANCELLED' && Number(line.dispatched_kg) === 0) {
+        actionCell.appendChild(button(line.unit_price == null ? 'Set price' : 'Change price',
+          'erp-btn erp-btn--secondary erp-btn--sm', function () {
+            showReasonForm(actionCell, 'Price per kg (' + currency + ')', function (value, control) {
+              act(control, put(base + '/lines/' + line.id + '/price', { unit_price: value }), 'Price saved.');
+            });
+          }));
+      }
+      return [line.line_no, line.product_type, kg(line.quantity_kg), money(line.unit_price), money(line.line_value),
+        kg(line.outstanding_allocated_kg), kg(line.dispatched_kg), kg(line.remaining_to_allocate_kg), actionCell];
     });
-    linesCard.appendChild(table(['#', 'Product', 'Ordered', 'Reserved', 'Dispatched', 'To allocate', ''], lineRows));
+    linesCard.appendChild(table(['#', 'Product', 'Ordered', 'Price / kg', 'Value', 'Reserved', 'Dispatched',
+      'To allocate', ''], lineRows));
     var pickerHost = el('div');
     linesCard.appendChild(pickerHost);
     detailNode.appendChild(linesCard);

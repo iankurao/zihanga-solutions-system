@@ -28,6 +28,9 @@ else:
         'port': DB_PORT,
     }
 
+# Currency of order prices and revenue (ISO code shown next to amounts).
+CURRENCY = (os.getenv('CURRENCY') or 'KES').strip().upper()[:3]
+
 # Most connections one process keeps open to PostgreSQL (per gunicorn worker).
 DB_POOL_MAX = max(2, int(os.getenv('DB_POOL_MAX', '10') or 10))
 

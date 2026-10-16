@@ -20,7 +20,7 @@ no front-end build step.
 | Production | Production batches (`/production_batch.html`), Batch 360 (`/batch-360`) | Start batches in bio-pods, record feeding, monitoring, health and harvest; see one batch's whole life |
 | Drying and QC | Data entry (`/dashboard#drying`), Product lots (`/product-lot`) | Start drying batches from harvests, move them through their stages, record dried output; QC officers check, decide and release lots |
 | Stock | Product lots | Released lots enter stock through a ledger of receipts, transfers, wastage and dispatches |
-| Sales | Orders (`/orders`) | Customers, orders, reservations against approved stock, dispatch and confirmed delivery |
+| Sales | Orders (`/orders`) | Customers, priced orders (price per kg), reservations against approved stock, dispatch and confirmed delivery; revenue is counted when a delivery is confirmed |
 | Traceability | Traceability (`/traceability`), QR labels (`/labels`) | Trace any record up to its waste or down to its customers; print and scan QR labels |
 | Oversight | Operations dashboard (`/operations`), Alerts (`/alerts`), Reports (`/analytics`) | Live figures, automatic alerts (overdue harvests, health issues, failed QC, low stock, late orders) with notifications, 13 reports with CSV/Excel/PDF (including farm operation logs) |
 | Administration | Admin portal (`/zehunger`), Farm setup (`/setup`), Audit log (`/audit`) | Accounts and roles, organizations, farms, sites, facilities, stores and bio-pods, the append-only audit trail |
@@ -209,6 +209,7 @@ database `/tour` and the demo endpoints answer 404.
 | `APP_ENV`             | `production` refuses to start with unsafe settings (see `python -m backend.preflight`) | `development` |
 | `PUBLIC_BASE_URL`     | Address printed on QR labels, e.g. `https://erp.example.com` | request host |
 | `TRUSTED_PROXY_COUNT` | Proxies in front of the app whose `X-Forwarded-*` headers are trusted | `1` |
+| `CURRENCY`            | Currency of order prices and revenue | `KES` |
 | `DB_POOL_MAX`         | Database connections each process may hold | `10` |
 | `WEB_CONCURRENCY`, `GUNICORN_THREADS` | gunicorn workers and threads (`deploy/gunicorn.conf.py`) | `2`, `4` |
 | `DEMO_GUEST_ACCESS`   | `1` lets visitors explore a demo database as the read-only guest (ignored on real databases) | off |

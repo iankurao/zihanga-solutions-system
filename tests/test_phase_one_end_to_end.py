@@ -148,7 +148,7 @@ class PhaseOneEndToEndTest(ScenarioTestCase):
         order = self.ok(self.sales.post("/api/orders", {
             "customer_id": customer["id"], "farm_id": self.place["farm"]["id"],
             "requested_delivery_date": day(7), "customer_reference": "PO-1001",
-            "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.500"}]}), 201)["data"]
+            "lines": [{"product_type": "dried_larvae", "quantity_kg": "0.500", "unit_price": "400"}]}), 201)["data"]
         ref = order["business_id"]
         stock = self.ok(self.sales.get(f"/api/orders/{ref}/available-stock?line_id={order['lines'][0]['id']}"))["data"]
         offer = next(r for r in stock if r["product_lot_id"] == lot["id"])

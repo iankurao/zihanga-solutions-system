@@ -40,9 +40,9 @@ Those checks belong in the first week of the pilot (see
 
 ## How it was verified
 
-- **Automated tests:** 155 tests pass against PostgreSQL 16 (plus 152
+- **Automated tests:** 158 tests pass against PostgreSQL 16 (plus 155
   subtests), including the whole chain performed role by role with real
-  sign-ins. All 137 of the application's endpoints are called by the suite
+  sign-ins. All 138 of the application's endpoints are called by the suite
   (`ROUTE_COVERAGE`).
 - **Browser:** every page loaded as the super admin on the demo database with
   no failed requests or script errors; the investor tour walked end to end as
@@ -122,6 +122,19 @@ harvested, 119.3 kg dried and 5 customer orders.
 
 The breeding cycle (hatchery, fly facility) is still recorded per location
 but not linked to production batches; see Suggested Phase Two.
+
+## Prices and revenue (16 October 2026)
+
+Every new order line has a price per kg (`CURRENCY`, default KES; zero is
+allowed for samples). Revenue is counted when a delivery is confirmed:
+delivered kg x the line's price. It shows on the order (line values, order
+value, delivered value), the order list, the sales and deliveries reports,
+farm performance, and the admin portal ("Revenue (delivered)", which also
+says how many delivered kg had no price). A price can be added or corrected
+until the line is first dispatched, then it is fixed; every change is in the
+audit log. Orders entered before prices existed stay valid and can be priced
+from the order page. Cancelled orders are left out of the sales report's order
+value.
 
 ## Known limitations
 

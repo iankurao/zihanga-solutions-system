@@ -218,6 +218,7 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/orders/<string:order_ref>/available-stock` | sales.read |
 | POST | `/api/orders/<string:order_ref>/cancel` | sales.write |
 | POST | `/api/orders/<string:order_ref>/deliveries` | sales.write |
+| PUT | `/api/orders/<string:order_ref>/lines/<int:line_id>/price` | sales.write |
 | GET | `/orders` | signed in |
 
 ## tour

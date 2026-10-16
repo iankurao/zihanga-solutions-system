@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 
 from backend.passwords import password_problem
 from backend.roles import ASSIGNABLE_ROLES, PERMISSION_LABELS, ROLE_LABELS
+from backend.config import CURRENCY
 from backend.core.web import app, db, logger
 from backend.core.security import _permissions_for, super_admin_required
 from backend.core.accounts import _account_field_problem, create_user, get_user_by_email
@@ -74,10 +75,25 @@ def admin_overview():
                FROM drying_outputs WHERE output_date >= {since}) AS total_dried_kg,
             (SELECT COALESCE(SUM(l.quantity_kg), 0)
                FROM customer_delivery_lines l JOIN customer_deliveries d ON d.id = l.delivery_id
-               WHERE d.status = 'DELIVERED' AND d.delivered_at::date >= {since}) AS total_delivered_kg
+               WHERE d.status = 'DELIVERED' AND d.delivered_at::date >= {since}) AS total_delivered_kg,
+            (SELECT COALESCE(SUM(dl.quantity_kg * ol.unit_price), 0)
+               FROM customer_delivery_lines dl
+               JOIN customer_deliveries d ON d.id = dl.delivery_id
+               JOIN order_allocations a ON a.id = dl.allocation_id
+               JOIN customer_order_lines ol ON ol.id = a.order_line_id
+               WHERE d.status = 'DELIVERED' AND d.delivered_at::date >= {since}) AS total_revenue,
+            (SELECT COALESCE(SUM(dl.quantity_kg), 0)
+               FROM customer_delivery_lines dl
+               JOIN customer_deliveries d ON d.id = dl.delivery_id
+               JOIN order_allocations a ON a.id = dl.allocation_id
+               JOIN customer_order_lines ol ON ol.id = a.order_line_id
+               WHERE d.status = 'DELIVERED' AND ol.unit_price IS NULL
+                 AND d.delivered_at::date >= {since}) AS total_unpriced_delivered_kg
     """)
-    return jsonify({'success': True, 'data': {key: float(value) if key.startswith('total_') and 'farmers' not in key
-                                              else value for key, value in row.items()}})
+    data = {key: float(value) if key.startswith('total_') and 'farmers' not in key else value
+            for key, value in row.items()}
+    data['currency'] = CURRENCY
+    return jsonify({'success': True, 'data': data})
 
 
 @app.route('/api/admin/farmers', methods=['GET'])

@@ -1,10 +1,11 @@
 """Customers, customer orders, stock allocations and deliveries."""
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from flask import jsonify, render_template, request
 from flask_login import login_required
 
+from backend.config import CURRENCY
 from backend.core.web import app, db, logger
 from backend.core.http import (
     InventoryConflictError,
@@ -61,7 +62,7 @@ def _order_detail(cursor, order):
     order_id = order['id']
     cursor.execute(
         """
-        SELECT id, line_no, product_type, quantity_kg, unit, notes
+        SELECT id, line_no, product_type, quantity_kg, unit, unit_price, notes
         FROM customer_order_lines WHERE order_id = %s ORDER BY line_no
         """,
         (order_id,),
@@ -99,7 +100,7 @@ def _order_detail(cursor, order):
     if deliveries:
         cursor.execute(
             """
-            SELECT dl.delivery_id, dl.allocation_id, dl.quantity_kg,
+            SELECT dl.delivery_id, dl.allocation_id, dl.quantity_kg, a.order_line_id,
                    im.business_id AS movement_business_id,
                    pl.business_id AS product_lot_business_id,
                    il.location_code
@@ -123,7 +124,18 @@ def _order_detail(cursor, order):
             )
 
     zero = Decimal('0')
+    delivered_by_line = {}
+    for delivery in deliveries:
+        if delivery['status'] == 'DELIVERED':
+            for delivery_line in delivery['lines']:
+                delivered_by_line[delivery_line['order_line_id']] = (
+                    delivered_by_line.get(delivery_line['order_line_id'], zero)
+                    + Decimal(str(delivery_line['quantity_kg'])))
     for line in lines:
+        price = line['unit_price']
+        line['delivered_kg'] = delivered_by_line.get(line['id'], zero)
+        line['line_value'] = _money(Decimal(str(line['quantity_kg'])) * price) if price is not None else None
+        line['delivered_value'] = _money(line['delivered_kg'] * price) if price is not None else None
         mine = [a for a in allocations if a['order_line_id'] == line['id']]
         line['allocations'] = mine
         line['outstanding_allocated_kg'] = sum((Decimal(str(a['outstanding_kg'])) for a in mine), zero)
@@ -139,6 +151,12 @@ def _order_detail(cursor, order):
         'delivered_kg': sum(
             (d['quantity_kg'] for d in deliveries if d['status'] == 'DELIVERED'), zero
         ),
+        # Lines without a price (from before prices) are left out of the values.
+        'order_value': sum((line['line_value'] for line in lines if line['line_value'] is not None), zero),
+        'delivered_value': sum((line['delivered_value'] for line in lines
+                                if line['delivered_value'] is not None), zero),
+        'unpriced_lines': sum(1 for line in lines if line['unit_price'] is None),
+        'currency': CURRENCY,
     }
     return _jsonable({
         **order,
@@ -206,6 +224,58 @@ def _optional_date(data, field):
         raise ValueError(f'{field} must be a valid date (YYYY-MM-DD)')
 
 
+MAX_UNIT_PRICE = Decimal('100000000')
+
+
+def _money(value):
+    return value.quantize(Decimal('0.01'))
+
+
+def _parse_price(value, field):
+    """Price per kg: required, zero or more, at most two decimals."""
+    if value in (None, ''):
+        raise ValueError(f'{field} is required (price per kg in {CURRENCY})')
+    try:
+        price = Decimal(str(value).strip())
+    except InvalidOperation:
+        raise ValueError(f'{field} must be a number')
+    if not price.is_finite() or price < 0:
+        raise ValueError(f'{field} must be zero or more')
+    if price > MAX_UNIT_PRICE:
+        raise ValueError(f'{field} is too large')
+    if price != price.quantize(Decimal('0.01')):
+        raise ValueError(f'{field} can have at most two decimals')
+    return _money(price)
+
+
+def _set_line_price(order_ref, line_id, data):
+    """Price a line, or correct its price, until anything on it is dispatched."""
+    unit_price = _parse_price(data.get('unit_price'), 'unit_price')
+    with db.transaction() as cursor:
+        order = _order_row(cursor, order_ref, for_update=True)
+        if order['status'] == 'CANCELLED':
+            raise ValueError('A cancelled order cannot be priced')
+        cursor.execute(
+            "SELECT id FROM customer_order_lines WHERE id = %s AND order_id = %s FOR UPDATE",
+            (line_id, order['id']),
+        )
+        if not cursor.fetchone():
+            raise RecordNotFoundError('Order line not found')
+        cursor.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM customer_delivery_lines AS dl
+                JOIN order_allocations AS a ON a.id = dl.allocation_id
+                WHERE a.order_line_id = %s) AS dispatched
+            """,
+            (line_id,),
+        )
+        if cursor.fetchone()['dispatched']:
+            raise InventoryConflictError('The price is fixed once the line has been dispatched')
+        cursor.execute("UPDATE customer_order_lines SET unit_price = %s WHERE id = %s", (unit_price, line_id))
+        return _order_detail(cursor, _order_row(cursor, order['id']))
+
+
 def _create_order(data):
     customer_id = _parse_positive_integer(data.get('customer_id'), 'customer_id')
     farm_id = _parse_positive_integer(data.get('farm_id'), 'farm_id')
@@ -230,6 +300,7 @@ def _create_order(data):
         parsed_lines.append((
             index, product_type,
             _parse_chain_quantity(line.get('quantity_kg'), f'Line {index} quantity_kg'),
+            _parse_price(line.get('unit_price'), f'Line {index} unit_price'),
             _optional_text(line, 'notes', 500),
         ))
     customer_reference = _optional_text(data, 'customer_reference', 60)
@@ -256,13 +327,13 @@ def _create_order(data):
              actor, actor_user_id),
         )
         order_id = cursor.fetchone()['id']
-        for line_no, product_type, quantity, line_notes in parsed_lines:
+        for line_no, product_type, quantity, unit_price, line_notes in parsed_lines:
             cursor.execute(
                 """
-                INSERT INTO customer_order_lines (order_id, line_no, product_type, quantity_kg, notes)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO customer_order_lines (order_id, line_no, product_type, quantity_kg, unit_price, notes)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (order_id, line_no, product_type, quantity, line_notes),
+                (order_id, line_no, product_type, quantity, unit_price, line_notes),
             )
         return _order_detail(cursor, _order_row(cursor, order_id))
 
@@ -616,7 +687,10 @@ def list_customer_orders():
                    COALESCE((SELECT SUM(s.quantity_kg - s.released_kg - s.dispatched_kg)
                      FROM allocation_state AS s
                      JOIN customer_order_lines AS l ON l.id = s.order_line_id
-                     WHERE l.order_id = o.id), 0) AS allocated_kg
+                     WHERE l.order_id = o.id), 0) AS allocated_kg,
+                   (SELECT SUM(l.quantity_kg * l.unit_price) FROM customer_order_lines AS l
+                     WHERE l.order_id = o.id) AS order_value,
+                   %s AS currency
             FROM customer_orders AS o
             JOIN customers AS c ON c.id = o.customer_id
             JOIN farms AS f ON f.id = o.farm_id
@@ -624,7 +698,7 @@ def list_customer_orders():
             ORDER BY o.order_date DESC, o.id DESC
             LIMIT 500
             """,
-            tuple(filter_params),
+            (CURRENCY, *filter_params),
         )
         return _jsonable(rows)
     return _order_response(handler)
@@ -666,6 +740,13 @@ def release_order_allocation(order_ref, allocation_id):
     return _order_response(
         _release_allocation, order_ref, allocation_id, normalize_keys(request.get_json() or {})
     )
+
+
+@app.route('/api/orders/<string:order_ref>/lines/<int:line_id>/price', methods=['PUT'])
+@login_required
+@requires('sales.write')
+def price_customer_order_line(order_ref, line_id):
+    return _order_response(_set_line_price, order_ref, line_id, normalize_keys(request.get_json() or {}))
 
 
 @app.route('/api/orders/<string:order_ref>/cancel', methods=['POST'])

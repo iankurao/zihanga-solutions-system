@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Response, jsonify, request
 from flask_login import login_required
 
+from backend.config import CURRENCY
 from backend.core.web import app, db, logger
 from backend.core.http import _jsonable, _parse_positive_integer, _ratio_percent
 from backend.core.security import _can
@@ -314,7 +315,16 @@ def _report_sales(cursor, f):
                          WHERE l.order_id = o.id), 0) AS dispatched_kg,
                COALESCE((SELECT SUM(dl.quantity_kg) FROM customer_delivery_lines AS dl
                          JOIN customer_deliveries AS d ON d.id = dl.delivery_id
-                         WHERE d.order_id = o.id AND d.status = 'DELIVERED'), 0) AS delivered_kg
+                         WHERE d.order_id = o.id AND d.status = 'DELIVERED'), 0) AS delivered_kg,
+               -- A cancelled order is no longer worth anything; leave it out of totals.
+               CASE WHEN o.status <> 'CANCELLED' THEN
+                   (SELECT SUM(l.quantity_kg * l.unit_price) FROM customer_order_lines AS l
+                     WHERE l.order_id = o.id) END AS order_value,
+               COALESCE((SELECT SUM(dl.quantity_kg * l.unit_price) FROM customer_delivery_lines AS dl
+                         JOIN customer_deliveries AS d ON d.id = dl.delivery_id
+                         JOIN order_allocations AS a ON a.id = dl.allocation_id
+                         JOIN customer_order_lines AS l ON l.id = a.order_line_id
+                         WHERE d.order_id = o.id AND d.status = 'DELIVERED'), 0) AS delivered_value
         FROM customer_orders AS o
         JOIN customers AS c ON c.id = o.customer_id
         JOIN farms AS fm ON fm.id = o.farm_id
@@ -336,6 +346,11 @@ def _report_deliveries(cursor, f):
         SELECT d.business_id AS delivery, o.business_id AS order_ref, c.name AS customer,
                d.status, d.dispatched_at, d.delivered_at, d.received_by, d.vehicle, d.driver,
                (SELECT SUM(quantity_kg) FROM customer_delivery_lines WHERE delivery_id = d.id) AS quantity_kg,
+               (SELECT SUM(dl.quantity_kg * l.unit_price)
+                FROM customer_delivery_lines AS dl
+                JOIN order_allocations AS a ON a.id = dl.allocation_id
+                JOIN customer_order_lines AS l ON l.id = a.order_line_id
+                WHERE dl.delivery_id = d.id) AS value,
                (SELECT string_agg(pl.business_id, ', ' ORDER BY pl.business_id)
                 FROM customer_delivery_lines AS dl
                 JOIN order_allocations AS a ON a.id = dl.allocation_id
@@ -429,6 +444,7 @@ def _report_farm_performance(cursor, f):
         ('dried_out_kg', f"SELECT COALESCE(SUM({KG_SQL.format(unit='o.unit', qty='o.quantity')}), 0) FROM drying_outputs AS o JOIN drying_batches AS db ON db.id = o.drying_batch_id WHERE db.farm_id = fm.farm_id AND {{w}}", 'db.drying_date'),
         ('released_kg', 'SELECT COALESCE(SUM(quantity_kg), 0) FROM product_lots WHERE farm_id = fm.farm_id AND drying_output_id IS NOT NULL AND {w}', 'production_date'),
         ('dispatched_kg', "SELECT COALESCE(SUM(quantity_kg), 0) FROM inventory_movements WHERE farm_id = fm.farm_id AND movement_type = 'DISPATCH' AND status = 'posted' AND {w}", 'occurred_at'),
+        ('revenue', "SELECT COALESCE(SUM(dl.quantity_kg * l.unit_price), 0) FROM customer_delivery_lines AS dl JOIN customer_deliveries AS d ON d.id = dl.delivery_id JOIN customer_orders AS ro ON ro.id = d.order_id JOIN order_allocations AS a ON a.id = dl.allocation_id JOIN customer_order_lines AS l ON l.id = a.order_line_id WHERE ro.farm_id = fm.farm_id AND d.status = 'DELIVERED' AND {w}", 'd.delivered_at'),
     ):
         clause, clause_params = within(column)
         parts.append(f"({sql.format(w=clause)}) AS {name}")
@@ -583,8 +599,10 @@ REPORTS = {
                     _col('customer_reference', 'Customer ref'), _col('status', 'Status'),
                     _col('requested', 'Requested', 'date'), _col('products', 'Products'),
                     _col('ordered_kg', 'Ordered kg', 'kg'), _col('dispatched_kg', 'Dispatched kg', 'kg'),
-                    _col('delivered_kg', 'Delivered kg', 'kg'), _col('farm', 'Farm')],
-        'totals': ['ordered_kg', 'dispatched_kg', 'delivered_kg'],
+                    _col('delivered_kg', 'Delivered kg', 'kg'),
+                    _col('order_value', f'Order value ({CURRENCY})', 'money'),
+                    _col('delivered_value', f'Delivered value ({CURRENCY})', 'money'), _col('farm', 'Farm')],
+        'totals': ['ordered_kg', 'dispatched_kg', 'delivered_kg', 'order_value', 'delivered_value'],
     },
     'deliveries': {
         'title': 'Deliveries', 'group': 'Stock & sales', 'builder': _report_deliveries,
@@ -593,9 +611,9 @@ REPORTS = {
         'columns': [_col('delivery', 'Delivery'), _col('order_ref', 'Order'), _col('customer', 'Customer'),
                     _col('status', 'Status'), _col('dispatched_at', 'Dispatched', 'datetime'),
                     _col('delivered_at', 'Delivered', 'datetime'), _col('received_by', 'Received by'),
-                    _col('quantity_kg', 'Quantity kg', 'kg'), _col('product_lots', 'Product lots'),
-                    _col('vehicle', 'Vehicle'), _col('driver', 'Driver')],
-        'totals': ['quantity_kg'],
+                    _col('quantity_kg', 'Quantity kg', 'kg'), _col('value', f'Value ({CURRENCY})', 'money'),
+                    _col('product_lots', 'Product lots'), _col('vehicle', 'Vehicle'), _col('driver', 'Driver')],
+        'totals': ['quantity_kg', 'value'],
     },
     'farm_operations': {
         'title': 'Farm operation logs', 'group': 'Production', 'builder': _report_farm_operations,
@@ -626,9 +644,10 @@ REPORTS = {
                     _col('harvest_per_substrate_pct', 'Harvest / substrate %', 'percent'),
                     _col('dried_in_kg', 'Into drying kg', 'kg'), _col('dried_out_kg', 'Dried kg', 'kg'),
                     _col('drying_yield_pct', 'Drying yield %', 'percent'), _col('released_kg', 'Released kg', 'kg'),
-                    _col('dispatched_kg', 'Dispatched kg', 'kg'), _col('open_alerts', 'Open alerts', 'number')],
+                    _col('dispatched_kg', 'Dispatched kg', 'kg'),
+                    _col('revenue', f'Revenue ({CURRENCY})', 'money'), _col('open_alerts', 'Open alerts', 'number')],
         'totals': ['waste_received_kg', 'substrate_kg', 'batches_started', 'harvested_kg',
-                   'dried_in_kg', 'dried_out_kg', 'released_kg', 'dispatched_kg', 'open_alerts'],
+                   'dried_in_kg', 'dried_out_kg', 'released_kg', 'dispatched_kg', 'revenue', 'open_alerts'],
     },
 }
 

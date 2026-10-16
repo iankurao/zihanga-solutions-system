@@ -69,7 +69,7 @@ class AccessIsolationTest(ScenarioTestCase):
         site_manager = self.make_user("manager", access=[("site", self.place["site"]["id"])])
         farm_manager = users["farm manager"][0]
         order_body = {"customer_id": self._customer(), "farm_id": self.place["farm"]["id"],
-                      "lines": [{"product_type": "dried_larvae", "quantity_kg": "1"}]}
+                      "lines": [{"product_type": "dried_larvae", "quantity_kg": "1", "unit_price": "400"}]}
         self.assertEqual(site_manager.post("/api/orders", order_body).status_code, 403)
         self.ok(farm_manager.post("/api/orders", order_body), 201)
         self.assertEqual(self.ok(site_manager.get("/api/orders"))["data"], [])
