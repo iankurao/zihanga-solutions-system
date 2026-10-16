@@ -136,51 +136,12 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 
 | Method | Path | Access |
 |---|---|---|
-| GET | `/api/analytics/bait-preparation` | legacy.read |
-| GET | `/api/analytics/cage-monitoring` | legacy.read |
-| GET | `/api/analytics/customers` | legacy.read |
-| GET | `/api/analytics/deliveries` | legacy.read |
-| GET | `/api/analytics/drying-batches` | legacy.read |
-| GET | `/api/analytics/egg-collection` | legacy.read |
-| GET | `/api/analytics/facility-maintenance` | legacy.read |
-| GET | `/api/analytics/feedback` | legacy.read |
-| GET | `/api/analytics/feeding-schedule` | legacy.read |
-| GET | `/api/analytics/harvest-yield` | legacy.read |
-| GET | `/api/analytics/hatchery-batches` | legacy.read |
-| GET | `/api/analytics/hatchery-feeding` | legacy.read |
-| GET | `/api/analytics/hatchery-monitoring` | legacy.read |
-| GET | `/api/analytics/health-intervention` | legacy.read |
-| GET | `/api/analytics/larvae-env-monitoring` | legacy.read |
-| GET | `/api/analytics/processing-records` | legacy.read |
-| GET | `/api/analytics/pupae-transition` | legacy.read |
-| GET | `/api/analytics/sales` | legacy.read |
-| GET | `/api/analytics/storage-records` | legacy.read |
-| GET | `/api/analytics/substrate-preparation` | legacy.read |
-| GET | `/api/analytics/waste-env-monitoring` | legacy.read |
-| GET | `/api/analytics/waste-monitoring` | legacy.read |
-| GET | `/api/analytics/waste-sourcing` | legacy.read |
-| GET | `/api/deliveries` | legacy.read |
-| GET | `/api/drying/input/all` | legacy.read |
-| GET | `/api/drying/output/all` | legacy.read |
-| GET | `/api/drying/qc/all` | legacy.read |
-| GET | `/api/drying/remarks/all` | legacy.read |
-| GET | `/api/drying/review/all` | legacy.read |
-| GET | `/api/feedback` | legacy.read |
 | POST | `/api/feeding/environmental-monitoring` | production.write |
 | POST | `/api/feeding/harvest-yield` | production.write |
-| GET | `/api/feeding/harvest/all` | legacy.read |
 | POST | `/api/feeding/health-intervention` | production.write |
 | POST | `/api/feeding/schedule` | production.write |
 | GET | `/api/records` | legacy.read |
-| GET | `/api/sales` | legacy.read |
 | POST | `/api/send-harvest-report` | legacy.read |
-| GET | `/api/statistics/daily-report` | legacy.read |
-| GET | `/api/statistics/environmental` | legacy.read |
-| GET | `/api/statistics/harvest-efficiency` | legacy.read |
-| GET | `/api/statistics/larval-growth` | legacy.read |
-| GET | `/api/statistics/system-efficiency` | legacy.read |
-| GET | `/api/statistics/waste-processing` | legacy.read |
-| GET | `/api/waste-sourcing/all` | legacy.read |
 
 ## location_routes
 
@@ -296,15 +257,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/waste-lots` | signed in |
 | POST | `/api/waste-lots/<string:lot_ref>/location` | super_admin |
 | POST | `/api/waste-sourcing` | production.write |
-
-## waste_management_routes
-
-| Method | Path | Access |
-|---|---|---|
-| GET | `/api/environmental-monitoring` | legacy.read |
-| GET | `/api/processing-records` | legacy.read |
-| GET | `/api/storage-records` | legacy.read |
-| GET | `/api/waste-sourcing` | legacy.read |
 
 ## web
 

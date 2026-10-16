@@ -1074,7 +1074,10 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertTrue(
             all(event["production_batch_id"] == batch["id"] for event in data["harvests"])
         )
-        reports = self.client.get("/api/feeding/harvest/all").get_json()["records"]
+        from backend.domains.production import _harvest_report_rows
+
+        with app.test_request_context():
+            reports = _harvest_report_rows()  # what the harvest report email lists
         linked = [
             row for row in reports
             if row["record_type"] == "production_batch"
@@ -1150,11 +1153,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             "flask_login.utils._get_user", lambda: unauthorized_user
         ):
             response = self._harvest(batch)
-            listing = self.client.get("/api/feeding/harvest/all")
         self.assertEqual(response.status_code, 403, response.get_json())
         self.assertIn("not authorized", response.get_json()["message"])
-        # Step 22: the legacy harvest listing is for super admins only.
-        self.assertEqual(listing.status_code, 403, listing.get_json())
     # ---- Product Lot -> Inventory ledger -------------------------------------
 
     def _release_lot(self, *, output_quantity="0.600"):
@@ -2782,7 +2782,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual((bad_dates.status_code, bad_status.status_code), (400, 400))
         self.assertEqual(self.client.get("/api/reports/unknown").status_code, 404)
         catalog = self.client.get("/api/reports").get_json()["data"]
-        self.assertEqual(len(catalog), 12)
+        self.assertEqual(len(catalog), 13)
+        self.assertIn("farm_operations", [r["key"] for r in catalog])
         self.assertEqual(self.client.get("/analytics").status_code, 200)
 
     # ---- Operations dashboard ----------------------------------------------------
@@ -3189,20 +3190,17 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
     def test_legacy_records_are_super_admin_only(self):
         manager = self._create_db_user(role="manager")
         with self._as(manager):
-            for path in ("/api/analytics/sales", "/api/statistics/daily-report",
-                         "/api/waste-sourcing/all", "/api/records?date=2026-01-01&section=all",
-                         "/api/sales", "/api/waste-sourcing"):
-                self.assertEqual(self.client.get(path).status_code, 403, path)
+            self.assertEqual(self.client.get("/api/records?date=2026-01-01&section=all").status_code, 403)
+            self.assertEqual(self.client.post("/api/send-harvest-report").status_code, 403)
             self.assertEqual(self.client.get("/analytics").status_code, 200)
         admin = SimpleNamespace(is_authenticated=True, id=0, role="super_admin", username="admin")
         with self._as(admin):
-            self.assertEqual(self.client.get("/api/analytics/sales").status_code, 200)
+            self.assertEqual(self.client.get("/api/records?date=2026-01-01&section=sales").status_code, 200)
         anonymous = SimpleNamespace(is_authenticated=False, is_active=False, is_anonymous=True,
                                     get_id=lambda: None)
         with patch.dict(app.config, {"LOGIN_DISABLED": False}), \
                 patch("flask_login.utils._get_user", lambda: anonymous):
-            # The legacy blueprints used to answer without any sign-in.
-            self.assertEqual(self.client.get("/api/waste-sourcing").status_code, 401)
+            self.assertEqual(self.client.get("/api/records?date=2026-01-01&section=all").status_code, 401)
             self.assertEqual(self.client.post("/api/farm-operations/egg-collection", json={}).status_code, 401)
 
     def test_cross_site_writes_are_refused(self):

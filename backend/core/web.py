@@ -18,7 +18,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from backend.config import DATABASE_URL, IS_PRODUCTION
 from backend.database import DatabaseConnection
 from backend.location_routes import locations
-from backend.waste_management_routes import waste_management
 
 
 # Configure logging
@@ -135,7 +134,6 @@ login_manager.session_protection = 'basic'
 db = DatabaseConnection()
 
 # Register blueprints
-app.register_blueprint(waste_management)
 app.register_blueprint(locations)
 
 # Route to serve static files

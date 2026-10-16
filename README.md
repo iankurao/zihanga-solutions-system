@@ -22,7 +22,7 @@ no front-end build step.
 | Stock | Product lots | Released lots enter stock through a ledger of receipts, transfers, wastage and dispatches |
 | Sales | Orders (`/orders`) | Customers, orders, reservations against approved stock, dispatch and confirmed delivery |
 | Traceability | Traceability (`/traceability`), QR labels (`/labels`) | Trace any record up to its waste or down to its customers; print and scan QR labels |
-| Oversight | Operations dashboard (`/operations`), Alerts (`/alerts`), Reports (`/analytics`) | Live figures, automatic alerts (overdue harvests, health issues, failed QC, low stock, late orders) with notifications, 12 reports with CSV/Excel/PDF |
+| Oversight | Operations dashboard (`/operations`), Alerts (`/alerts`), Reports (`/analytics`) | Live figures, automatic alerts (overdue harvests, health issues, failed QC, low stock, late orders) with notifications, 13 reports with CSV/Excel/PDF (including farm operation logs) |
 | Administration | Admin portal (`/zehunger`), Farm setup (`/setup`), Audit log (`/audit`) | Accounts and roles, organizations, farms, sites, facilities, stores and bio-pods, the append-only audit trail |
 
 Every record belongs to an organization, farm, site and facility, and people

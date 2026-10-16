@@ -5,13 +5,12 @@ import secrets
 
 from datetime import timedelta
 from flask import jsonify, redirect, request, url_for
-from flask_login import UserMixin, login_required, login_user
+from flask_login import UserMixin, login_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from backend.roles import ASSIGNABLE_ROLES
 from backend.core.web import _client_ip, app, db, login_manager
 from backend.core.audit import audit_event
-from backend.core.security import _BLUEPRINT_PERMISSIONS, requires
 
 
 # User class for Flask-Login
@@ -200,6 +199,3 @@ def _unauthorized():
         return jsonify({'success': False, 'message': 'Please sign in'}), 401
     return redirect(url_for('login', next=request.full_path.rstrip('?')))
 
-
-for _endpoint, _permission in _BLUEPRINT_PERMISSIONS.items():
-    app.view_functions[_endpoint] = login_required(requires(_permission)(app.view_functions[_endpoint]))

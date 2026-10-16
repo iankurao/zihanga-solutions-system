@@ -30,21 +30,21 @@ RETIRED = [
     )
 ] + [("PUT", f"/api/{name}/1") for name in ("sales", "deliveries", "feedback")] + [
     ("GET", "/api/hatchery/next-batch-id"),
-]
-
-LEGACY_READS = [
+] + [("GET", url) for url in (
+    # Statistics and analytics read only the old tables; operational reports replace them.
     "/api/statistics/waste-processing", "/api/statistics/environmental", "/api/statistics/larval-growth",
     "/api/statistics/system-efficiency", "/api/statistics/daily-report", "/api/statistics/harvest-efficiency",
     "/api/waste-sourcing/all", "/api/drying/input/all", "/api/drying/output/all", "/api/drying/qc/all",
     "/api/drying/remarks/all", "/api/drying/review/all", "/api/feeding/harvest/all",
-    "/api/records?date=2026-09-20&section=all", "/api/sales", "/api/deliveries", "/api/feedback",
+    "/api/analytics/waste-sourcing", "/api/analytics/hatchery-batches", "/api/analytics/sales",
+    "/api/analytics/harvest-yield", "/api/analytics/drying-batches",
+    "/api/sales", "/api/deliveries", "/api/feedback",
     "/api/waste-sourcing", "/api/storage-records", "/api/processing-records", "/api/environmental-monitoring",
-] + [f"/api/analytics/{name}" for name in (
-    "waste-sourcing", "storage-records", "processing-records", "waste-monitoring", "waste-env-monitoring",
-    "hatchery-batches", "hatchery-feeding", "hatchery-monitoring", "larvae-env-monitoring",
-    "substrate-preparation", "health-intervention", "harvest-yield", "feeding-schedule", "cage-monitoring",
-    "facility-maintenance", "pupae-transition", "egg-collection", "bait-preparation", "drying-batches",
-    "customers", "sales", "deliveries", "feedback")]
+)]
+
+# The one history view left: old records by date and section (super admins).
+LEGACY_READS = [f"/api/records?date=2026-09-20&section={section}"
+                for section in ("all", "waste", "hatchery", "feeding", "drying", "facility", "sales")]
 
 
 @requires_database
@@ -69,13 +69,23 @@ class LegacyRecordsTest(ScenarioTestCase):
     def test_harvest_report_email_is_admin_only(self):
         from unittest.mock import patch
 
-        with patch("backend.domains.legacy.send_email") as send:
+        configured = {"EMAIL_HOST_USER": "alerts@example.com", "EMAIL_HOST_PASSWORD": "x",
+                      "ADMIN_EMAIL": "admin@example.com"}
+        with patch.multiple("backend.domains.legacy", **configured), \
+                patch("backend.domains.legacy.send_email", return_value=True) as send:
             self.assertEqual(self.operator.post("/api/send-harvest-report").status_code, 403)
             sent = self.admin.post("/api/send-harvest-report")
         self.assertEqual(sent.status_code, 200, sent.get_json())
         send.assert_called_once()
         subject, body, recipient = send.call_args.args
-        self.assertIn("Harvest Yield Report", subject)
+        self.assertIn("Harvest Report", subject)
+        self.assertEqual(recipient, "admin@example.com")
+        # It says so when nothing was sent instead of claiming success.
+        with patch.multiple("backend.domains.legacy", EMAIL_HOST_USER="", EMAIL_HOST_PASSWORD="", ADMIN_EMAIL=""):
+            self.assertEqual(self.admin.post("/api/send-harvest-report").status_code, 503)
+        with patch.multiple("backend.domains.legacy", **configured), \
+                patch("backend.domains.legacy.send_email", return_value=False):
+            self.assertEqual(self.admin.post("/api/send-harvest-report").status_code, 502)
 
     def test_legacy_reads_are_super_admin_only(self):
         for url in LEGACY_READS:
@@ -110,26 +120,22 @@ class LegacyRecordsTest(ScenarioTestCase):
         self.assertEqual(self.admin.put("/api/customers/999999999", {"name": name}).status_code, 404)
 
         # Old sales, deliveries and feedback stay readable history for super
-        # admins; new ones are customer orders (/orders), so nothing can add
-        # to or change the legacy tables any more.
-        legacy = {
-            "/api/sales": ("sales", "INSERT INTO sales (date, customer_id, product, quantity, amount) "
-                                    "VALUES (%s, %s, 'dried larvae', 2, 900) RETURNING id"),
-            "/api/deliveries": ("deliveries", "INSERT INTO deliveries (date, customer_id, product, quantity, status) "
-                                              "VALUES (%s, %s, 'dried larvae', 2, 'delivered') RETURNING id"),
-            "/api/feedback": ("customer_feedback", "INSERT INTO customer_feedback (date, customer_id, feedback, rating) "
-                                                   "VALUES (%s, %s, 'good quality', 5) RETURNING id"),
+        # admins in the records lookup; new sales are customer orders (/orders)
+        # and nothing can add to or change the legacy tables any more.
+        inserts = {
+            "Sales": "INSERT INTO sales (date, customer_id, product, quantity, amount) "
+                     "VALUES (%s, %s, 'dried larvae', 2, 900) RETURNING id",
+            "Deliveries": "INSERT INTO deliveries (date, customer_id, product, quantity, status) "
+                          "VALUES (%s, %s, 'dried larvae', 2, 'delivered') RETURNING id",
+            "Customer Feedback": "INSERT INTO customer_feedback (date, customer_id, feedback, rating) "
+                                 "VALUES (%s, %s, 'good quality', 5) RETURNING id",
         }
-        for url, (table, insert) in legacy.items():
-            with self.subTest(url=url):
-                record_id = db.execute_returning(insert, (D, customer_id))["id"]
-                history = self.admin.get(url)
-                self.assertEqual(history.status_code, 200)
-                self.assertIn(record_id, [row["id"] for row in history.get_json()])
-                self.assertEqual(self.operator.get(url).status_code, 403)
-                self.assertIn(self.admin.post(url, {"customer_id": customer_id}).status_code, (404, 405))
-                self.assertIn(self.admin.put(f"{url}/{record_id}", {"customer_id": customer_id}).status_code,
-                              (404, 405))
+        ids = {name: db.execute_returning(sql, (D, customer_id))["id"] for name, sql in inserts.items()}
+        history = self.ok(self.admin.get(f"/api/records?date={D}&section=sales"))["records"]
+        for name, record_id in ids.items():
+            with self.subTest(name=name):
+                self.assertIn(record_id, [row["id"] for row in history[name]])
+        self.assertEqual(self.operator.get(f"/api/records?date={D}&section=sales").status_code, 403)
 
     def test_legacy_feeding_routes_write_canonical_events(self):
         place = self.make_farm()

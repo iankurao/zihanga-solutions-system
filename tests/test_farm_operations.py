@@ -231,3 +231,18 @@ class DryingListsTest(ScenarioTestCase):
         self.ok(qc.post("/api/drying/quality-approvals", {
             "quality_check_id": check["id"], "decision": "approved", "approver": "qc"}), 201)
         self.assertEqual(listed(operator)[drying_ref]["outputs"][0]["checks"][0]["decision"], "approved")
+
+        # The admin portal counts the chain: this operator's harvest and drying output.
+        farmers = {f["username"]: f for f in self.ok(self.admin.get("/api/admin/farmers"))["data"]}
+        mine = farmers[operator.username]
+        self.assertEqual((mine["harvest_records"], float(mine["total_harvest_kg"])), (1, 6.0))
+        self.assertEqual((mine["dried_records"], float(mine["total_dried_kg"])), (1, 1.2))
+        self.assertIsNotNone(mine["last_activity"])
+        stats = self.ok(self.admin.get(f"/api/admin/farmer/{operator.username}/stats"))["data"]
+        self.assertEqual(stats["recent_harvest"][0]["tray_batch_id"], production_ref)
+        self.assertEqual(stats["recent_drying"][0]["batch_id"], drying_ref)
+        activity = self.ok(self.admin.get("/api/admin/activity"))["data"]
+        self.assertTrue(any(harvest["harvest_code"] in a["detail"] for a in activity))
+        overview = self.ok(self.admin.get("/api/admin/overview"))["data"]
+        self.assertGreaterEqual(overview["total_harvest_kg"], 6.0)
+        self.assertIn("total_delivered_kg", overview)

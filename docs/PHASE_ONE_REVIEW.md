@@ -40,9 +40,9 @@ Those checks belong in the first week of the pilot (see
 
 ## How it was verified
 
-- **Automated tests:** 159 tests pass against PostgreSQL 16 (plus 164
+- **Automated tests:** 155 tests pass against PostgreSQL 16 (plus 152
   subtests), including the whole chain performed role by role with real
-  sign-ins. All 179 of the application's endpoints are called by the suite
+  sign-ins. All 137 of the application's endpoints are called by the suite
   (`ROUTE_COVERAGE`).
 - **Browser:** every page loaded as the super admin on the demo database with
   no failed requests or script errors; the investor tour walked end to end as
@@ -92,6 +92,36 @@ Checked in the browser on the demo database as a farmer and a QC officer: a
 harvest from the farmer portal, a hatchery batch and its feeding, a cage
 check, then a drying batch through every stage, QC check, approval and
 release of LOT-2026-00005, which traces back to its waste lot.
+
+## Figures and reports read the production chain (16 October 2026)
+
+The admin portal and several report panels still counted only the old
+tables, which nothing writes to any more: on the demo data the admin overview
+showed 0 kg harvested, 0 kg dried and 0 revenue while the chain held 389 kg
+harvested, 119.3 kg dried and 5 customer orders.
+
+- **Admin portal** (overview, farmer list and details, activity feed,
+  inactive farmers, CSV export) now counts waste lots, recorded harvests,
+  drying outputs, feeding events and confirmed deliveries, attributed to the
+  person who recorded them; "last activity" comes from the audit log, so every
+  kind of record counts. Orders carry no prices, so the revenue tile became
+  **kg delivered to customers**.
+- **Retired** (they read only the old tables): the six `/api/statistics/*`
+  endpoints and the harvest-efficiency panel, the 24 legacy analytics panels on
+  the reports page with their 23 endpoints, the seven "list everything"
+  endpoints and the old sales / deliveries / feedback lists, and the unused
+  waste-management blueprint. The operational reports and dashboard replace
+  them; a new **Farm operation logs** report covers the hatchery, fly facility
+  and waste-handling logs, by area, farm, facility and dates.
+- **Kept as the plain history view:** the super-admin records lookup on the
+  data-entry page (records by date and section), now with a Sales section for
+  the old sales, deliveries and feedback.
+- The harvest report email only listed the old harvest table; it now lists
+  recorded harvests too, and says so when email is not set up or sending
+  failed instead of reporting success.
+
+The breeding cycle (hatchery, fly facility) is still recorded per location
+but not linked to production batches; see Suggested Phase Two.
 
 ## Known limitations
 

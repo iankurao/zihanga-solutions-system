@@ -21,77 +21,79 @@ def zehunger_portal():
 
 # --- Zehunger Super Admin API ---
 
+# ---- Figures from the production chain ---------------------------------------------
+#
+# Everything below counts the records the system writes today (waste lots,
+# harvests, drying outputs, feeding events, customer deliveries), attributed
+# to the person who recorded them. "Last activity" is the person's latest
+# entry in the audit log, which covers every kind of record.
+
+KG = "CASE WHEN {unit} = 'g' THEN {qty} / 1000.0 ELSE {qty} END"
+
+# Per-user totals; the caller filters on u.user_id / u.username.
+USER_CHAIN_STATS = f"""
+    SELECT u.user_id,
+           (SELECT COUNT(*) FROM waste_lots w WHERE w.recorded_by = u.username) AS waste_records,
+           (SELECT COALESCE(SUM({KG.format(unit='w.unit', qty='w.quantity')}), 0)
+              FROM waste_lots w WHERE w.recorded_by = u.username) AS total_waste_kg,
+           (SELECT COUNT(*) FROM production_events e
+              WHERE e.event_type = 'harvest' AND e.status = 'recorded' AND e.created_by_user_id = u.user_id
+           ) AS harvest_records,
+           (SELECT COALESCE(SUM({KG.format(unit='h.unit', qty='h.wet_weight')}), 0)
+              FROM harvests h JOIN production_events e ON e.id = h.production_event_id
+              WHERE e.status = 'recorded' AND e.created_by_user_id = u.user_id) AS total_harvest_kg,
+           (SELECT COUNT(*) FROM drying_outputs o WHERE o.recorded_by_user_id = u.user_id) AS dried_records,
+           (SELECT COALESCE(SUM({KG.format(unit='o.unit', qty='o.quantity')}), 0)
+              FROM drying_outputs o WHERE o.recorded_by_user_id = u.user_id) AS total_dried_kg,
+           (SELECT MAX(a.occurred_at) FROM audit_log a
+              WHERE a.actor_user_id = u.user_id
+                AND (a.action LIKE '%%.created' OR a.action LIKE '%%.updated')) AS last_activity
+    FROM users u
+"""
+
+
 @app.route('/api/admin/overview', methods=['GET'])
 @login_required
 @super_admin_required
 def admin_overview():
-    days = request.args.get('days', '0')
     try:
-        days = max(0, int(days))
-    except Exception:
+        days = max(0, int(request.args.get('days', '0') or 0))
+    except ValueError:
         days = 0
-    if days > 0:
-        tf      = f"AND created_at >= NOW() - INTERVAL '{days} days'"
-        tf_date = f"AND collection_date >= CURRENT_DATE - INTERVAL '{days} days'"
-        tf_harv = f"AND harvest_date >= CURRENT_DATE - INTERVAL '{days} days'"
-    else:
-        tf = tf_date = tf_harv = ''
-    total_farmers  = db.fetch_one("SELECT COUNT(*) as cnt FROM users WHERE role != 'super_admin'")
-    active_farmers = db.fetch_one("SELECT COUNT(*) as cnt FROM users WHERE role != 'super_admin' AND is_active = TRUE")
-    total_waste    = db.fetch_one(f"SELECT COALESCE(SUM(waste_weight), 0) as total FROM waste_sourcing WHERE 1=1 {tf_date}")
-    total_dried    = db.fetch_one(f"SELECT COALESCE(SUM(dried_produced_kg), 0) as total FROM drying_output WHERE 1=1 {tf}")
-    total_sales    = db.fetch_one(f"SELECT COALESCE(SUM(amount), 0) as total FROM sales WHERE 1=1 {tf}")
-    total_harvest  = db.fetch_one(f"SELECT COALESCE(SUM(larvae_collected), 0) as total FROM harvest_yield WHERE 1=1 {tf_harv}")
-    return jsonify({
-        'success': True,
-        'data': {
-            'total_farmers':   total_farmers['cnt'],
-            'active_farmers':  active_farmers['cnt'],
-            'total_waste_kg':  float(total_waste['total']),
-            'total_dried_kg':  float(total_dried['total']),
-            'total_revenue':   float(total_sales['total']),
-            'total_harvest_kg': float(total_harvest['total'])
-        }
-    })
+    since = f"CURRENT_DATE - make_interval(days => {days})" if days else "'-infinity'::date"
+    row = db.fetch_one(f"""
+        SELECT
+            (SELECT COUNT(*) FROM users WHERE role != 'super_admin') AS total_farmers,
+            (SELECT COUNT(*) FROM users WHERE role != 'super_admin' AND is_active) AS active_farmers,
+            (SELECT COALESCE(SUM({KG.format(unit='unit', qty='quantity')}), 0)
+               FROM waste_lots WHERE collection_date >= {since}) AS total_waste_kg,
+            (SELECT COALESCE(SUM({KG.format(unit='h.unit', qty='h.wet_weight')}), 0)
+               FROM harvests h JOIN production_events e ON e.id = h.production_event_id
+               WHERE e.status = 'recorded' AND e.occurred_at::date >= {since}) AS total_harvest_kg,
+            (SELECT COALESCE(SUM({KG.format(unit='unit', qty='quantity')}), 0)
+               FROM drying_outputs WHERE output_date >= {since}) AS total_dried_kg,
+            (SELECT COALESCE(SUM(l.quantity_kg), 0)
+               FROM customer_delivery_lines l JOIN customer_deliveries d ON d.id = l.delivery_id
+               WHERE d.status = 'DELIVERED' AND d.delivered_at::date >= {since}) AS total_delivered_kg
+    """)
+    return jsonify({'success': True, 'data': {key: float(value) if key.startswith('total_') and 'farmers' not in key
+                                              else value for key, value in row.items()}})
+
 
 @app.route('/api/admin/farmers', methods=['GET'])
 @login_required
 @super_admin_required
 def admin_farmers():
-    farmers = db.fetch_all("""
-        SELECT
-            u.user_id, u.username, u.full_name, u.email, u.role, u.is_active, u.last_login, u.created_at,
-            COALESCE(ws.waste_records, 0) AS waste_records,
-            COALESCE(ws.total_waste_kg, 0) AS total_waste_kg,
-            COALESCE(hy.harvest_records, 0) AS harvest_records,
-            COALESCE(hy.total_harvest_kg, 0) AS total_harvest_kg,
-            COALESCE(dout.dried_records, 0) AS dried_records,
-            COALESCE(dout.total_dried_kg, 0) AS total_dried_kg,
-            ws.last_activity
-        FROM users u
-        LEFT JOIN (
-            SELECT recorded_by,
-                   COUNT(*) AS waste_records,
-                   SUM(waste_weight) AS total_waste_kg,
-                   MAX(created_at) AS last_activity
-            FROM waste_sourcing GROUP BY recorded_by
-        ) ws ON ws.recorded_by = u.username
-        LEFT JOIN (
-            SELECT recorded_by,
-                   COUNT(*) AS harvest_records,
-                   SUM(larvae_collected) AS total_harvest_kg
-            FROM harvest_yield GROUP BY recorded_by
-        ) hy ON hy.recorded_by = u.username
-        LEFT JOIN (
-            SELECT recorded_by,
-                   COUNT(*) AS dried_records,
-                   SUM(dried_produced_kg) AS total_dried_kg
-            FROM drying_output GROUP BY recorded_by
-        ) dout ON dout.recorded_by = u.username
+    farmers = db.fetch_all(f"""
+        SELECT u.user_id, u.username, u.full_name, u.email, u.role, u.is_active, u.last_login, u.created_at,
+               s.waste_records, s.total_waste_kg, s.harvest_records, s.total_harvest_kg,
+               s.dried_records, s.total_dried_kg, s.last_activity
+        FROM users u JOIN ({USER_CHAIN_STATS}) s ON s.user_id = u.user_id
         WHERE u.role != 'super_admin'
         ORDER BY u.username
     """)
     return jsonify({'success': True, 'data': farmers})
+
 
 @app.route('/api/admin/farmer/<string:username>/stats', methods=['GET'])
 @login_required
@@ -103,31 +105,41 @@ def admin_farmer_stats(username):
     )
     if not farmer:
         return jsonify({'success': False, 'message': 'Farmer not found'}), 404
-    waste = db.fetch_all(
-        "SELECT collection_date, waste_type, waste_weight, source_type FROM waste_sourcing WHERE recorded_by = %s ORDER BY created_at DESC LIMIT 8",
-        (username,)
-    )
-    harvest = db.fetch_all(
-        "SELECT harvest_date, tray_batch_id, larvae_collected, processing_method FROM harvest_yield WHERE recorded_by = %s ORDER BY harvest_date DESC LIMIT 8",
-        (username,)
-    )
-    drying = db.fetch_all(
-        "SELECT created_at, batch_id, dried_produced_kg, yield_percentage FROM drying_output WHERE recorded_by = %s ORDER BY created_at DESC LIMIT 8",
-        (username,)
-    )
-    feeding = db.fetch_all(
-        "SELECT feeding_date, tray_batch_id, feed_type, feed_quantity FROM feeding_schedule WHERE recorded_by = %s ORDER BY feeding_date DESC LIMIT 8",
-        (username,)
-    )
-    totals = db.fetch_one("""
-        SELECT
-            COALESCE((SELECT SUM(waste_weight) FROM waste_sourcing WHERE recorded_by = %s), 0) AS total_waste,
-            COALESCE((SELECT SUM(larvae_collected) FROM harvest_yield WHERE recorded_by = %s), 0) AS total_harvest,
-            COALESCE((SELECT SUM(dried_produced_kg) FROM drying_output WHERE recorded_by = %s), 0) AS total_dried,
-            COALESCE((SELECT COUNT(*) FROM waste_sourcing WHERE recorded_by = %s), 0) AS waste_count,
-            COALESCE((SELECT COUNT(*) FROM harvest_yield WHERE recorded_by = %s), 0) AS harvest_count,
-            COALESCE((SELECT COUNT(*) FROM drying_output WHERE recorded_by = %s), 0) AS drying_count
-    """, (username, username, username, username, username, username))
+    user_id = farmer['user_id']
+    totals = db.fetch_one(f"""
+        SELECT total_waste_kg AS total_waste, total_harvest_kg AS total_harvest, total_dried_kg AS total_dried,
+               waste_records AS waste_count, harvest_records AS harvest_count, dried_records AS drying_count
+        FROM ({USER_CHAIN_STATS}) s WHERE s.user_id = %s
+    """, (user_id,))
+    waste = db.fetch_all(f"""
+        SELECT collection_date, waste_type, {KG.format(unit='unit', qty='quantity')} AS waste_weight, source_type
+        FROM waste_lots WHERE recorded_by = %s ORDER BY collection_date DESC, id DESC LIMIT 8
+    """, (username,))
+    harvest = db.fetch_all(f"""
+        SELECT e.occurred_at::date AS harvest_date, b.business_id AS tray_batch_id,
+               {KG.format(unit='h.unit', qty='h.wet_weight')} AS larvae_collected, h.harvest_stage AS processing_method
+        FROM harvests h
+        JOIN production_events e ON e.id = h.production_event_id
+        JOIN production_batches b ON b.id = e.production_batch_id
+        WHERE e.status = 'recorded' AND e.created_by_user_id = %s
+        ORDER BY e.occurred_at DESC LIMIT 8
+    """, (user_id,))
+    drying = db.fetch_all(f"""
+        SELECT o.output_date AS created_at, d.business_id AS batch_id,
+               {KG.format(unit='o.unit', qty='o.quantity')} AS dried_produced_kg, o.yield_percentage
+        FROM drying_outputs o JOIN drying_batches d ON d.id = o.drying_batch_id
+        WHERE o.recorded_by_user_id = %s
+        ORDER BY o.output_date DESC, o.id DESC LIMIT 8
+    """, (user_id,))
+    feeding = db.fetch_all("""
+        SELECT e.occurred_at::date AS feeding_date, b.business_id AS tray_batch_id, f.feed_type,
+               f.quantity_offered || ' ' || f.offered_unit AS feed_quantity
+        FROM feeding_events f
+        JOIN production_events e ON e.id = f.production_event_id
+        JOIN production_batches b ON b.id = e.production_batch_id
+        WHERE e.status = 'recorded' AND e.created_by_user_id = %s
+        ORDER BY e.occurred_at DESC LIMIT 8
+    """, (user_id,))
     return jsonify({
         'success': True,
         'data': {
@@ -140,22 +152,39 @@ def admin_farmer_stats(username):
         }
     })
 
+
 @app.route('/api/admin/activity', methods=['GET'])
 @login_required
 @super_admin_required
 def admin_activity_feed():
-    waste = db.fetch_all(
-        "SELECT 'Waste Sourcing' AS type, recorded_by, waste_type AS detail, CONCAT(waste_weight, ' kg') AS amount, created_at FROM waste_sourcing ORDER BY created_at DESC LIMIT 8"
-    )
-    harvest = db.fetch_all(
-        "SELECT 'Harvest' AS type, recorded_by, tray_batch_id AS detail, CONCAT(larvae_collected, ' kg') AS amount, harvest_date::timestamp AS created_at FROM harvest_yield ORDER BY harvest_date DESC LIMIT 8"
-    )
-    drying = db.fetch_all(
-        "SELECT 'Drying Output' AS type, recorded_by, batch_id AS detail, CONCAT(dried_produced_kg, ' kg') AS amount, created_at FROM drying_output ORDER BY created_at DESC LIMIT 8"
-    )
-    activities = list(waste) + list(harvest) + list(drying)
-    activities.sort(key=lambda x: str(x.get('created_at') or ''), reverse=True)
-    return jsonify({'success': True, 'data': activities[:20]})
+    activities = db.fetch_all(f"""
+        SELECT * FROM (
+            (SELECT 'Waste Sourcing' AS type, recorded_by, business_id || ' · ' || waste_type AS detail,
+                    ROUND({KG.format(unit='unit', qty='quantity')}::numeric, 1) || ' kg' AS amount,
+                    created_at
+             FROM waste_lots ORDER BY created_at DESC LIMIT 20)
+            UNION ALL
+            (SELECT 'Harvest', u.username, b.business_id || ' · ' || h.harvest_code,
+                    ROUND({KG.format(unit='h.unit', qty='h.wet_weight')}::numeric, 1) || ' kg', h.created_at
+             FROM harvests h
+             JOIN production_events e ON e.id = h.production_event_id
+             JOIN production_batches b ON b.id = e.production_batch_id
+             LEFT JOIN users u ON u.user_id = e.created_by_user_id
+             WHERE e.status = 'recorded'
+             ORDER BY h.created_at DESC LIMIT 20)
+            UNION ALL
+            (SELECT 'Drying Output', u.username, d.business_id || ' · output ' || o.line_no,
+                    ROUND({KG.format(unit='o.unit', qty='o.quantity')}::numeric, 1) || ' kg', o.created_at
+             FROM drying_outputs o
+             JOIN drying_batches d ON d.id = o.drying_batch_id
+             LEFT JOIN users u ON u.user_id = o.recorded_by_user_id
+             ORDER BY o.created_at DESC LIMIT 20)
+        ) AS recent
+        ORDER BY created_at DESC
+        LIMIT 20
+    """)
+    return jsonify({'success': True, 'data': activities})
+
 
 @app.route('/api/admin/users/<int:user_id>/toggle', methods=['POST'])
 @login_required
@@ -303,27 +332,22 @@ def admin_edit_farmer(user_id):
 @login_required
 @super_admin_required
 def admin_inactive_farmers():
-    days = request.args.get('days', '14')
+    """Active accounts with no recorded data for ``days`` days (any kind of
+    record, from the audit log)."""
     try:
-        days = max(1, int(days))
-    except Exception:
+        days = max(1, int(request.args.get('days', '14') or 14))
+    except ValueError:
         days = 14
     rows = db.fetch_all(f"""
-        SELECT * FROM (
-            SELECT
-                u.user_id, u.username, u.full_name, u.email, u.is_active, u.last_login,
-                GREATEST(
-                    COALESCE((SELECT MAX(created_at) FROM waste_sourcing WHERE recorded_by = u.username), '1970-01-01'::timestamp),
-                    COALESCE((SELECT MAX(harvest_date::timestamp) FROM harvest_yield WHERE recorded_by = u.username), '1970-01-01'::timestamp),
-                    COALESCE((SELECT MAX(created_at) FROM drying_output WHERE recorded_by = u.username), '1970-01-01'::timestamp)
-                ) AS last_data_activity
-            FROM users u
-            WHERE u.role != 'super_admin' AND u.is_active = TRUE
-        ) sub
-        WHERE last_data_activity < NOW() - INTERVAL '{days} days'
+        SELECT u.user_id, u.username, u.full_name, u.email, u.is_active, u.last_login,
+               COALESCE(s.last_activity, '1970-01-01'::timestamptz) AS last_data_activity
+        FROM users u JOIN ({USER_CHAIN_STATS}) s ON s.user_id = u.user_id
+        WHERE u.role != 'super_admin' AND u.is_active
+          AND COALESCE(s.last_activity, '1970-01-01'::timestamptz) < NOW() - make_interval(days => %s)
         ORDER BY last_data_activity ASC
-    """)
+    """, (days,))
     return jsonify({'success': True, 'data': rows, 'days': days})
+
 
 @app.route('/api/admin/farmers/export', methods=['GET'])
 @login_required
@@ -331,31 +355,14 @@ def admin_inactive_farmers():
 def admin_export_farmers():
     import csv, io
     from flask import Response
-    farmers = db.fetch_all("""
-        SELECT
-            u.username, u.full_name, u.email,
-            CASE WHEN u.is_active THEN 'Active' ELSE 'Inactive' END as status,
-            TO_CHAR(u.created_at, 'YYYY-MM-DD') as joined,
-            TO_CHAR(u.last_login, 'YYYY-MM-DD HH24:MI') as last_login,
-            COALESCE(ws.waste_records, 0) AS waste_records,
-            COALESCE(ws.total_waste_kg, 0) AS total_waste_kg,
-            COALESCE(hy.harvest_records, 0) AS harvest_records,
-            COALESCE(hy.total_harvest_kg, 0) AS total_harvest_kg,
-            COALESCE(dout.dried_records, 0) AS dried_records,
-            COALESCE(dout.total_dried_kg, 0) AS total_dried_kg
-        FROM users u
-        LEFT JOIN (
-            SELECT recorded_by, COUNT(*) AS waste_records, SUM(waste_weight) AS total_waste_kg
-            FROM waste_sourcing GROUP BY recorded_by
-        ) ws ON ws.recorded_by = u.username
-        LEFT JOIN (
-            SELECT recorded_by, COUNT(*) AS harvest_records, SUM(larvae_collected) AS total_harvest_kg
-            FROM harvest_yield GROUP BY recorded_by
-        ) hy ON hy.recorded_by = u.username
-        LEFT JOIN (
-            SELECT recorded_by, COUNT(*) AS dried_records, SUM(dried_produced_kg) AS total_dried_kg
-            FROM drying_output GROUP BY recorded_by
-        ) dout ON dout.recorded_by = u.username
+    farmers = db.fetch_all(f"""
+        SELECT u.username, u.full_name, u.email,
+               CASE WHEN u.is_active THEN 'Active' ELSE 'Inactive' END AS status,
+               TO_CHAR(u.created_at, 'YYYY-MM-DD') AS joined,
+               TO_CHAR(u.last_login, 'YYYY-MM-DD HH24:MI') AS last_login,
+               s.waste_records, s.total_waste_kg, s.harvest_records, s.total_harvest_kg,
+               s.dried_records, s.total_dried_kg
+        FROM users u JOIN ({USER_CHAIN_STATS}) s ON s.user_id = u.user_id
         WHERE u.role != 'super_admin'
         ORDER BY u.username
     """)

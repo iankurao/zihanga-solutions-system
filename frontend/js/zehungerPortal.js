@@ -71,7 +71,7 @@ async function loadOverview(days) {
       stat('fa-recycle',     'amber', fmt(d.total_waste_kg) + ' kg',     'Waste Collected'),
       stat('fa-seedling',    'navy',  fmt(d.total_harvest_kg) + ' kg',   'Larvae Harvested'),
       stat('fa-box',         'teal',  fmt(d.total_dried_kg) + ' kg',     'Dried Output'),
-      stat('fa-dollar-sign', 'rose',  'K ' + fmt(d.total_revenue),       'Revenue (Sales)'),
+      stat('fa-truck',       'rose',  fmt(d.total_delivered_kg) + ' kg', 'Delivered to Customers'),
     ].join('');
   } catch (e) {
     console.error('Overview error:', e);
@@ -431,11 +431,11 @@ async function openFarmerModal(username) {
     html += detailSection('Recent Waste Sourcing', data.data.recent_waste,
       ['collection_date', 'waste_type', 'waste_weight', 'source_type'], ['Date', 'Type', 'Weight (kg)', 'Source']);
     html += detailSection('Recent Harvest', data.data.recent_harvest,
-      ['harvest_date', 'tray_batch_id', 'larvae_collected', 'processing_method'], ['Date', 'Batch', 'Larvae (kg)', 'Method']);
+      ['harvest_date', 'tray_batch_id', 'larvae_collected', 'processing_method'], ['Date', 'Batch', 'Wet larvae (kg)', 'Stage']);
     html += detailSection('Recent Drying Output', data.data.recent_drying,
       ['created_at', 'batch_id', 'dried_produced_kg', 'yield_percentage'], ['Date', 'Batch', 'Dried (kg)', 'Yield %']);
     html += detailSection('Recent Feeding', data.data.recent_feeding,
-      ['feeding_date', 'tray_batch_id', 'feed_type', 'feed_quantity'], ['Date', 'Batch', 'Feed Type', 'Qty']);
+      ['feeding_date', 'tray_batch_id', 'feed_type', 'feed_quantity'], ['Date', 'Batch', 'Feed Type', 'Offered']);
 
     document.getElementById('modalBody').innerHTML = html;
   } catch (e) {

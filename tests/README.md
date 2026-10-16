@@ -22,7 +22,7 @@ ROUTE_COVERAGE=route-coverage.txt python -m pytest
 ```
 
 The file lists every endpoint with its call count and any never called
-(currently 179 of 179 are exercised).
+(currently 137 of 137 are exercised).
 
 ## Files
 
@@ -35,10 +35,9 @@ The file lists every endpoint with its call count and any never called
 | `test_production_batch_chain_integration.py` | Detailed rules for each stage (validation, limits, transitions, concurrency), inventory ledger, orders, traceability, alerts, notifications, reports, dashboard, units, farmer portal, QR labels, roles and security, audit log |
 | `test_waste_substrate_chain_integration.py` | Waste lots and substrate preparation: scope, lineage, over-consumption, concurrency |
 | `test_business_identifiers.py`, `test_location_hierarchy.py` | Business ID sequences and the location hierarchy migration |
-| `test_harvest_efficiency.py` | Legacy harvest-efficiency statistics |
 | `test_architecture.py` | Module boundaries: core never imports domains, no import cycles, thin entry point |
 | `test_frontend_design.py` | Every page uses the design system and shared navigation; no retired palettes or classes; WCAG token contrast; a badge tone for every schema status |
-| `test_frontend_logic.py` | `js/ui.js` status tones and labels; legacy analytics panels show record text as text (no HTML injection); run in Node (skipped without Node) |
+| `test_frontend_logic.py` | `js/ui.js` status tones and labels, run in Node (skipped without Node) |
 | `test_demo_seed.py` | `python -m backend.demo`: the demo dataset covers every chain state with ledger-derived stock, history and audit; refuses databases with real records; rebuilds only with `--reset`; no email from a demo; the `demo` flag on `/api/me` |
 | `test_demo_tour.py` | Investor demo mode: `/tour` and guest access exist only on a demo database; guest access needs `DEMO_GUEST_ACCESS` and an active viewer account; the guest is read only, refused cross-site and audited; staff with sales access get the orders chapter |
 | `test_deployment.py` | Deployment readiness: every unsafe setting fails and every risky one warns; `APP_ENV=production` refuses to start with unsafe settings; `DATABASE_URL` wins over `PG*`; `/healthz` and `/readyz` (fail closed, no details); `python -m backend.preflight` database checks and exit code; `deploy/backup.sh` and `restore-check.sh` with stand-in PostgreSQL tools; gunicorn, systemd, nginx and `.env.example` files; production requirements match the project pins |

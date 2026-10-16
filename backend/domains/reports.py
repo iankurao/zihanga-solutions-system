@@ -14,6 +14,7 @@ from backend.core.security import _can
 from backend.core.scope import _farm_visibility_clause, _scope_visibility_clause
 from backend.domains.production import PRODUCTION_BATCH_STATUSES
 from backend.domains.drying import DRYING_BATCH_STATUSES
+from backend.domains.farm_operations import KINDS as FARM_LOG_KINDS
 from backend.domains.inventory import (
     ALLOCATION_STATE_CTE,
     INVENTORY_LEDGER_CTE,
@@ -452,6 +453,45 @@ def _report_farm_performance(cursor, f):
     return rows
 
 
+
+FARM_LOG_GROUPS = {'WASTE_HANDLING': 'Waste handling', 'HATCHERY': 'Hatchery', 'FLY_FACILITY': 'Fly facility'}
+
+
+def _report_farm_operations(cursor, f):
+    """Hatchery, fly facility and waste-handling logs, one row per record,
+    built from the same registry as the data-entry forms."""
+    parts, params = [], []
+    for spec in FARM_LOG_KINDS.values():
+        if f['status'] and FARM_LOG_GROUPS[f['status']] != spec['group']:
+            continue
+        q = _ReportQuery(f, scope_alias='t')
+        q.dates(f"t.{spec['date']}")
+        detail_fields = [fd for fd in spec['fields']
+                         if fd.column not in (spec['date'], spec.get('ref')) and fd.kind != 'note'][:4]
+        # "Label: value" pairs; labels are parameters (some contain %).
+        detail = "concat_ws(' · ', " + ', '.join(
+            f"%s || NULLIF(t.{fd.column}::text, '')" for fd in detail_fields) + ")"
+        reference = f"t.{spec['ref']}::text" if spec.get('ref') else 'NULL::text'
+        parts.append(f"""
+            SELECT t.{spec['date']}::date AS date, %s AS log_group, %s AS record, {reference} AS reference,
+                   {detail} AS details, fm.name AS farm, fa.name AS facility,
+                   COALESCE(u.username, '') AS recorded_by, t.id AS row_id
+            FROM {spec['table']} AS t
+            LEFT JOIN farms AS fm ON fm.id = t.farm_id
+            LEFT JOIN facilities AS fa ON fa.id = t.facility_id
+            LEFT JOIN users AS u ON u.user_id = t.recorded_by_user_id
+            {q.where}""")
+        params += [spec['group'], spec['label'], *[fd.label + ': ' for fd in detail_fields], *q.params]
+    if not parts:
+        return []
+    cursor.execute(
+        'SELECT date, log_group, record, reference, details, farm, facility, recorded_by FROM ('
+        + ' UNION ALL '.join(parts) + f') AS logs ORDER BY date DESC, record, row_id DESC LIMIT {REPORT_ROW_LIMIT + 1}',
+        params,
+    )
+    return cursor.fetchall()
+
+
 def _col(key, label, kind='text'):
     return {'key': key, 'label': label, 'type': kind}
 
@@ -556,6 +596,15 @@ REPORTS = {
                     _col('quantity_kg', 'Quantity kg', 'kg'), _col('product_lots', 'Product lots'),
                     _col('vehicle', 'Vehicle'), _col('driver', 'Driver')],
         'totals': ['quantity_kg'],
+    },
+    'farm_operations': {
+        'title': 'Farm operation logs', 'group': 'Production', 'builder': _report_farm_operations,
+        'filters': ['dates', 'farm', 'facility', 'status'],
+        'statuses': list(FARM_LOG_GROUPS),
+        'columns': [_col('date', 'Date', 'date'), _col('log_group', 'Area'), _col('record', 'Record'),
+                    _col('reference', 'Reference'), _col('details', 'Details'), _col('farm', 'Farm'),
+                    _col('facility', 'Facility'), _col('recorded_by', 'Recorded by')],
+        'totals': [],
     },
     'traceability': {
         'title': 'Product lineage', 'group': 'Traceability', 'builder': _report_traceability,

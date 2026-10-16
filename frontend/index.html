@@ -15,7 +15,6 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   <link rel="stylesheet" href="/css/erp.css">
   <link rel="stylesheet" href="css/styles.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -1222,23 +1221,11 @@
 
       <!-- Reports Section -->
       <div id="report" class="section">
-        <h1><i class="fas fa-chart-pie"></i> Reports</h1>
+        <h1><i class="fas fa-chart-bar"></i> Reports</h1>
         <div class="subsection">
-          <h2><i class="fas fa-balance-scale"></i> Harvest Efficiency Analysis</h2>
-          <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0"><i class="fas fa-chart-line"></i> Harvest Efficiency Analysis</h5>
-            </div>
-            <div class="card-body">
-                <p class="card-text">Analyze the wet-to-dry harvest efficiency for each batch. The target conversion ratio is 3:1.</p>
-                <button id="analyzeHarvestEfficiencyBtn" class="btn btn-primary mb-3"><i class="fas fa-search"></i> Analyze</button>
-                <button id="sendHarvestReportBtn" class="btn btn-success mb-3"><i class="fas fa-envelope"></i> Email Harvest Report to Admin</button>
-                <div class="chart-container mt-3" style="position: relative; height: 40vh; max-width: 100%;">
-                    <canvas id="harvestEfficiencyChart"></canvas>
-                </div>
-                <div id="efficiencyComparisonTable" class="mt-4 table-responsive"></div>
-            </div>
-          </div>
+          <p class="help-text">Yields, drying, quality, stock and farm figures are in the
+            <a href="/analytics">operational reports</a>, built from the production chain.</p>
+          <button id="sendHarvestReportBtn" class="btn btn-success mb-3"><i class="fas fa-envelope"></i> Email Harvest Report to Admin</button>
         </div>
       </div>
       
@@ -1262,6 +1249,7 @@
                               <option value="feeding">Larval Feeding</option>
                               <option value="drying">Drying Process</option>
                               <option value="facility">Fly Facility</option>
+                              <option value="sales">Sales (history)</option>
                           </select>
                       </div>
                   </div>

@@ -8,14 +8,6 @@ from backend.core.web import _cors_origins, app, logger
 from backend.core.audit import audit_event
 
 
-# The legacy blueprints have no sign-in checks of their own; guard them here.
-_BLUEPRINT_PERMISSIONS = {
-    'waste_management.get_waste_sourcing': 'legacy.read',
-    'waste_management.get_storage_records': 'legacy.read',
-    'waste_management.get_processing_records': 'legacy.read',
-    'waste_management.get_environmental_monitoring': 'legacy.read',
-}
-
 
 def _can(permission):
     """True if the signed-in user's role grants ``permission``."""
