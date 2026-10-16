@@ -32,7 +32,7 @@ see and change only the places they have been given access to.
 
 | Role | Can |
 |---|---|
-| Super admin | Everything, including setup, accounts, legacy records and the audit log |
+| Super admin | Everything, including setup, accounts, records by date and the audit log |
 | Manager | Production, QC decisions, stock (including write-offs), sales, alerts |
 | Production operator / farmer | Record waste, substrate, batches, events, harvest and drying |
 | QC officer | Record quality checks and approve or reject output |
@@ -98,12 +98,13 @@ backend/
   domains/            one module per business area (waste, production, drying, quality,
                       inventory, sales, traceability, alerts, reports, dashboard, labels,
                       farmer, farm operation logs, admin, audit, tour, health,
-                      legacy history)
+                      records by date)
   migrations/         SQL applied by init_db on every start (idempotent)
   roles.py            roles and permissions
   notifications.py    in-app and email notifications
   jobs.py             background jobs (alerts, email, clean-up)
   preflight.py        deployment readiness check
+  retired_tables.py   drops the tables from before the traceability chain once empty
   demo.py             demonstration dataset
   routes_doc.py       writes docs/api-routes.md
 frontend/             pages, css/erp.css design system, js/ (one script per page)
@@ -253,7 +254,7 @@ email queue are healthy, and the database connection budget. With
 | [docs/engineering-rules.md](docs/engineering-rules.md) | Invariants every change must keep (ledger stock, scope, migrations) |
 | [tests/README.md](tests/README.md) | What the test suite covers |
 | [docs/history/](docs/history) | Audits and designs written while Phase One was built |
-| [docs/mern-conversion-guide.md](docs/mern-conversion-guide.md) | An earlier guide for rewriting the app as MERN (not used) |
+| [docs/history/mern-conversion-guide.md](docs/history/mern-conversion-guide.md) | An earlier guide for rewriting the app as MERN (not used) |
 
 ---
 

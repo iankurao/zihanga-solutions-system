@@ -23,20 +23,6 @@ _SCOPE_TABLES = {
     "facility": ("facilities", "facility_id", "user_facility_access"),
 }
 
-_LINKABLE_TABLES = {
-    "waste_sourcing", "storage_records", "processing_records",
-    "waste_monitoring", "waste_lots", "substrate_preparation",
-    "substrate_batches", "feeding_schedule", "health_intervention",
-    "harvest_yield", "hatchery_batches", "hatchery_feeding",
-    "hatchery_monitoring", "hatchery_cleaning", "hatchery_problems",
-    "hatchery_health_interventions", "cage_monitoring",
-    "facility_maintenance", "pupae_transition", "egg_collection",
-    "bait_preparation", "drying_batches", "drying_input", "drying_output",
-    "drying_quality_control", "drying_review_approval", "production_batches",
-    "product_lots", "inventory_movements", "sales", "deliveries",
-}
-
-
 def _admin_required(view):
     @wraps(view)
     def decorated(*args, **kwargs):
@@ -323,58 +309,3 @@ def check_access():
     if not allowed:
         return jsonify({"success": False, "message": "Facility not found"}), 404
     return jsonify({"success": True, "allowed": bool(allowed["allowed"])})
-
-
-@locations.route("/api/locations/record-links", methods=["POST"])
-@login_required
-@_admin_required
-def link_record():
-    # Legacy records carry no proven owner, so assigning (or moving) their
-    # location is an administrator's mapping decision, never a user claim.
-    data = request.get_json() or {}
-    entity_table = str(data.get("entity_table", "") or "").strip()
-    if entity_table not in _LINKABLE_TABLES:
-        return jsonify({"success": False, "message": "Unsupported operational table"}), 400
-    try:
-        entity_id = int(data.get("entity_id"))
-        facility_id = int(data.get("facility_id"))
-    except (TypeError, ValueError):
-        return jsonify({"success": False, "message": "entity_id and facility_id must be valid integers"}), 400
-    record = db.fetch_one(
-        f"SELECT id FROM {entity_table} WHERE id = %s",
-        (entity_id,),
-    )
-    if not record:
-        return jsonify({"success": False, "message": "Operational record not found"}), 404
-
-    location = db.fetch_one(
-        """
-        SELECT o.id AS organization_id, f.id AS farm_id, s.id AS site_id, ft.id AS facility_id
-        FROM facilities ft
-        JOIN sites s ON s.id = ft.site_id
-        JOIN farms f ON f.id = s.farm_id
-        JOIN organizations o ON o.id = f.organization_id
-        WHERE ft.id = %s
-        """,
-        (facility_id,),
-    )
-    if not location:
-        return jsonify({"success": False, "message": "Facility not found"}), 404
-    row = db.execute_returning(
-        """
-        INSERT INTO operational_location_links
-            (entity_table, entity_id, organization_id, farm_id, site_id, facility_id, recorded_by_user_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (entity_table, entity_id) DO UPDATE SET
-            organization_id = EXCLUDED.organization_id,
-            farm_id = EXCLUDED.farm_id,
-            site_id = EXCLUDED.site_id,
-            facility_id = EXCLUDED.facility_id,
-            recorded_by_user_id = EXCLUDED.recorded_by_user_id,
-            updated_at = CURRENT_TIMESTAMP
-        RETURNING *
-        """,
-        (entity_table, entity_id, location["organization_id"], location["farm_id"],
-         location["site_id"], location["facility_id"], current_user.id),
-    )
-    return jsonify({"success": True, "data": row}), 201

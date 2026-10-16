@@ -5,7 +5,7 @@ import logging
 import os
 import secrets
 
-from datetime import time as dt_time, timedelta
+from datetime import date, time as dt_time, timedelta
 from flask import Flask, jsonify, request, send_from_directory
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
@@ -38,8 +38,9 @@ class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
         if isinstance(obj, decimal.Decimal):
             return float(obj)
-        # Raw rows from TIME and INTERVAL columns (legacy tables) are not JSON types.
-        if isinstance(obj, dt_time):
+        # Dates and times as ISO 8601 (2026-10-16, 2026-10-16T07:30:00+03:00),
+        # not Flask's default e-mail header style.
+        if isinstance(obj, (date, dt_time)):
             return obj.isoformat()
         if isinstance(obj, timedelta):
             return str(obj)

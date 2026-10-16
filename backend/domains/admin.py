@@ -132,8 +132,8 @@ def admin_farmer_stats(username):
         FROM waste_lots WHERE recorded_by = %s ORDER BY collection_date DESC, id DESC LIMIT 8
     """, (username,))
     harvest = db.fetch_all(f"""
-        SELECT e.occurred_at::date AS harvest_date, b.business_id AS tray_batch_id,
-               {KG.format(unit='h.unit', qty='h.wet_weight')} AS larvae_collected, h.harvest_stage AS processing_method
+        SELECT e.occurred_at::date AS harvest_date, b.business_id AS production_batch,
+               {KG.format(unit='h.unit', qty='h.wet_weight')} AS wet_weight_kg, h.harvest_stage
         FROM harvests h
         JOIN production_events e ON e.id = h.production_event_id
         JOIN production_batches b ON b.id = e.production_batch_id
@@ -148,7 +148,7 @@ def admin_farmer_stats(username):
         ORDER BY o.output_date DESC, o.id DESC LIMIT 8
     """, (user_id,))
     feeding = db.fetch_all("""
-        SELECT e.occurred_at::date AS feeding_date, b.business_id AS tray_batch_id, f.feed_type,
+        SELECT e.occurred_at::date AS feeding_date, b.business_id AS production_batch, f.feed_type,
                f.quantity_offered || ' ' || f.offered_unit AS feed_quantity
         FROM feeding_events f
         JOIN production_events e ON e.id = f.production_event_id

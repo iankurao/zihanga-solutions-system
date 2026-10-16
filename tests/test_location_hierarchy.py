@@ -14,7 +14,6 @@ class LocationHierarchyMigrationTest(unittest.TestCase):
             "farms",
             "sites",
             "facilities",
-            "operational_location_links",
         )
         for table in expected_tables:
             self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", self.migration)

@@ -305,7 +305,7 @@ def handle_substrate_preparation():
                     normalized_data.get('notes', ''),
                 ),
             )
-            legacy_record = cursor.fetchone()
+            preparation_record = cursor.fetchone()
 
             for item in validated_inputs:
                 cursor.execute(
@@ -352,7 +352,7 @@ def handle_substrate_preparation():
                 'preparation_date': normalized_data['prep_date'],
                 'total_input_weight_kg': total_input,
                 'inputs': input_details,
-                'legacy_record_id': legacy_record['id'],
+                'preparation_record_id': preparation_record['id'],
             },
             'id': batch['id'],
             'business_id': batch['business_id'],
@@ -406,9 +406,9 @@ def get_available_waste_lots():
 @login_required
 @super_admin_required
 def assign_waste_lot_location(lot_ref):
-    """Assign canonical scope to a legacy Waste Lot exactly once.
+    """Assign canonical scope to an unscoped (older) Waste Lot exactly once.
 
-    Legacy lots carry only free-text farm_site, which cannot prove ownership,
+    Older lots carry only free-text farm_site, which cannot prove ownership,
     so a super admin records the location explicitly.  Lots that already have
     canonical scope cannot be moved because substrate lineage depends on it.
     """

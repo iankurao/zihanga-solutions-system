@@ -14,6 +14,8 @@ function showSection(sectionId, element) {
     console.warn("Section with id '" + sectionId + "' not found.");
     return;
   }
+  // Pick-lists follow records saved since the page was opened.
+  if (sectionId === 'drying' && window.refreshDryingData) window.refreshDryingData();
   if (element) {
     element.classList.add('active');
   }
@@ -86,15 +88,18 @@ document.addEventListener('DOMContentLoaded', function() {
         problemsSolutions: document.getElementById('problemsSolutionsForm')
     };
 
+    // Larval forms record an event on the production batch named on the form.
+    const productionEventTypes = {
+        'feedingSchedule': 'feeding',
+        'feedingEnvironmentalMonitoring': 'monitoring',
+        'healthIntervention': 'health',
+        'harvestYield': 'harvest'
+    };
+
     // API endpoints
     const apiEndpoints = {
         'wasteSourcing': 'waste-sourcing',
         'substratePreparation': 'substrate-preparation',
-        // Larval batches: canonical production events.
-        'feedingEnvironmentalMonitoring': 'feeding/environmental-monitoring',
-        'healthIntervention': 'feeding/health-intervention',
-        'harvestYield': 'feeding/harvest-yield',
-        'feedingSchedule': 'feeding/schedule',
         // Farm operation logs (backend/domains/farm_operations.py): each
         // record carries the farm, site and facility chosen on the form.
         'storageRecords': 'farm-operations/waste-storage',
@@ -333,7 +338,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const site = document.createElement('p');
                 const locationText = batch.facility_name
                     ? `${batch.farm_name} / ${batch.site_name} / ${batch.facility_name}`
-                    : `${batch.farm_site} (legacy, unassigned)`;
+                    : `${batch.farm_site} (older record, no location)`;
                 site.textContent = `Location: ${locationText} · Total input: ${batch.total_input_weight_kg} kg`;
                 const inputs = document.createElement('ul');
                 (batch.inputs || []).forEach(input => {
@@ -569,7 +574,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const numericFields = [
                 'feed_quantity_kg', 'larvae_age_days', 'larvae_weight_g', 'consumption_rate_percent',
                 'temperature', 'humidity', 'moisture_percentage', 'larvae_collected_kg', 'wet_weight', 'storage_temp',
-                'start_weight', 'end_weight', 'consumption', 'substrateIntroducedKg',
+                'start_weight_kg', 'end_weight_kg', 'consumption_g', 'substrateIntroducedKg',
                 'lighting_hours', 'pupae_weight_added', 'old_pupae_removed', 'number_of_crates', 'eggs_collected'
             ];
 
@@ -580,8 +585,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     data[key] = value;
                 }
             });
-            if (formType === 'harvestYield' && data.harvestDate && data.event_time) {
-                data.occurred_at = new Date(`${data.harvestDate}T${data.event_time}`).toISOString();
+            // A date and time typed on the form are local farm time.
+            const eventDate = data.harvestDate || data.monitoring_date;
+            const eventTime = data.event_time || data.monitoring_time;
+            if (productionEventTypes[formType] && eventDate && eventTime) {
+                data.occurred_at = new Date(`${eventDate}T${eventTime}`).toISOString();
             }
             if (formType === 'substratePreparation') {
                 data.inputs = Array.from(form.querySelectorAll('.substrate-input-row')).map(row => ({
@@ -590,14 +598,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 }));
             }
 
-            const endpoint = apiEndpoints[formType];
+            const eventType = productionEventTypes[formType];
+            const endpoint = eventType
+                ? `production/batches/${encodeURIComponent(String(data.production_batch_id || '').trim())}/events/${eventType}`
+                : apiEndpoints[formType];
             if (!endpoint) {
                 throw new Error(`No API endpoint defined for form type: ${formType}`);
             }
 
             const apiUrl = `/api/${endpoint}`;
-            console.log('Sending data to:', apiUrl);
-            console.log('Data:', data);
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -612,7 +621,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(result.message || `HTTP error! status: ${response.status}`);
             }
             
-            console.log('Response data:', result);
             showNotification(result.message || 'Data submitted successfully!', 'success');
             form.reset();
             if (formType === 'wasteSourcing' || formType === 'substratePreparation') {
@@ -620,6 +628,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (formType === 'batchInfo' || formType === 'feedingRecords') {
                 loadHatcheryBatches();
+            }
+            if (formType === 'harvestYield' && window.refreshDryingData) {
+                window.refreshDryingData();
             }
         } catch (error) {
             console.error('Error details:', error);
@@ -637,11 +648,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listeners to forms (only once)
     Object.entries(forms).forEach(([formType, form]) => {
         if (form) {
-            console.log(`Adding event listeners to form: ${formType}`);
             
             // Check if event listeners are already added
             if (form.hasAttribute('data-event-listeners-added')) {
-                console.log(`Event listeners already added to form: ${formType}`);
                 return;
             }
             
@@ -655,11 +664,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             form.addEventListener('submit', function(e) {
-                if(formType === 'feedingEnvironmentalMonitoring') {
-                    console.log('Environmental Monitoring form submit event fired');
-                }
                 e.preventDefault();
-                console.log(`Form submitted: ${formType}`);
                 handleSubmit(this, formType);
             });
         } else {
@@ -1094,6 +1099,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   // The farm list arrives later and may pick the only farm by itself.
   document.addEventListener('locations-loaded', renderDryingSelects);
+  window.refreshDryingData = loadDryingData;
   loadDryingData();
 
   function harvestInput(data) {

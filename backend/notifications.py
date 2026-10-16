@@ -33,7 +33,7 @@ KIND_PREFIX = {
 
 
 class EmailChannel:
-    """SMTP delivery that raises on failure (unlike the legacy send_email)."""
+    """SMTP delivery that raises on failure (unlike the harvest report send_email)."""
 
     def __init__(self, host, port, username, password, sender=None, timeout=20):
         self.host = host

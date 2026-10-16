@@ -1,7 +1,7 @@
 -- Phase One production events.
 --
--- The legacy operational tables remain intact.  New writes populate both the
--- legacy row and this canonical event envelope so existing reports continue
+-- The pre-traceability copies (feeding_schedule, environmental_monitoring_
+-- larvaefeeding, health_intervention) are retired by backend/retired_tables.py.
 -- to work while Production Batch becomes the relational source of truth.
 
 CREATE SEQUENCE IF NOT EXISTS production_event_seq AS BIGINT;
@@ -149,6 +149,21 @@ CREATE TABLE IF NOT EXISTS health_events (
     resolution_actor_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+-- Tray details from the data-entry forms (October 2026; previously only in
+-- the retired copy tables, see backend/retired_tables.py).
+ALTER TABLE feeding_events
+    ADD COLUMN IF NOT EXISTS tray_reference VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS start_weight_kg NUMERIC(12, 4),
+    ADD COLUMN IF NOT EXISTS end_weight_kg NUMERIC(12, 4);
+ALTER TABLE health_events ADD COLUMN IF NOT EXISTS tray_reference VARCHAR(100);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'feeding_events_tray_weights_check') THEN
+        ALTER TABLE feeding_events ADD CONSTRAINT feeding_events_tray_weights_check
+            CHECK (start_weight_kg >= 0 AND end_weight_kg >= 0);
+    END IF;
+END $$;
+
 -- Canonical scope must match the batch and the hierarchy.
 DO $$
 BEGIN
@@ -172,102 +187,3 @@ CREATE INDEX IF NOT EXISTS idx_production_events_scope
     ON production_events(farm_id, site_id, facility_id);
 CREATE INDEX IF NOT EXISTS idx_production_events_type
     ON production_events(event_type, occurred_at DESC);
-
--- Nullable links preserve historical rows when their free-text batch label
--- cannot be reconciled with evidence.  New operational writes populate them.
-ALTER TABLE feeding_schedule
-    ADD COLUMN IF NOT EXISTS production_event_id BIGINT,
-    ADD COLUMN IF NOT EXISTS production_batch_id INTEGER,
-    ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
-    ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ;
-
--- Larval biomass is optional on canonical feeding events; the legacy mirror
--- must not force an invented value when it was not measured.
-ALTER TABLE feeding_schedule
-    ALTER COLUMN larvae_weight DROP NOT NULL;
-
-ALTER TABLE environmental_monitoring_larvaefeeding
-    ADD COLUMN IF NOT EXISTS production_event_id BIGINT,
-    ADD COLUMN IF NOT EXISTS production_batch_id INTEGER,
-    ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
-    ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ;
-
-ALTER TABLE health_intervention
-    ADD COLUMN IF NOT EXISTS production_event_id BIGINT,
-    ADD COLUMN IF NOT EXISTS production_batch_id INTEGER,
-    ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
-    ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ;
-
-DO $$
-BEGIN
-    BEGIN
-        ALTER TABLE feeding_schedule
-            ADD CONSTRAINT feeding_schedule_event_fk
-            FOREIGN KEY (production_event_id) REFERENCES production_events(id)
-            ON DELETE RESTRICT;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE feeding_schedule
-            ADD CONSTRAINT feeding_schedule_batch_fk
-            FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)
-            ON DELETE RESTRICT;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE feeding_schedule
-            ADD CONSTRAINT feeding_schedule_actor_fk
-            FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
-            ON DELETE SET NULL;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE environmental_monitoring_larvaefeeding
-            ADD CONSTRAINT larval_monitoring_event_fk
-            FOREIGN KEY (production_event_id) REFERENCES production_events(id)
-            ON DELETE RESTRICT;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE environmental_monitoring_larvaefeeding
-            ADD CONSTRAINT larval_monitoring_batch_fk
-            FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)
-            ON DELETE RESTRICT;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE environmental_monitoring_larvaefeeding
-            ADD CONSTRAINT larval_monitoring_actor_fk
-            FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
-            ON DELETE SET NULL;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE health_intervention
-            ADD CONSTRAINT health_intervention_event_fk
-            FOREIGN KEY (production_event_id) REFERENCES production_events(id)
-            ON DELETE RESTRICT;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE health_intervention
-            ADD CONSTRAINT health_intervention_batch_fk
-            FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)
-            ON DELETE RESTRICT;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE health_intervention
-            ADD CONSTRAINT health_intervention_actor_fk
-            FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
-            ON DELETE SET NULL;
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-END $$;
-
-CREATE INDEX IF NOT EXISTS idx_feeding_schedule_production_batch
-    ON feeding_schedule(production_batch_id);
-CREATE INDEX IF NOT EXISTS idx_larval_monitoring_production_batch
-    ON environmental_monitoring_larvaefeeding(production_batch_id);
-CREATE INDEX IF NOT EXISTS idx_health_intervention_production_batch
-    ON health_intervention(production_batch_id);

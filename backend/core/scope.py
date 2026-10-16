@@ -71,7 +71,7 @@ def _scope_visibility_clause(alias):
 
     ``alias`` must expose farm_id, site_id and facility_id columns and is an
     internal constant, never user input.  Rows without canonical scope are
-    legacy records and are visible only to super admins.
+    older records and are visible only to super admins.
     """
     if app.config.get('LOGIN_DISABLED') or (
         getattr(current_user, 'is_authenticated', False)
@@ -151,7 +151,7 @@ def _assert_production_location(cursor, farm_id, site_id, facility_id):
 
 
 def _location_label(location):
-    """Legacy farm_site display text derived from the canonical hierarchy."""
+    """farm_site display text (older free-text field) derived from the canonical hierarchy."""
     return f"{location['farm_name']} / {location['site_name']}"[:150]
 
 

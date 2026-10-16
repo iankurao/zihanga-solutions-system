@@ -67,28 +67,3 @@ CREATE INDEX IF NOT EXISTS idx_waste_lots_scope
     ON waste_lots(farm_id, site_id, facility_id);
 CREATE INDEX IF NOT EXISTS idx_substrate_batches_scope
     ON substrate_batches(farm_id, site_id, facility_id);
-
--- Deleting a customer must never silently delete sales, delivery, or feedback
--- history.  Replace any ON DELETE CASCADE customer reference with RESTRICT.
-DO $$
-DECLARE
-    fk RECORD;
-BEGIN
-    FOR fk IN
-        SELECT c.conname, c.conrelid::regclass AS table_name
-        FROM pg_constraint AS c
-        WHERE c.contype = 'f'
-          AND c.confrelid = 'customers'::regclass
-          AND c.confdeltype = 'c'
-          AND c.conrelid IN (
-              'sales'::regclass, 'deliveries'::regclass, 'customer_feedback'::regclass
-          )
-    LOOP
-        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.table_name, fk.conname);
-        EXECUTE format(
-            'ALTER TABLE %s ADD CONSTRAINT %I FOREIGN KEY (customer_id) '
-            'REFERENCES customers(id) ON DELETE RESTRICT',
-            fk.table_name, fk.conname
-        );
-    END LOOP;
-END $$;

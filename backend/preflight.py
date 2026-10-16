@@ -166,6 +166,19 @@ def database_checks(db, env=None):
     else:
         add(PASS, 'audit', 'Changes are recorded in the audit log.')
 
+    from backend.retired_tables import EVENT_COPIES, remaining
+
+    left = remaining(db)
+    if left:
+        copies = [t for t in left if t in EVENT_COPIES]
+        add(WARN, 'retired_tables', 'Tables from before the traceability chain still hold rows: '
+                                    + ', '.join(f'{t} ({n})' for t, n in left.items())
+                                    + ('. Copies of recorded events go with python -m backend.retired_tables '
+                                       '--clear-copies; review any other rows before removing them.'
+                                       if copies else '. Review these rows before removing them.'))
+    else:
+        add(PASS, 'retired_tables', 'No tables from before the traceability chain are left.')
+
     admins = db.fetch_one("SELECT count(*) AS n FROM users WHERE role = 'super_admin' AND is_active")['n']
     if admins:
         add(PASS, 'super_admin', f'{admins} active super admin account(s).')

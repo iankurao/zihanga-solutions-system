@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', function () {
       ['Date', when(root.occurred)],
       ['Quantity', kg(root.quantity, root.unit)],
       ['Recorded by', root.actor],
-      ['Farm / site / facility', root.location || 'Unassigned (legacy record)'],
+      ['Farm / site / facility', root.location || 'No location (older record)'],
       ['QC status', details.qc_status || details.qc],
       ['QC decision', details.approval],
       ['Quality', details.quality_status],

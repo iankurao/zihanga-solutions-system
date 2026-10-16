@@ -239,7 +239,7 @@ class DryingListsTest(ScenarioTestCase):
         self.assertEqual((mine["dried_records"], float(mine["total_dried_kg"])), (1, 1.2))
         self.assertIsNotNone(mine["last_activity"])
         stats = self.ok(self.admin.get(f"/api/admin/farmer/{operator.username}/stats"))["data"]
-        self.assertEqual(stats["recent_harvest"][0]["tray_batch_id"], production_ref)
+        self.assertEqual(stats["recent_harvest"][0]["production_batch"], production_ref)
         self.assertEqual(stats["recent_drying"][0]["batch_id"], drying_ref)
         activity = self.ok(self.admin.get("/api/admin/activity"))["data"]
         self.assertTrue(any(harvest["harvest_code"] in a["detail"] for a in activity))

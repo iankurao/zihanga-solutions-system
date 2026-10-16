@@ -132,17 +132,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/labels` | signed in |
 | GET | `/scan/<string:kind>/<path:ref>` | signed in |
 
-## legacy
-
-| Method | Path | Access |
-|---|---|---|
-| POST | `/api/feeding/environmental-monitoring` | production.write |
-| POST | `/api/feeding/harvest-yield` | production.write |
-| POST | `/api/feeding/health-intervention` | production.write |
-| POST | `/api/feeding/schedule` | production.write |
-| GET | `/api/records` | legacy.read |
-| POST | `/api/send-harvest-report` | legacy.read |
-
 ## location_routes
 
 | Method | Path | Access |
@@ -154,7 +143,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | POST | `/api/locations/farms` | super_admin |
 | GET | `/api/locations/hierarchy` | signed in |
 | POST | `/api/locations/organizations` | super_admin |
-| POST | `/api/locations/record-links` | super_admin |
 | POST | `/api/locations/sites` | super_admin |
 | GET | `/api/locations/users/<int:user_id>/access` | super_admin |
 
@@ -194,6 +182,13 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | POST | `/api/product-lots` | quality.decide |
 | GET | `/api/product-lots/<string:lot_ref>` | signed in |
 | GET | `/product-lot` | signed in |
+
+## records
+
+| Method | Path | Access |
+|---|---|---|
+| GET | `/api/records` | records.read |
+| POST | `/api/send-harvest-report` | records.read |
 
 ## reports
 

@@ -50,7 +50,17 @@ CREATE INDEX IF NOT EXISTS idx_substrate_batch_inputs_batch
 
 -- Promote existing sourcing records into traceable lots. Historical records
 -- have no site field, so mark that fact explicitly rather than inventing one.
--- Only positive measured quantities can become inventory lots.
+-- Only positive measured quantities can become inventory lots. This import
+-- runs once: afterwards every collection creates its own lot, and a deleted
+-- lot must never come back unassigned on the next start.
+CREATE TABLE IF NOT EXISTS schema_markers (
+    name VARCHAR(80) PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+IF NOT EXISTS (SELECT 1 FROM schema_markers WHERE name = 'waste_lots_imported_v1') THEN
 INSERT INTO waste_lots (
     business_id,
     waste_sourcing_id,
@@ -88,3 +98,6 @@ SELECT
 FROM waste_sourcing AS ws
 WHERE ws.waste_weight > 0
 ON CONFLICT (waste_sourcing_id) DO NOTHING;
+INSERT INTO schema_markers (name) VALUES ('waste_lots_imported_v1');
+END IF;
+END $$;

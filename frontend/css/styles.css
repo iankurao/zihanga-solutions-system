@@ -1,5 +1,5 @@
 /* Global Styles */
-/* Legacy data-entry pages. Colours and type come from the ERP design tokens
+/* Data-entry page (index.html). Colours and type come from the ERP design tokens
    in erp.css (loaded first); these names are kept for the existing rules. */
 :root {
     --primary-color: var(--erp-accent);
@@ -85,7 +85,7 @@ body {
 }
 
 /* Under the shared ERP app bar (56px), the section sidebar starts below it. */
-.erp-legacy .sidebar {
+.erp-entry .sidebar {
     top: 56px;
     height: calc(100vh - 56px);
 }

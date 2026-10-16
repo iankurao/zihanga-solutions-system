@@ -3,6 +3,7 @@ from psycopg2 import sql
 import logging
 from pathlib import Path
 from backend.config import DB_CONFIG
+from backend.retired_tables import retire
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -139,26 +140,6 @@ def create_tables(cursor):
         CREATE INDEX IF NOT EXISTS idx_monitoring_date_waste_monitoring ON waste_monitoring(monitoring_date)
     """)
     
-    # Create environmental_monitoring_larvaefeeding table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS environmental_monitoring_larvaefeeding (
-            id SERIAL PRIMARY KEY,
-            monitoring_date DATE NOT NULL,
-            monitoring_time TIME NOT NULL,
-            tray_facility_id VARCHAR(50) NOT NULL,
-            temperature DECIMAL(5,2) NOT NULL,
-            humidity DECIMAL(5,2) NOT NULL,
-            ammonia_odor VARCHAR(10) NOT NULL,
-            notes TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_monitoring_date_larvae ON environmental_monitoring_larvaefeeding(monitoring_date)
-    """)
-    
     # Create substrate_preparation table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS substrate_preparation (
@@ -178,70 +159,6 @@ def create_tables(cursor):
     """)
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_prep_date ON substrate_preparation(prep_date)
-    """)
-    
-    # Create health_intervention table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS health_intervention (
-            id SERIAL PRIMARY KEY,
-            health_date DATE NOT NULL,
-            tray_batch_id VARCHAR(50) NOT NULL,
-            observed_issue VARCHAR(255) NOT NULL,
-            severity VARCHAR(20) NOT NULL,
-            follow_up_date DATE,
-            resolved VARCHAR(10),
-            action_taken TEXT NOT NULL,
-            comments TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_health_date ON health_intervention(health_date)
-    """)
-    
-    # Create harvest_yield table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS harvest_yield (
-            id SERIAL PRIMARY KEY,
-            harvest_date DATE NOT NULL,
-            tray_batch_id VARCHAR(50) NOT NULL,
-            instar_stage VARCHAR(10) NOT NULL,
-            larvae_collected DECIMAL(10,2) NOT NULL,
-            processing_method VARCHAR(50) NOT NULL,
-            storage_temp DECIMAL(5,2),
-            notes TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_harvest_date ON harvest_yield(harvest_date)
-    """)
-    
-    # Create feeding_schedule table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS feeding_schedule (
-            id SERIAL PRIMARY KEY,
-            feeding_date DATE NOT NULL,
-            tray_batch_id VARCHAR(50) NOT NULL,
-            larvae_age_days INT NOT NULL,
-            larvae_weight DECIMAL(10,2),
-            feed_type VARCHAR(50) NOT NULL,
-            feed_quantity DECIMAL(10,2) NOT NULL,
-            start_weight DECIMAL(10,2),
-            end_weight DECIMAL(10,2),
-            consumption DECIMAL(10,2),
-            operator VARCHAR(100) NOT NULL,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_feeding_date ON feeding_schedule(feeding_date)
     """)
     
     # Create cage_monitoring table
@@ -460,21 +377,6 @@ def create_tables(cursor):
         )
     """)
     
-    # Create hatchery_health_interventions table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS hatchery_health_interventions (
-            id SERIAL PRIMARY KEY,
-            health_date DATE NOT NULL,
-            health_issue TEXT NOT NULL,
-            severity VARCHAR(20) NOT NULL,
-            action_taken TEXT NOT NULL,
-            follow_up_date DATE,
-            resolved VARCHAR(10),
-            comments TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
     # Create customers table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS customers (
@@ -494,60 +396,6 @@ def create_tables(cursor):
         CREATE INDEX IF NOT EXISTS idx_customer_email ON customers(email)
     """)
     
-    # Create sales table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sales (
-            id SERIAL PRIMARY KEY,
-            date DATE NOT NULL,
-            customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
-            product VARCHAR(100) NOT NULL,
-            quantity DECIMAL(10,2) NOT NULL,
-            amount DECIMAL(10,2) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date)
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id)
-    """)
-    
-    # Create customer_feedback table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS customer_feedback (
-            id SERIAL PRIMARY KEY,
-            date DATE NOT NULL,
-            customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
-            feedback TEXT NOT NULL,
-            rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_feedback_date ON customer_feedback(date)
-    """)
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_feedback_customer ON customer_feedback(customer_id)
-    """)
-
-    # Create deliveries table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS deliveries (
-            id SERIAL PRIMARY KEY,
-            date DATE NOT NULL,
-            customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
-            product VARCHAR(100),
-            quantity DECIMAL(10,2),
-            status VARCHAR(50) NOT NULL,
-            notes TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
     # Create drying_batches table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS drying_batches (
@@ -561,73 +409,7 @@ def create_tables(cursor):
         )
     """)
 
-    # Create drying_input table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS drying_input (
-            id SERIAL PRIMARY KEY,
-            batch_id VARCHAR(50) NOT NULL,
-            wet_harvested_kg DECIMAL(10,2),
-            wet_placed_for_drying_kg DECIMAL(10,2),
-            dried_by_personnel_kg DECIMAL(10,2),
-            sand_used_kg DECIMAL(10,2),
-            sand_reused_kg DECIMAL(10,2),
-            notes TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create drying_output table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS drying_output (
-            id SERIAL PRIMARY KEY,
-            batch_id VARCHAR(50) NOT NULL,
-            dried_produced_kg DECIMAL(10,2) NOT NULL,
-            solar_drying_taken_kg DECIMAL(10,2),
-            stored_in_silo_bag_kg DECIMAL(10,2),
-            sold_kg DECIMAL(10,2),
-            actual_ratio VARCHAR(50),
-            yield_percentage DECIMAL(5,2),
-            notes TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create drying_quality_control table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS drying_quality_control (
-            id SERIAL PRIMARY KEY,
-            batch_id VARCHAR(50) NOT NULL,
-            qc_date DATE NOT NULL,
-            sand_removal VARCHAR(50) NOT NULL,
-            contaminants_found TEXT,
-            color_quality VARCHAR(50) NOT NULL,
-            moisture_level VARCHAR(50) NOT NULL,
-            qc_personnel VARCHAR(100) NOT NULL,
-            notes TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create drying_review_approval table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS drying_review_approval (
-            id SERIAL PRIMARY KEY,
-            batch_id VARCHAR(50) NOT NULL,
-            reviewed_by VARCHAR(100) NOT NULL,
-            review_date DATE NOT NULL,
-            approval_status VARCHAR(50) NOT NULL,
-            comments TEXT,
-            recorded_by VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Apply additive, repeatable schema changes after the operational tables
-    # exist.  The migration only adds columns/indexes/tables and backfills
-    # identifiers; it never drops or renames legacy fields.
+    # Apply repeatable schema changes after the operational tables exist.
     migration_path = Path(__file__).parent / "migrations" / "phase_one_business_identifiers.sql"
     cursor.execute(migration_path.read_text(encoding="utf-8"))
     chain_migration_path = Path(__file__).parent / "migrations" / "waste_to_substrate_chain.sql"
@@ -663,6 +445,11 @@ def create_tables(cursor):
     cursor.execute(farm_logs_migration_path.read_text(encoding="utf-8"))
     order_prices_migration_path = Path(__file__).parent / "migrations" / "order_prices.sql"
     cursor.execute(order_prices_migration_path.read_text(encoding="utf-8"))
+    # Last: drop the tables from before the traceability chain once empty.
+    kept = retire(cursor)
+    if kept:
+        logger.warning("Retired tables still holding rows (see python -m backend.retired_tables): %s",
+                       ", ".join(f"{t} ({n})" for t, n in kept.items()))
 
 if __name__ == "__main__":
     init_database()

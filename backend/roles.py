@@ -25,7 +25,7 @@ PERMISSION_LABELS = {
     'sales.write': 'Create and change customers, orders and deliveries',
     'alerts.manage': 'Acknowledge and snooze alerts',
     # Super admin only:
-    'legacy.read': 'See legacy (pre-traceability) records and analytics',
+    'records.read': 'See every record of a day (records by date) and email the harvest report',
     'setup.manage': 'Manage locations, units, thresholds and users',
     'audit.read': 'Read the audit log',
 }

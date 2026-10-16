@@ -30,7 +30,7 @@ The file lists every endpoint with its call count and any never called
 |---|---|
 | `test_phase_one_end_to_end.py` | **The full chain** Waste Lot > Substrate > Production > Harvest > Drying > QC > Product Lot > Inventory > Order > Delivery, with real sign-in and each step done by its role, then traceability both ways, mass balance, ledger, Batch 360, reports, dashboard, notifications, audit trail, label scan and outsider isolation |
 | `test_access_and_admin.py` | Facility / site / farm / organization isolation matrix, admin portal API, location setup and grants, low-stock minimums, HTML sign-in and registration forms, page routes and static files |
-| `test_legacy_records.py` | The retired write routes (no location) are gone; legacy reads are super-admin only; legacy sales history is read-only; legacy feeding routes write canonical events |
+| `test_records.py` | The retired routes (no location, old larval and record-link routes) are gone; records by date are super-admin only and read the current tables; larval form fields reach the production events; old tables are dropped once empty |
 | `test_farm_operations.py` | Hatchery, fly facility and waste-handling logs: every kind needs a location and access, is validated, stored with its location and audited; outsiders cannot see them; the database refuses rows without a location; hatchery numbering and feeding checks; the drying pick-lists follow a batch from harvest to approval |
 | `test_production_batch_chain_integration.py` | Detailed rules for each stage (validation, limits, transitions, concurrency), inventory ledger, orders, traceability, alerts, notifications, reports, dashboard, units, farmer portal, QR labels, roles and security, audit log |
 | `test_waste_substrate_chain_integration.py` | Waste lots and substrate preparation: scope, lineage, over-consumption, concurrency |
@@ -51,10 +51,10 @@ session (`make_farm`, `make_user`, `make_batch`).
 | Area | Main tests |
 |---|---|
 | Authentication | `test_registration_and_sign_in_forms`, `test_sign_in_is_throttled_and_does_not_reveal_accounts`, `test_password_reset_role_change_and_deactivation_end_sessions`, `test_login_only_redirects_to_same_site_paths` |
-| Authorization | `test_every_write_route_declares_a_permission`, `test_role_permissions_are_enforced_server_side`, end-to-end role refusals, `test_legacy_records_are_super_admin_only` |
+| Authorization | `test_every_write_route_declares_a_permission`, `test_role_permissions_are_enforced_server_side`, end-to-end role refusals, `test_records_by_date_are_super_admin_only` |
 | Farm isolation | `test_access_level_decides_what_each_user_sees_and_records`, `test_reads_and_writes_are_limited_to_authorized_farms`, end-to-end outsider checks |
 | Facility isolation | `test_access_level_decides_what_each_user_sees_and_records`, `test_scoped_lists_follow_the_same_rules`, end-to-end QC officer trace (restricted placeholders) |
-| Waste | `test_collection_creates_lot_and_substrate_keeps_exact_lineage`, `test_waste_lot_and_substrate_require_canonical_scope`, legacy waste forms |
+| Waste | `test_collection_creates_lot_and_substrate_keeps_exact_lineage`, `test_waste_lot_and_substrate_require_canonical_scope` |
 | Substrate | `test_negative_and_over_available_consumption_are_rejected`, `test_concurrent_substrate_batches_cannot_overdraw_a_lot` |
 | Production | `test_invalid_status_transition_is_rejected_and_history_is_audited`, `test_insufficient_substrate_is_rejected_without_creating_a_batch`, `test_units_hold_one_batch_and_are_released_on_harvest` |
 | Feeding / monitoring / health | `test_feeding_monitoring_and_health_events_are_batch_timeline_records`, `test_event_measurement_range_and_closed_batch_rules_are_enforced`, `test_feeding_form_blank_optional_fields_are_accepted` |

@@ -123,6 +123,37 @@ harvested, 119.3 kg dried and 5 customer orders.
 The breeding cycle (hatchery, fly facility) is still recorded per location
 but not linked to production batches; see Suggested Phase Two.
 
+## Whole-application review (16 October 2026)
+
+The full cycle was run in the browser through the real forms, each step as
+the matching role: waste collection, substrate, production batch, feeding,
+monitoring and health (data-entry page), status changes and harvest, drying,
+quality check and approval, product lot release, priced order, reservation,
+dispatch, confirmed delivery, and the trace back from the order to the waste
+lot. Found and fixed:
+
+- **No way to move a batch through its lifecycle in the app.** The batch page
+  now has a status control offering only the allowed next statuses (a reason
+  is asked for pause, health alert and cancel). Changing status no longer
+  overwrites the batch's growth stage.
+- **Larval form fields kept only in old copy tables.** Tray, tray weights
+  before and after feeding, and the health tray are now stored on the
+  production events; the copies are no longer written.
+- **Old tables retired.** Tables nothing writes or reads (old harvests, sales,
+  deliveries, feedback, drying, hatchery health, waste items, record links,
+  and the event copies) are dropped once empty; the readiness check lists
+  any that still hold rows. 19 migration files that never ran were deleted.
+- **Old waste-lot import re-ran on every start**, recreating an unassigned
+  lot for any collection without one; it now runs once.
+- **Larval forms** post straight to the production batch events; the old
+  `/api/feeding/*` routes and the unused record-links tool are gone.
+  "Records by date" reads the current tables (`records.read`).
+- **A saved message could appear before the server answered** (a local copy
+  and chime); removed, the page now only reports the server's answer.
+- Dates in the API are ISO 8601 (2026-10-16) instead of
+  "Fri, 16 Oct 2026 00:00:00 GMT"; local time typed on the larval forms is
+  kept as local time; the drying pick-lists refresh after a harvest.
+
 ## Prices and revenue (16 October 2026)
 
 Every new order line has a price per kg (`CURRENCY`, default KES; zero is

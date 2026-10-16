@@ -94,8 +94,8 @@ document.addEventListener('DOMContentLoaded', function () {
     setText('b360BatchId', batch.business_id || batch.batch_code);
     var status = document.getElementById('b360Status');
     status.replaceWith(Object.assign(ErpUI.badge(batch.status), { id: 'b360Status' }));
-    setText('b360Farm', [batch.farm_name, batch.site_name].filter(Boolean).join(' / ') || 'Unassigned (legacy)');
-    setText('b360Facility', batch.facility_name || 'Unassigned (legacy)');
+    setText('b360Farm', [batch.farm_name, batch.site_name].filter(Boolean).join(' / ') || 'No location (older record)');
+    setText('b360Facility', batch.facility_name || 'No location (older record)');
     setText('b360Started', day(batch.started_at || batch.start_date));
     setText('b360Age', batch.age_days == null ? '—' : batch.age_days + (batch.age_days === 1 ? ' day' : ' days'));
     document.title = (batch.business_id || 'Batch') + ' · Batch 360 | Zehunger';

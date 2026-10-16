@@ -1,8 +1,6 @@
-"""Pre-traceability (legacy) leftovers: the records-by-date history lookup
-(super admins, every older table), the larval feeding routes that record
-canonical production events, and the harvest report email. Figures and
-reports come from the production chain (domains/reports.py, dashboard.py);
-nothing here writes a record without a farm, site and facility."""
+"""Records by date (super admins: every record of one day, by area) and the
+harvest report email. Figures and reports come from the production chain
+(domains/reports.py, dashboard.py)."""
 
 import smtplib
 
@@ -14,98 +12,14 @@ from flask_login import login_required
 
 from backend.config import ADMIN_EMAIL, EMAIL_HOST, EMAIL_HOST_PASSWORD, EMAIL_HOST_USER, EMAIL_PORT
 from backend.core.web import app, db, logger
-from backend.core.http import ProductionEventPermissionError, normalize_keys
 from backend.core.security import requires
-from backend.domains.production import (
-    _create_feeding_event,
-    _create_harvest_event,
-    _create_health_event,
-    _create_monitoring_event,
-    _harvest_report_rows,
-)
+from backend.domains.production import _harvest_report_rows
 
 
-# --- Larval feeding forms: record canonical production events ---
-@app.route('/api/feeding/environmental-monitoring', methods=['POST'])
-@login_required
-@requires('production.write')
-def create_feeding_environmental_monitoring():
-    try:
-        result = _create_monitoring_event(normalize_keys(request.get_json() or {}))
-        return jsonify({
-            'success': True,
-            'message': 'Environmental monitoring data saved successfully',
-            **result,
-        }), 201
-    except ProductionEventPermissionError as e:
-        return jsonify({'success': False, 'message': str(e)}), 403
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error saving larval env monitoring data: {e}", exc_info=True)
-        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
-
-@app.route('/api/feeding/health-intervention', methods=['POST'])
-@login_required
-@requires('production.write')
-def create_feeding_health_intervention():
-    try:
-        result = _create_health_event(normalize_keys(request.get_json() or {}))
-        return jsonify({
-            'success': True,
-            'message': 'Health intervention data saved successfully',
-            **result,
-        }), 201
-    except ProductionEventPermissionError as e:
-        return jsonify({'success': False, 'message': str(e)}), 403
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error saving health intervention data: {e}")
-        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
-
-@app.route('/api/feeding/harvest-yield', methods=['POST'])
-@login_required
-@requires('production.write')
-def create_feeding_harvest_yield():
-    try:
-        result = _create_harvest_event(normalize_keys(request.get_json() or {}))
-        return jsonify({
-            'success': True,
-            'message': 'Harvest recorded',
-            **result,
-        }), 201
-    except ProductionEventPermissionError as e:
-        return jsonify({'success': False, 'message': str(e)}), 403
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error saving harvest/yield data: {e}", exc_info=True)
-        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
-
-@app.route('/api/feeding/schedule', methods=['POST'])
-@login_required
-@requires('production.write')
-def create_feeding_schedule():
-    try:
-        result = _create_feeding_event(normalize_keys(request.get_json() or {}))
-        return jsonify({
-            'success': True,
-            'message': 'Feeding schedule saved successfully',
-            **result,
-        }), 201
-    except ProductionEventPermissionError as e:
-        return jsonify({'success': False, 'message': str(e)}), 403
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error saving feeding schedule: {e}")
-        return jsonify({'success': False, 'message': 'An internal error occurred.'}), 500
-
-# --- Records by date (legacy history, super admins) ---
+# --- Records by date (super admins) ---
 @app.route('/api/records', methods=['GET'])
 @login_required
-@requires('legacy.read')
+@requires('records.read')
 def get_records_by_date_and_section():
     target_date_str = request.args.get('date')
     section = request.args.get('section')
@@ -118,10 +32,11 @@ def get_records_by_date_and_section():
     except ValueError:
         return jsonify({'success': False, 'message': 'Invalid date format. Please use YYYY-MM-DD.'}), 400
 
-    # Map sections to tables and their respective date columns
+    # Section -> {display name: (table or subquery, date column)}.
     section_tables = {
         'waste': {
             'Waste Sourcing': ('waste_sourcing', 'collection_date'),
+            'Substrate Preparation': ('substrate_preparation', 'prep_date'),
             'Storage Records': ('storage_records', 'storage_date'),
             'Processing Records': ('processing_records', 'processing_date'),
             'Waste Monitoring': ('waste_monitoring', 'monitoring_date'),
@@ -134,17 +49,20 @@ def get_records_by_date_and_section():
             'Problems & Solutions': ('hatchery_problems', 'problem_date'),
         },
         'feeding': {
-            'Environmental Monitoring': ('environmental_monitoring_larvaefeeding', 'monitoring_date'),
-            'Health & Intervention': ('health_intervention', 'health_date'),
-            'Harvest & Yield': ('harvest_yield', 'harvest_date'),
-            'Feeding Schedule': ('feeding_schedule', 'feeding_date'),
+            'Production Events': (
+                '(SELECT pe.event_code, pb.business_id AS production_batch, pe.event_type, '
+                'pe.occurred_at, pe.quantity, pe.unit, pe.actor, pe.status, pe.notes '
+                'FROM production_events AS pe '
+                'JOIN production_batches AS pb ON pb.id = pe.production_batch_id) AS events',
+                'occurred_at'),
         },
         'drying': {
-            'Batch Information': ('drying_batches', 'drying_date'),
-            'Input Records': ('drying_input', 'created_at'),
-            'Output Records': ('drying_output', 'created_at'),
-            'Quality Control': ('drying_quality_control', 'qc_date'),
-            'Review & Approval': ('drying_review_approval', 'review_date'),
+            'Drying Batches': ('drying_batches', 'drying_date'),
+            'Drying Inputs': ('drying_inputs', 'added_at'),
+            'Drying Outputs': ('drying_outputs', 'output_date'),
+            'Quality Checks': ('quality_checks', 'checked_at'),
+            'Quality Decisions': ('quality_approvals', 'decided_at'),
+            'Product Lots': ('product_lots', 'production_date'),
         },
         'facility': {
             'Cage Monitoring': ('cage_monitoring', 'monitoring_date'),
@@ -153,11 +71,9 @@ def get_records_by_date_and_section():
             'Egg Collection': ('egg_collection', 'collection_date'),
             'Bait Preparation': ('bait_preparation', 'start_date'),
         },
-        # Sales before customer orders existed (read-only history).
         'sales': {
-            'Sales': ('sales', 'date'),
-            'Deliveries': ('deliveries', 'date'),
-            'Customer Feedback': ('customer_feedback', 'date'),
+            'Customer Orders': ('customer_orders', 'order_date'),
+            'Deliveries': ('customer_deliveries', 'dispatched_at'),
         },
     }
 
@@ -212,10 +128,9 @@ def send_email(subject, body, to_emails):
 
 @app.route('/api/send-harvest-report', methods=['POST'])
 @login_required
-@requires('legacy.read')
+@requires('records.read')
 def send_harvest_report():
-    """Email the harvest list (recorded harvests and older harvest-yield rows)
-    to ADMIN_EMAIL."""
+    """Email the list of recorded harvests to ADMIN_EMAIL."""
     try:
         rows = sorted(_harvest_report_rows(), key=lambda r: str(r.get('harvest_date') or ''), reverse=True)
         today = datetime.now().date()
@@ -224,14 +139,11 @@ def send_harvest_report():
         else:
             lines = [f"Harvest Report ({today}):", ""]
             for row in rows:
-                if row.get('wet_weight') is not None:
-                    quantity = f"{row['wet_weight']} {row.get('unit') or 'kg'} wet"
-                else:
-                    quantity = f"{row.get('larvae_collected') or ''} kg"
+                quantity = f"{row['wet_weight']} {row.get('unit') or 'kg'} wet"
                 lines.append(
                     f"{row.get('harvest_date', '')}  {row.get('business_id') or ''}  "
-                    f"batch {row.get('tray_batch_id') or '-'}  {quantity}  "
-                    f"{row.get('instar_stage') or ''}".rstrip()
+                    f"batch {row.get('production_batch') or '-'}  {quantity}  "
+                    f"{row.get('harvest_stage') or ''}".rstrip()
                 )
             summary = "\n".join(lines) + "\n"
         if not (EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and ADMIN_EMAIL):

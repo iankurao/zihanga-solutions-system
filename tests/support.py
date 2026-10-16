@@ -199,10 +199,11 @@ _FARM_PURGE = [
     "DELETE FROM drying_batches WHERE farm_id = %(f)s",
     """DELETE FROM harvests WHERE production_event_id IN (SELECT id FROM production_events WHERE
         production_batch_id IN (SELECT id FROM production_batches WHERE farm_id = %(f)s))""",
-    "DELETE FROM feeding_schedule WHERE production_batch_id IN (SELECT id FROM production_batches WHERE farm_id = %(f)s)",
-    """DELETE FROM environmental_monitoring_larvaefeeding WHERE production_batch_id IN (
-        SELECT id FROM production_batches WHERE farm_id = %(f)s)""",
-    "DELETE FROM health_intervention WHERE production_batch_id IN (SELECT id FROM production_batches WHERE farm_id = %(f)s)",
+    # Old copies of production events, while a database still has them (backend/retired_tables.py).
+    *(f"""DO $$ BEGIN IF to_regclass('{table}') IS NOT NULL THEN
+        DELETE FROM {table} WHERE production_batch_id IN (SELECT id FROM production_batches WHERE farm_id = %(f)s);
+        END IF; END $$""" for table in ("feeding_schedule", "environmental_monitoring_larvaefeeding",
+                                         "health_intervention")),
     """DELETE FROM feeding_events WHERE production_event_id IN (SELECT pe.id FROM production_events pe
         JOIN production_batches pb ON pb.id = pe.production_batch_id WHERE pb.farm_id = %(f)s)""",
     """DELETE FROM monitoring_events WHERE production_event_id IN (SELECT pe.id FROM production_events pe

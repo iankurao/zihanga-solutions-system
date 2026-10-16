@@ -143,6 +143,20 @@ sudo zrun python -m backend.preflight                 # after: all PASS
 curl -fsS https://YOUR.DOMAIN/readyz
 ```
 
+**Old tables (upgrading to October 2026 or later).** On start the app drops
+the tables from before the traceability chain once they are empty (see
+`backend/retired_tables.py`). If the readiness check warns that some still
+hold rows: rows in `feeding_schedule`, `environmental_monitoring_larvaefeeding`
+and `health_intervention` that are copies of recorded production events are
+removed, after the backup, with
+
+```bash
+sudo zrun python -m backend.retired_tables --clear-copies
+```
+
+Any other rows it reports are older records nothing reads any more: look at
+them, keep an export if they matter, then delete them so the table can go.
+
 **Rollback:** check out the previous tag and restart. Migrations are not
 reversed automatically: if the release notes say the schema changed in a way
 older code cannot read, or data went wrong, restore the backup taken just

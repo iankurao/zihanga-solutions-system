@@ -58,17 +58,6 @@ CREATE TABLE IF NOT EXISTS product_lots (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS waste_collection_items (
-    id SERIAL PRIMARY KEY,
-    lot_code VARCHAR(30),
-    business_id VARCHAR(30),
-    collection_time TIME,
-    waste_type VARCHAR(50),
-    weight_kg NUMERIC(14,3),
-    recorded_by VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS inventory_movements (
     id SERIAL PRIMARY KEY,
     business_id VARCHAR(30),
@@ -84,14 +73,12 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
 -- Operational tables currently used by the Flask routes.
 ALTER TABLE waste_sourcing ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 ALTER TABLE substrate_preparation ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
-ALTER TABLE harvest_yield ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 ALTER TABLE drying_batches ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 
 -- Canonical/ERP tables, whether they were created by ERP v2 or above.
 ALTER TABLE production_batches ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 ALTER TABLE substrate_batches ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 ALTER TABLE product_lots ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
-ALTER TABLE waste_collection_items ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS business_id VARCHAR(30);
 
 ALTER TABLE waste_sourcing
@@ -100,9 +87,6 @@ ALTER TABLE waste_sourcing
 ALTER TABLE substrate_preparation
     ALTER COLUMN business_id SET DEFAULT ('SUB-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
                                           lpad(nextval('phase_one_substrate_batch_seq')::text, 5, '0'));
-ALTER TABLE harvest_yield
-    ALTER COLUMN business_id SET DEFAULT ('HRV-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
-                                          lpad(nextval('phase_one_harvest_seq')::text, 5, '0'));
 ALTER TABLE drying_batches
     ALTER COLUMN business_id SET DEFAULT ('DRY-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
                                           lpad(nextval('phase_one_drying_batch_seq')::text, 5, '0'));
@@ -115,9 +99,6 @@ ALTER TABLE substrate_batches
 ALTER TABLE product_lots
     ALTER COLUMN business_id SET DEFAULT ('LOT-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
                                           lpad(nextval('phase_one_product_lot_seq')::text, 5, '0'));
-ALTER TABLE waste_collection_items
-    ALTER COLUMN business_id SET DEFAULT ('WL-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
-                                          lpad(nextval('phase_one_waste_lot_seq')::text, 5, '0'));
 ALTER TABLE inventory_movements
     ALTER COLUMN business_id SET DEFAULT ('MOV-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
                                           lpad(nextval('phase_one_inventory_movement_seq')::text, 5, '0'));
@@ -130,10 +111,6 @@ SET business_id = 'WL-' || to_char(COALESCE(collection_date, CURRENT_DATE), 'YYY
 WHERE business_id IS NULL;
 UPDATE substrate_preparation
 SET business_id = 'SUB-' || to_char(COALESCE(prep_date, CURRENT_DATE), 'YYYY') || '-' ||
-                  lpad(id::text, 5, '0')
-WHERE business_id IS NULL;
-UPDATE harvest_yield
-SET business_id = 'HRV-' || to_char(COALESCE(harvest_date, CURRENT_DATE), 'YYYY') || '-' ||
                   lpad(id::text, 5, '0')
 WHERE business_id IS NULL;
 UPDATE drying_batches
@@ -152,10 +129,6 @@ UPDATE product_lots
 SET business_id = 'LOT-' || to_char(COALESCE(processing_date, CURRENT_DATE), 'YYYY') || '-' ||
                   lpad(id::text, 5, '0')
 WHERE business_id IS NULL;
-UPDATE waste_collection_items
-SET business_id = 'WL-' || to_char(COALESCE(created_at::date, CURRENT_DATE), 'YYYY') || '-' ||
-                  lpad(id::text, 5, '0')
-WHERE business_id IS NULL;
 UPDATE inventory_movements
 SET business_id = 'MOV-' || to_char(COALESCE(occurred_at::date, CURRENT_DATE), 'YYYY') || '-' ||
                   lpad(id::text, 5, '0')
@@ -166,11 +139,9 @@ WHERE business_id IS NULL;
 SELECT setval(
     'phase_one_waste_lot_seq',
     GREATEST((SELECT last_value FROM phase_one_waste_lot_seq),
-             COALESCE((SELECT MAX(id) FROM waste_collection_items), 0),
              COALESCE((SELECT MAX(id) FROM waste_sourcing), 0), 1),
     (SELECT is_called FROM phase_one_waste_lot_seq) OR
-        GREATEST(COALESCE((SELECT MAX(id) FROM waste_collection_items), 0),
-                 COALESCE((SELECT MAX(id) FROM waste_sourcing), 0)) > 0
+        COALESCE((SELECT MAX(id) FROM waste_sourcing), 0) > 0
 );
 SELECT setval(
     'phase_one_substrate_batch_seq',
@@ -187,13 +158,6 @@ SELECT setval(
              COALESCE((SELECT MAX(id) FROM production_batches), 0), 1),
     (SELECT is_called FROM phase_one_production_batch_seq) OR
         COALESCE((SELECT MAX(id) FROM production_batches), 0) > 0
-);
-SELECT setval(
-    'phase_one_harvest_seq',
-    GREATEST((SELECT last_value FROM phase_one_harvest_seq),
-             COALESCE((SELECT MAX(id) FROM harvest_yield), 0), 1),
-    (SELECT is_called FROM phase_one_harvest_seq) OR
-        COALESCE((SELECT MAX(id) FROM harvest_yield), 0) > 0
 );
 SELECT setval(
     'phase_one_drying_batch_seq',
@@ -219,22 +183,18 @@ SELECT setval(
 
 ALTER TABLE waste_sourcing ALTER COLUMN business_id SET NOT NULL;
 ALTER TABLE substrate_preparation ALTER COLUMN business_id SET NOT NULL;
-ALTER TABLE harvest_yield ALTER COLUMN business_id SET NOT NULL;
 ALTER TABLE drying_batches ALTER COLUMN business_id SET NOT NULL;
 ALTER TABLE production_batches ALTER COLUMN business_id SET NOT NULL;
 ALTER TABLE substrate_batches ALTER COLUMN business_id SET NOT NULL;
 ALTER TABLE product_lots ALTER COLUMN business_id SET NOT NULL;
-ALTER TABLE waste_collection_items ALTER COLUMN business_id SET NOT NULL;
 ALTER TABLE inventory_movements ALTER COLUMN business_id SET NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_waste_sourcing_business_id ON waste_sourcing(business_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_substrate_preparation_business_id ON substrate_preparation(business_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_harvest_yield_business_id ON harvest_yield(business_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_drying_batches_business_id ON drying_batches(business_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_production_batches_business_id ON production_batches(business_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_substrate_batches_business_id ON substrate_batches(business_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_product_lots_business_id ON product_lots(business_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_waste_collection_items_business_id ON waste_collection_items(business_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_movements_business_id ON inventory_movements(business_id);
 
 -- Hatchery's old preview endpoint scanned hatchery_feeding, which is unrelated

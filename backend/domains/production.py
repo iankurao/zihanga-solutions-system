@@ -52,6 +52,13 @@ PRODUCTION_BATCH_TRANSITIONS = {
 }
 
 
+PRODUCTION_BATCH_STATUS_ORDER = (
+    'ACTIVE', 'MONITORING', 'READY_FOR_HARVEST', 'HARVESTED', 'COMPLETED',
+    'PAUSED', 'HEALTH_ALERT', 'CANCELLED',
+)
+# Statuses that need a reason (checked by change_production_batch_status).
+PRODUCTION_BATCH_REASON_STATUSES = {'PAUSED', 'HEALTH_ALERT', 'CANCELLED'}
+
 EVENT_BATCH_CLOSED_STATUSES = {'COMPLETED', 'CANCELLED'}
 
 
@@ -124,16 +131,12 @@ def _event_batch_ref(data):
     return value
 
 
-def _event_response(event, legacy_record=None):
-    result = {'event': dict(event)}
-    if legacy_record:
-        result['legacy_record'] = dict(legacy_record)
-    return result
+def _event_response(event):
+    return {'event': dict(event)}
 
 
 def _harvest_report_rows():
     user_id = getattr(current_user, 'id', None)
-    username = getattr(current_user, 'username', '')
     can_view_all = app.config.get('LOGIN_DISABLED') or (
         getattr(current_user, 'is_authenticated', False)
         and getattr(current_user, 'role', None) == 'super_admin'
@@ -143,38 +146,17 @@ def _harvest_report_rows():
         SELECT *
         FROM (
             SELECT
-                hy.id,
-                hy.business_id,
-                hy.harvest_date,
-                hy.tray_batch_id,
-                hy.instar_stage,
-                hy.larvae_collected,
-                hy.processing_method,
-                hy.storage_temp,
-                hy.notes,
-                hy.recorded_by,
-                NULL::INTEGER AS production_batch_id,
-                NULL::VARCHAR AS unit,
-                NULL::NUMERIC AS wet_weight,
-                'legacy'::VARCHAR AS record_type
-            FROM harvest_yield AS hy
-            WHERE %s OR hy.recorded_by = %s
-            UNION ALL
-            SELECT
                 h.id,
                 h.harvest_code AS business_id,
                 pe.occurred_at::date AS harvest_date,
-                COALESCE(pb.business_id, pb.batch_code) AS tray_batch_id,
-                h.harvest_stage AS instar_stage,
-                pe.quantity AS larvae_collected,
-                NULL::VARCHAR AS processing_method,
-                NULL::NUMERIC AS storage_temp,
+                COALESCE(pb.business_id, pb.batch_code) AS production_batch,
+                h.harvest_stage,
+                pe.quantity AS quantity_kg,
                 pe.notes,
                 h.operator AS recorded_by,
                 pe.production_batch_id,
                 h.unit,
-                h.wet_weight,
-                'production_batch'::VARCHAR AS record_type
+                h.wet_weight
             FROM harvests AS h
             JOIN production_events AS pe ON pe.id = h.production_event_id
             JOIN production_batches AS pb ON pb.id = pe.production_batch_id
@@ -218,8 +200,6 @@ def _harvest_report_rows():
         ORDER BY harvest_date DESC, id DESC
         """,
         (
-            can_view_all,
-            username,
             can_view_all,
             user_id,
             user_id,
@@ -270,6 +250,15 @@ def _create_feeding_event(data):
             raise ValueError('larvae_age_days must be a valid integer')
         if larvae_age < 0:
             raise ValueError('larvae_age_days must be zero or greater')
+    tray_reference = str(data.get('tray_reference') or data.get('tray_batch_id') or '').strip() or None
+    if tray_reference and len(tray_reference) > 100:
+        raise ValueError('tray_reference must be at most 100 characters')
+    # Tray weight before and after feeding, in kg (start_weight_g is accepted in grams).
+    start_weight = _event_decimal(data.get('start_weight_kg'), 'start_weight_kg', minimum=0)
+    if start_weight is None:
+        start_grams = _event_decimal(data.get('start_weight_g'), 'start_weight_g', minimum=0)
+        start_weight = start_grams / Decimal('1000') if start_grams is not None else None
+    end_weight = _event_decimal(data.get('end_weight_kg'), 'end_weight_kg', minimum=0)
     with db.transaction() as cursor:
         batch, event = _insert_production_event(
             cursor, batch_ref, 'feeding', data, occurred_at,
@@ -280,45 +269,15 @@ def _create_feeding_event(data):
             INSERT INTO feeding_events (
                 production_event_id, feed_type, quantity_offered, offered_unit,
                 quantity_consumed, consumed_unit, larvae_biomass, biomass_unit,
-                larvae_age_days
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                larvae_age_days, tray_reference, start_weight_kg, end_weight_kg
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 event['id'], feed_type, offered, offered_unit, consumed, consumed_unit,
-                biomass, biomass_unit, larvae_age,
+                biomass, biomass_unit, larvae_age, tray_reference, start_weight, end_weight,
             ),
         )
-        cursor.execute(
-            """
-            INSERT INTO feeding_schedule (
-                feeding_date, tray_batch_id, larvae_age_days, larvae_weight,
-                feed_type, feed_quantity, start_weight, end_weight, consumption,
-                operator, recorded_by, production_event_id, production_batch_id,
-                actor_user_id, occurred_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                data.get('feeding_date') or occurred_at[:10],
-                data.get('tray_batch_id') or str(batch['business_id'] or batch['batch_code']),
-                data.get('larvae_age_days') if data.get('larvae_age_days') not in (None, '') else 0,
-                # Legacy column is in grams; mirror the canonical biomass.
-                (biomass * 1000 if biomass_unit == 'kg' else biomass) if biomass is not None else None,
-                feed_type,
-                offered,
-                data.get('start_weight_g'),
-                data.get('end_weight_kg'),
-                data.get('consumption_g'),
-                operator,
-                _chain_actor(data),
-                event['id'],
-                batch['id'],
-                getattr(current_user, 'id', None) if getattr(current_user, 'is_authenticated', False) else None,
-                occurred_at,
-            ),
-        )
-        legacy = cursor.fetchone()
-    return _event_response(event, legacy)
+    return _event_response(event)
 
 
 def _create_monitoring_event(data):
@@ -354,26 +313,7 @@ def _create_monitoring_event(data):
                 ammonia, ammonia_unit, ammonia_odor,
             ),
         )
-        cursor.execute(
-            """
-            INSERT INTO environmental_monitoring_larvaefeeding (
-                monitoring_date, monitoring_time, tray_facility_id, temperature,
-                humidity, ammonia_odor, notes, recorded_by, production_event_id,
-                production_batch_id, actor_user_id, occurred_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                data.get('monitoring_date') or occurred_at[:10],
-                data.get('monitoring_time') or occurred_at[11:19],
-                asset_reference, temperature, humidity, ammonia_odor or 'no',
-                data.get('notes'), _chain_actor(data), event['id'], batch['id'],
-                getattr(current_user, 'id', None) if getattr(current_user, 'is_authenticated', False) else None,
-                occurred_at,
-            ),
-        )
-        legacy = cursor.fetchone()
-    return _event_response(event, legacy)
+    return _event_response(event)
 
 
 def _create_health_event(data):
@@ -386,6 +326,9 @@ def _create_health_event(data):
         raise ValueError('observed_issue and action_taken are required')
     if severity not in {'low', 'medium', 'high', 'critical'}:
         raise ValueError('severity must be low, medium, high, or critical')
+    tray_reference = str(data.get('tray_reference') or data.get('tray_batch_id') or '').strip() or None
+    if tray_reference and len(tray_reference) > 100:
+        raise ValueError('tray_reference must be at most 100 characters')
     resolved = str(data.get('resolved') or '').strip().lower()
     health_status = str(data.get('status') or '').strip().lower()
     if health_status not in {'open', 'follow_up', 'resolved', 'closed'}:
@@ -402,35 +345,15 @@ def _create_health_event(data):
             """
             INSERT INTO health_events (
                 production_event_id, status, observed_issue, severity,
-                action_taken, follow_up_date, resolved_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                action_taken, follow_up_date, resolved_at, tray_reference
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 event['id'], health_status, issue, severity, action,
-                data.get('follow_up_date'), resolved_at,
+                data.get('follow_up_date') or None, resolved_at, tray_reference,
             ),
         )
-        cursor.execute(
-            """
-            INSERT INTO health_intervention (
-                health_date, tray_batch_id, observed_issue, severity,
-                action_taken, follow_up_date, resolved, comments, recorded_by,
-                production_event_id, production_batch_id, actor_user_id, occurred_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                data.get('health_date') or occurred_at[:10],
-                data.get('tray_batch_id') or str(batch['business_id'] or batch['batch_code']),
-                issue, severity, action, data.get('follow_up_date'),
-                data.get('resolved') or ('yes' if health_status in {'resolved', 'closed'} else 'no'),
-                data.get('comments'), _chain_actor(data), event['id'], batch['id'],
-                getattr(current_user, 'id', None) if getattr(current_user, 'is_authenticated', False) else None,
-                occurred_at,
-            ),
-        )
-        legacy = cursor.fetchone()
-    return _event_response(event, legacy)
+    return _event_response(event)
 
 
 def _create_harvest_event(data):
@@ -647,6 +570,9 @@ def _production_event_rows(batch_id):
             fe.larvae_biomass,
             fe.biomass_unit,
             fe.larvae_age_days,
+            COALESCE(fe.tray_reference, he.tray_reference) AS tray_reference,
+            fe.start_weight_kg,
+            fe.end_weight_kg,
             me.monitoring_type,
             me.asset_reference,
             me.temperature,
@@ -967,6 +893,9 @@ def get_production_batch(batch_ref):
         record['timeline'] = event_rows
         record['batch_number'] = record['business_id'] or record['batch_code']
         record['substrate_source'] = record['inputs']
+        # Where the batch can go next, in lifecycle order (the status control).
+        allowed = PRODUCTION_BATCH_TRANSITIONS.get(str(record['status'] or '').upper(), set())
+        record['next_statuses'] = [status for status in PRODUCTION_BATCH_STATUS_ORDER if status in allowed]
         return jsonify({'success': True, 'data': record}), 200
     except ProductionEventPermissionError as e:
         return jsonify({'success': False, 'message': str(e)}), 403
@@ -1066,7 +995,7 @@ def change_production_batch_status(batch_ref):
             'message': f'Invalid Production Batch status: {target_status or "missing"}',
         }), 400
     reason = str(data.get('reason', '')).strip() or None
-    if target_status in {'PAUSED', 'HEALTH_ALERT', 'CANCELLED'} and not reason:
+    if target_status in PRODUCTION_BATCH_REASON_STATUSES and not reason:
         return jsonify({
             'success': False,
             'message': f'A reason is required when changing status to {target_status}',
@@ -1124,11 +1053,11 @@ def change_production_batch_status(batch_ref):
             cursor.execute(
                 """
                 UPDATE production_batches
-                SET status = %s, current_stage = %s, updated_at = CURRENT_TIMESTAMP
+                SET status = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING id, business_id, batch_code, status, current_stage, updated_at
                 """,
-                (target_status, target_status, batch['id']),
+                (target_status, batch["id"]),
             )
             updated = cursor.fetchone()
             cursor.execute(

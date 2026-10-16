@@ -66,6 +66,12 @@
         <div><dt>Events</dt><dd id="batchEventCount">0</dd></div>
         <div><dt>Bio-pods / trays</dt><dd id="batchUnits">—</dd></div>
       </dl>
+      <form class="event-form" id="statusForm" hidden>
+        <div><label for="statusNext">Move batch to</label><select id="statusNext" name="status" required></select></div>
+        <div><label for="statusReason">Reason <span id="statusReasonNeed" class="erp-hint"></span></label><input id="statusReason" name="reason" maxlength="300"></div>
+        <div class="full erp-inline-message" id="statusMessage" aria-live="polite"></div>
+        <button class="erp-btn" type="submit">Change status</button>
+      </form>
 
       <div class="erp-tabs" role="tablist" aria-label="Production batch sections">
         <button class="erp-tab" type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" data-tab="overview">Overview</button>
@@ -102,7 +108,9 @@
           <div><label for="larvaeBiomass">Larvae biomass (optional)</label><input id="larvaeBiomass" name="larvae_biomass" type="number" min="0" step="0.001"></div>
           <div><label for="larvaeBiomassUnit">Biomass unit</label><select id="larvaeBiomassUnit" name="biomass_unit"><option value="g">g</option><option value="kg">kg</option></select></div>
           <div><label for="larvaeAge">Larvae age (days, optional)</label><input id="larvaeAge" name="larvae_age_days" type="number" min="0" step="1"></div>
-          <div><label for="feedingTray">Tray / unit reference (optional)</label><input id="feedingTray" name="tray_batch_id"></div>
+          <div><label for="feedingTray">Tray / unit reference (optional)</label><input id="feedingTray" name="tray_reference" maxlength="100"></div>
+          <div><label for="feedingStartWeight">Tray weight before feeding (kg, optional)</label><input id="feedingStartWeight" name="start_weight_kg" type="number" min="0" step="0.001"></div>
+          <div><label for="feedingEndWeight">Tray weight after feeding (kg, optional)</label><input id="feedingEndWeight" name="end_weight_kg" type="number" min="0" step="0.001"></div>
           <div><label for="feedingOperator">Operator</label><input id="feedingOperator" name="operator" required></div>
           <div class="full"><label for="feedingNotes">Notes</label><textarea id="feedingNotes" name="notes" rows="2"></textarea></div>
           <div class="full erp-inline-message" id="feedingMessage" aria-live="polite"></div>
@@ -200,6 +208,10 @@
     let activeBatchReference = '';
     let activeBatch = null;
     const field = id => document.getElementById(id);
+    // 2026-10-16T09:15:00+03:00 -> local date and time, e.g. 16 Oct 2026, 09:15
+    const when = value => value
+      ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+      : '—';
     function showError(message) {
       ErpUI.message(field('batchError'), message, 'danger');
       field('batchCard').hidden = true;
@@ -208,12 +220,27 @@
       ErpUI.message(field(id), message, isError ? 'danger' : 'success');
     }
     let canRecord = false;
+    const STATUS_LABELS = {
+      ACTIVE: 'Active', MONITORING: 'Monitoring', READY_FOR_HARVEST: 'Ready for harvest',
+      HARVESTED: 'Harvested', COMPLETED: 'Completed', PAUSED: 'Paused',
+      HEALTH_ALERT: 'Health alert', CANCELLED: 'Cancelled'
+    };
+    const REASON_NEEDED = ['PAUSED', 'HEALTH_ALERT', 'CANCELLED'];
+    function updateReasonHint() {
+      const needed = REASON_NEEDED.includes(field('statusNext').value);
+      field('statusReason').required = needed;
+      field('statusReasonNeed').textContent = needed ? '(required)' : '(optional)';
+    }
     function eventSummary(event) {
       const values = [];
       if (event.event_type === 'feeding') {
         values.push(`Offered: ${event.quantity_offered} ${event.offered_unit}`);
         if (event.quantity_consumed != null) values.push(`Consumed: ${event.quantity_consumed} ${event.consumed_unit}`);
         if (event.feed_type) values.push(`Feed: ${event.feed_type}`);
+        if (event.tray_reference) values.push(`Tray: ${event.tray_reference}`);
+        if (event.start_weight_kg != null || event.end_weight_kg != null) {
+          values.push(`Tray weight: ${event.start_weight_kg ?? '—'} → ${event.end_weight_kg ?? '—'} kg`);
+        }
       } else if (event.event_type === 'monitoring') {
         values.push(`Temperature: ${event.temperature} °C`, `Humidity: ${event.humidity} %`);
         if (event.ammonia != null) values.push(`Ammonia: ${event.ammonia} ppm`);
@@ -226,6 +253,7 @@
         values.push(`Location: ${event.harvest_location}`);
       } else {
         values.push(`Issue: ${event.observed_issue}`, `Severity: ${event.severity}`, `Status: ${event.health_status}`);
+        if (event.tray_reference) values.push(`Tray: ${event.tray_reference}`);
       }
       return values.map(esc).join(' · ');
     }
@@ -237,7 +265,7 @@
       }
       target.innerHTML = events.map(event => `
         <article class="event-item">
-          <header><strong>${esc(event.event_type)}</strong><span class="event-meta">${esc(event.occurred_at)} · ${esc(event.actor)}</span></header>
+          <header><strong>${esc(event.event_type)}</strong><span class="event-meta">${esc(when(event.occurred_at))} · ${esc(event.actor)}</span></header>
           <div class="event-details"><span>${eventSummary(event)}</span>${event.notes ? `<span>Notes: ${esc(event.notes)}</span>` : ''}</div>
         </article>`).join('');
     }
@@ -256,6 +284,11 @@
       field('batchSite').textContent = [batch.farm_name, batch.site_name].filter(Boolean).join(' / ') || '—';
       field('batchStartDate').textContent = batch.start_date || '—';
       field('batchEventCount').textContent = (batch.events || []).length;
+      const next = batch.next_statuses || [];
+      field('statusForm').hidden = !canRecord || next.length === 0;
+      field('statusNext').innerHTML = next.map(status =>
+        `<option value="${esc(status)}">${esc(STATUS_LABELS[status] || status)}</option>`).join('');
+      updateReasonHint();
       const totalHarvested = Number(batch.total_harvested_kg || 0);
       const harvestLimit = batch.harvest_limit_kg == null ? null : Number(batch.harvest_limit_kg);
       field('harvestLimitSummary').textContent = harvestLimit == null ? 'Not configured' : `${harvestLimit.toFixed(3)} kg`;
@@ -299,7 +332,7 @@
       showMessage(messageId, '');
       try {
         const data = Object.fromEntries(new FormData(form).entries());
-        ['quantity_offered','quantity_consumed','larvae_biomass','larvae_age_days','temperature','humidity','ammonia','wet_weight'].forEach(key => {
+        ['quantity_offered','quantity_consumed','larvae_biomass','larvae_age_days','start_weight_kg','end_weight_kg','temperature','humidity','ammonia','wet_weight'].forEach(key => {
           if (data[key] !== undefined && data[key] !== '') data[key] = Number(data[key]);
         });
         if (type === 'harvest') {
@@ -320,6 +353,29 @@
         button.disabled = false;
       }
     }
+    field('statusNext').addEventListener('change', updateReasonHint);
+    field('statusForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      showMessage('statusMessage', '');
+      try {
+        const response = await fetch(`/api/production/batches/${encodeURIComponent(activeBatchReference)}/status`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'include',
+          body: JSON.stringify({status: field('statusNext').value, reason: field('statusReason').value})
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || 'Could not change the status');
+        form.reset();
+        await loadBatch(activeBatchReference);
+        showMessage('statusMessage', `Batch is now ${STATUS_LABELS[payload.record.status] || payload.record.status}.`, false);
+      } catch (error) {
+        showMessage('statusMessage', error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
     document.querySelectorAll('.erp-tab').forEach(tab => tab.addEventListener('click', () => {
       document.querySelectorAll('.erp-tab').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
       document.querySelectorAll('.erp-tabpanel').forEach(panel => panel.hidden = panel.dataset.panel !== tab.dataset.tab);

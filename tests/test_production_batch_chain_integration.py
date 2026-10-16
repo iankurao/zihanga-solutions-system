@@ -177,7 +177,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200, response.get_json())
 
-    def _harvest(self, batch, *, legacy_route=False, **overrides):
+    def _harvest(self, batch, **overrides):
         payload = {
             "harvest_date": "2026-09-25",
             "event_time": "11:30",
@@ -189,11 +189,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             "notes": "partial harvest",
         }
         payload.update(overrides)
-        endpoint = (
-            "/api/feeding/harvest-yield"
-            if legacy_route
-            else f"/api/production/batches/{batch['business_id']}/events/harvest"
-        )
+        endpoint = f"/api/production/batches/{batch['business_id']}/events/harvest"
         payload["production_batch_id"] = batch["business_id"]
         return self.client.post(
             endpoint, json=payload,
@@ -306,33 +302,16 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                     """,
                     (self.farm_id,),
                 )
-                cursor.execute(
-                    """
-                    DELETE FROM feeding_schedule
-                    WHERE production_batch_id IN (
-                        SELECT id FROM production_batches WHERE farm_id = %s
-                    )
-                    """,
-                    (self.farm_id,),
-                )
-                cursor.execute(
-                    """
-                    DELETE FROM environmental_monitoring_larvaefeeding
-                    WHERE production_batch_id IN (
-                        SELECT id FROM production_batches WHERE farm_id = %s
-                    )
-                    """,
-                    (self.farm_id,),
-                )
-                cursor.execute(
-                    """
-                    DELETE FROM health_intervention
-                    WHERE production_batch_id IN (
-                        SELECT id FROM production_batches WHERE farm_id = %s
-                    )
-                    """,
-                    (self.farm_id,),
-                )
+                # Old copies of production events, while the tables exist.
+                for table in ("feeding_schedule", "environmental_monitoring_larvaefeeding",
+                              "health_intervention"):
+                    cursor.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (table,))
+                    if cursor.fetchone()[0]:
+                        cursor.execute(
+                            f"DELETE FROM {table} WHERE production_batch_id IN "
+                            "(SELECT id FROM production_batches WHERE farm_id = %s)",
+                            (self.farm_id,),
+                        )
                 cursor.execute(
                     """
                     DELETE FROM feeding_events
@@ -819,16 +798,18 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(active.status_code, 200, active.get_json())
 
         feeding = self.client.post(
-            "/api/feeding/schedule",
+            f"/api/production/batches/{batch['business_id']}/events/feeding",
             json={
                 "production_batch_id": batch["business_id"],
                 "feeding_date": "2026-09-25",
                 "event_time": "08:00",
-                "tray_batch_id": "tray-a",
+                "tray_reference": "tray-a",
                 "larvae_age_days": 5,
                 "larvae_weight_g": 500,
                 "feed_type": "prepared substrate",
                 "feed_quantity_kg": 1.25,
+                "start_weight_kg": 6.5,
+                "end_weight_kg": 5.6,
                 "consumption_g": 900,
                 "operator": self.actor,
                 "notes": "morning feed",
@@ -837,7 +818,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(feeding.status_code, 201, feeding.get_json())
 
         monitoring = self.client.post(
-            "/api/feeding/environmental-monitoring",
+            f"/api/production/batches/{batch['business_id']}/events/monitoring",
             json={
                 "production_batch_id": batch["business_id"],
                 "monitoring_date": "2026-09-25",
@@ -851,7 +832,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(monitoring.status_code, 201, monitoring.get_json())
 
         health = self.client.post(
-            "/api/feeding/health-intervention",
+            f"/api/production/batches/{batch['business_id']}/events/health",
             json={
                 "production_batch_id": batch["business_id"],
                 "health_date": "2026-09-25",
@@ -879,24 +860,23 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         )
         self.assertTrue(all(event["production_batch_id"] == batch["id"] for event in data["timeline"]))
 
-        links = db.fetch_all(
-            """
-            SELECT production_batch_id, production_event_id
-            FROM feeding_schedule
-            WHERE production_batch_id = %s
-            UNION ALL
-            SELECT production_batch_id, production_event_id
-            FROM environmental_monitoring_larvaefeeding
-            WHERE production_batch_id = %s
-            UNION ALL
-            SELECT production_batch_id, production_event_id
-            FROM health_intervention
-            WHERE production_batch_id = %s
-            """,
-            (batch["id"], batch["id"], batch["id"]),
+        # Every field on the forms is kept on the production event itself.
+        feed = db.fetch_one(
+            "SELECT tray_reference, start_weight_kg, end_weight_kg, quantity_consumed, consumed_unit "
+            "FROM feeding_events WHERE production_event_id = %s",
+            (feeding.get_json()["event"]["id"],),
         )
-        self.assertEqual(len(links), 3)
-        self.assertTrue(all(row["production_event_id"] for row in links))
+        self.assertEqual(
+            (feed["tray_reference"], float(feed["start_weight_kg"]), float(feed["end_weight_kg"]),
+             float(feed["quantity_consumed"]), feed["consumed_unit"]),
+            ("tray-a", 6.5, 5.6, 900.0, "g"),
+        )
+        reading = db.fetch_one(
+            "SELECT asset_reference, ammonia_odor FROM monitoring_events WHERE production_event_id = %s",
+            (monitoring.get_json()["event"]["id"],),
+        )
+        self.assertEqual((reading["asset_reference"], reading["ammonia_odor"]), ("tray-a", "no"))
+        self.assertNotIn("legacy_record", feeding.get_json())
 
     def test_event_measurement_range_and_closed_batch_rules_are_enforced(self):
         substrate_id = self._create_substrate()
@@ -1058,9 +1038,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(
             first.get_json()["event"]["production_batch_id"], batch["id"]
         )
-        second = self._harvest(
-            batch, legacy_route=True, wet_weight="500", unit="g"
-        )
+        second = self._harvest(batch, wet_weight="500", unit="g")
         self.assertEqual(second.status_code, 201, second.get_json())
 
         detail = self.client.get(
@@ -1080,7 +1058,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             reports = _harvest_report_rows()  # what the harvest report email lists
         linked = [
             row for row in reports
-            if row["record_type"] == "production_batch"
+            if row["production_batch_id"] == batch["id"]
         ]
         self.assertEqual(len(linked), 2)
 
@@ -1656,7 +1634,46 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertTrue(data["processing"]["any_shared"])
         self.assertAlmostEqual(data["processing"]["wet_input_kg"], 0.8)
 
-    def test_feeding_accepts_canonical_biomass_and_mirrors_it_in_grams(self):
+    def test_batch_page_offers_next_statuses_and_keeps_the_growth_stage(self):
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        ref = batch["business_id"]
+        db.execute_query("UPDATE production_batches SET current_stage = '5-day larvae' WHERE id = %s",
+                         (batch["id"],))
+
+        def detail():
+            return self.client.get(f"/api/production/batches/{ref}").get_json()["data"]
+
+        self.assertEqual(detail()["next_statuses"], ["ACTIVE", "PAUSED", "CANCELLED"])
+        # Dates are ISO 8601, not e-mail header style.
+        self.assertRegex(str(detail()["start_date"]), r"^\d{4}-\d{2}-\d{2}$")
+        moved = self.client.post(f"/api/production/batches/{ref}/status", json={"status": "ACTIVE"})
+        self.assertEqual(moved.status_code, 200, moved.get_json())
+        after = detail()
+        self.assertEqual((after["status"], after["current_stage"]), ("ACTIVE", "5-day larvae"))
+        self.assertEqual(after["next_statuses"], ["MONITORING", "PAUSED", "HEALTH_ALERT", "CANCELLED"])
+        paused = self.client.post(f"/api/production/batches/{ref}/status", json={"status": "PAUSED"})
+        self.assertEqual(paused.status_code, 400)
+        self.assertIn("reason is required", paused.get_json()["message"])
+
+    def test_health_tray_is_kept_on_the_health_event(self):
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        response = self.client.post(
+            f"/api/production/batches/{batch['business_id']}/events/health",
+            json={"health_date": "2026-09-25", "tray_reference": "T-07", "observed_issue": "mites",
+                  "severity": "critical", "action_taken": "isolated tray", "follow_up_date": ""},
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+        row = db.fetch_one("SELECT tray_reference, follow_up_date FROM health_events WHERE production_event_id = %s",
+                           (response.get_json()["event"]["id"],))
+        self.assertEqual((row["tray_reference"], row["follow_up_date"]), ("T-07", None))
+
+    def test_old_waste_collections_are_imported_only_once(self):
+        marker = db.fetch_one("SELECT 1 AS ok FROM schema_markers WHERE name = 'waste_lots_imported_v1'")
+        self.assertTrue(marker, "the one-time waste lot import must leave its marker")
+
+    def test_feeding_biomass_is_optional_and_tray_weights_convert_to_kg(self):
         created = self._create_production(self._create_substrate())
         batch = created.get_json()["record"]
         payload = {
@@ -1668,17 +1685,22 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         }
         endpoint = f"/api/production/batches/{batch['business_id']}/events/feeding"
         with_biomass = self.client.post(
-            endpoint, json={**payload, "larvae_biomass": "0.031", "biomass_unit": "kg"}
+            endpoint, json={**payload, "larvae_biomass": "0.031", "biomass_unit": "kg",
+                            "start_weight_g": "1500", "end_weight_kg": "1.2"}
         )
         without_biomass = self.client.post(endpoint, json=payload)
         self.assertEqual(with_biomass.status_code, 201, with_biomass.get_json())
         self.assertEqual(without_biomass.status_code, 201, without_biomass.get_json())
-        weights = db.fetch_all(
-            "SELECT larvae_weight FROM feeding_schedule WHERE production_batch_id = %s ORDER BY id",
+        rows = db.fetch_all(
+            "SELECT fe.larvae_biomass, fe.start_weight_kg, fe.end_weight_kg FROM feeding_events fe "
+            "JOIN production_events pe ON pe.id = fe.production_event_id "
+            "WHERE pe.production_batch_id = %s ORDER BY pe.id",
             (batch["id"],),
         )
-        self.assertEqual([None if r["larvae_weight"] is None else float(r["larvae_weight"])
-                          for r in weights], [31.0, None])
+        as_float = [tuple(None if v is None else float(v) for v in r.values()) for r in rows]
+        self.assertEqual(as_float, [(0.031, 1.5, 1.2), (None, None, None)])
+        negative = self.client.post(endpoint, json={**payload, "end_weight_kg": "-1"})
+        self.assertEqual(negative.status_code, 400)
 
     def test_feeding_form_blank_optional_fields_are_accepted(self):
         # The batch page posts every form field; blanks arrive as "".
@@ -2628,15 +2650,6 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
             denied = self._drying_at(drying_facility, harvest_id)
         self.assertEqual(denied.status_code, 403, denied.get_json())
 
-    def test_record_links_are_admin_only(self):
-        member = self._create_db_user()
-        payload = {"entity_table": "waste_sourcing", "entity_id": 1, "facility_id": self.facility_id}
-        with self._as(member):
-            self.assertEqual(self.client.post("/api/locations/record-links", json=payload).status_code, 403)
-        with self._as(self._admin()):
-            response = self.client.post("/api/locations/record-links", json=payload)
-        self.assertIn(response.status_code, (200, 201, 404), response.get_json())
-
     def test_deactivation_blocks_new_work_and_protects_stock(self):
         admin = self._admin()
         member = self._create_db_user()
@@ -3298,7 +3311,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertNotIn(operator.id, commercial)
         self.assertTrue({operator.id, sales.id} <= stock)
 
-    def test_legacy_records_are_super_admin_only(self):
+    def test_records_by_date_are_super_admin_only(self):
         manager = self._create_db_user(role="manager")
         with self._as(manager):
             self.assertEqual(self.client.get("/api/records?date=2026-01-01&section=all").status_code, 403)

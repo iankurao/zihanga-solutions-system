@@ -392,7 +392,7 @@ def _batch_360(cursor, batch_ref):
             'actor': row['actor'], 'detail': row['reason'],
         })
     if not any(entry['title'].startswith('Batch created') for entry in audit):
-        # Legacy batches predate status history; fall back to the row itself.
+        # Older batches predate status history; fall back to the row itself.
         audit.append({
             'at': batch['created_at'], 'kind': 'status', 'title': 'Batch created',
             'actor': batch['recorded_by'], 'detail': None,
