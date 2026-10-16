@@ -17,11 +17,14 @@
         <span>BSF FARM</span>
       </div>
       <h2>Login to Your Account</h2>
-      <!-- Alert messages (initially hidden) -->
-      <div class="alert alert-danger hidden" id="loginError">
-        <i class="fas fa-exclamation-circle"></i>
-        <span id="errorMessage">Invalid username or password</span>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+      <div class="alert {{ 'alert-danger' if category == 'danger' else 'alert-success' }}" role="{{ 'alert' if category == 'danger' else 'status' }}">
+        <i class="fas {{ 'fa-exclamation-circle' if category == 'danger' else 'fa-check-circle' }}" aria-hidden="true"></i>
+        <span>{{ message }}</span>
       </div>
+      {% endfor %}
+      {% endwith %}
       <form id="loginForm" method="POST" action="/login">
         <div class="form-group input-icon">
           <label for="email">Email</label>
@@ -46,7 +49,7 @@
         </div>
       </form>
       <div class="links">
-        Don't have an account? <a href="register.html">Register here</a>
+        No account yet? Ask your farm administrator to create one for you.
       </div>
       <!-- Shown only on a demonstration server (see /api/demo/info). -->
       <div class="demo-entry hidden" id="demoEntry">

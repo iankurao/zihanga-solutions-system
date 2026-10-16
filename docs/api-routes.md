@@ -60,11 +60,10 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | Method | Path | Access |
 |---|---|---|
 | POST | `/api/auth/login` | public |
-| POST | `/api/auth/register` | public |
 | GET | `/api/me` | signed in |
 | GET, POST | `/login` | public |
 | GET | `/logout` | public |
-| GET, POST | `/register` | public |
+| GET | `/register` | public |
 
 ## batch360
 

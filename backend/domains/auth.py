@@ -1,25 +1,18 @@
-"""Sign-in, registration, sign-out and the current user's profile."""
+"""Sign-in, sign-out and the current user's profile. Accounts are created by
+administrators (domains/admin.py); there is no self-registration."""
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, logout_user
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, StringField, SubmitField
-from wtforms.validators import DataRequired, Email, EqualTo, Length, Regexp, ValidationError
+from wtforms.validators import DataRequired, Email
 
 from backend.demo import is_demo_database
-from backend.passwords import password_problem
 from backend.roles import ROLE_LABELS
 from backend.core.web import app, db, logger
 from backend.core.audit import audit_event
 from backend.core.security import _landing_page, _permissions_for
-from backend.core.accounts import (
-    LoginThrottled,
-    _account_field_problem,
-    _authenticate,
-    _start_session,
-    create_user,
-    get_user_by_email,
-)
+from backend.core.accounts import LoginThrottled, _authenticate, _start_session
 
 
 # Enhanced Login form with security
@@ -33,40 +26,6 @@ class LoginForm(FlaskForm):
     submit = SubmitField('Login')
 
 # Enhanced Registration form with security
-class RegistrationForm(FlaskForm):
-    username = StringField('Username', validators=[
-        DataRequired(), 
-        # Same limits as the JSON API (_account_field_problem).
-        Length(min=3, max=50, message='Username must be between 3 and 50 characters'),
-        Regexp(r'^[A-Za-z0-9_.-]+$', message='Username can only contain letters, numbers, dots, dashes and underscores')
-    ])
-    full_name = StringField('Full Name', validators=[
-        DataRequired(),
-        Length(min=2, max=100, message='Full name must be between 2 and 100 characters')
-    ])
-    email = StringField('Email', validators=[
-        DataRequired(), 
-        Email(message='Please enter a valid email address')
-    ])
-    # The password rule itself is password_problem() (backend/passwords.py), checked
-    # in the view, so the form, the JSON API and admin resets all agree.
-    password = PasswordField('Password', validators=[DataRequired()])
-    confirm_password = PasswordField('Confirm Password', validators=[
-        DataRequired(), 
-        EqualTo('password', message='Passwords must match')
-    ])
-    submit = SubmitField('Register')
-
-    def validate_username(self, username):
-        result = db.fetch_one("SELECT user_id FROM users WHERE username = %s", (username.data,))
-        if result:
-            raise ValidationError('Username already taken. Please choose another one.')
-
-    def validate_email(self, email):
-        result = db.fetch_one("SELECT user_id FROM users WHERE email = %s", (email.data,))
-        if result:
-            raise ValidationError('Email already registered. Please use another email.')
-
 # Authentication routes
 def _safe_next(target):
     """Return ``target`` only if it is a path on this site (no open redirect)."""
@@ -99,31 +58,12 @@ def login():
     
     return render_template('login.html', form=form)
 
-@app.route('/register', methods=['GET', 'POST'])
+@app.route('/register', methods=['GET'])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        problem = password_problem(form.password.data, email=form.email.data, username=form.username.data)
-        if problem:
-            flash(problem, 'danger')
-            return render_template('register.html', form=form), 400
-        try:
-            username = form.username.data.strip()
-            full_name = form.full_name.data.strip()
-            email = form.email.data.lower().strip()
-            password = form.password.data
-            
-            user_id = create_user(username, full_name, email, password)
-            flash('Registration successful! Please login with your new account.', 'success')
-            return redirect(url_for('login'))
-        except Exception as e:
-            flash('Registration failed. Please try again.', 'danger')
-            logger.error(f'Registration error: {e}')
-    
-    return render_template('register.html', form=form)
+    """There is no self-registration: an administrator creates each account
+    with its role and locations (Admin portal). Old links land on sign-in."""
+    return redirect(url_for('login'))
+
 
 @app.route('/logout')
 def logout():
@@ -167,42 +107,6 @@ def api_login():
     redirect_url = next_url or _landing_page(user.role)
     logger.info('User %s signed in', user.id)
     return make_response(jsonify({'success': True, 'message': 'Login successful', 'redirect': redirect_url, 'role': user.role}))
-
-@app.route('/api/auth/register', methods=['POST'])
-def api_register():
-    """API endpoint for AJAX registration requests"""
-    data = request.get_json(silent=True) or {}
-    username = str(data.get('username') or '').strip()
-    full_name = str(data.get('fullName') or '').strip()
-    email = str(data.get('email') or '').lower().strip()
-    password = str(data.get('password') or '')
-    confirm_password = str(data.get('confirmPassword') or '')
-
-    # Simple validation
-    if not all([username, full_name, email, password, confirm_password]):
-        return jsonify({'success': False, 'message': 'All fields are required'}), 400
-    problem = _account_field_problem(username, full_name, email)
-    if problem:
-        return jsonify({'success': False, 'message': problem}), 400
-    if password != confirm_password:
-        return jsonify({'success': False, 'message': 'Passwords do not match'}), 400
-    problem = password_problem(password, email=email, username=username)
-    if problem:
-        return jsonify({'success': False, 'message': problem}), 400
-    if db.fetch_one("SELECT 1 FROM users WHERE LOWER(username) = LOWER(%s)", (username,)):
-        return jsonify({'success': False, 'message': 'Username is already taken'}), 409
-        
-    # Check if user already exists
-    if get_user_by_email(email):
-        return jsonify({'success': False, 'message': 'Email is already registered'}), 409
-
-    try:
-        create_user(username, full_name, email, password)
-        return jsonify({'success': True, 'message': 'Registration successful'}), 201
-    except Exception as e:
-        logger.error(f"API Registration error: {e}")
-        return jsonify({'success': False, 'message': 'Registration failed due to a server error'}), 500
-
 
 @app.route('/api/me', methods=['GET'])
 @login_required

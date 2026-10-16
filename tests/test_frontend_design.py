@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 
 # Pages that are not part of the signed-in app shell.
-SIGNED_OUT = {"main.html", "login.html", "register.html"}
+SIGNED_OUT = {"main.html", "login.html"}
 
 
 def _read(path):

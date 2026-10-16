@@ -42,7 +42,7 @@ Those checks belong in the first week of the pilot (see
 
 - **Automated tests:** 159 tests pass against PostgreSQL 16 (plus 164
   subtests), including the whole chain performed role by role with real
-  sign-ins. All 180 of the application's endpoints are called by the suite
+  sign-ins. All 179 of the application's endpoints are called by the suite
   (`ROUTE_COVERAGE`).
 - **Browser:** every page loaded as the super admin on the demo database with
   no failed requests or script errors; the investor tour walked end to end as
@@ -106,9 +106,9 @@ release of LOT-2026-00005, which traces back to its waste lot.
 3. **Notifications go to everyone with access to the location** whose role
    may see that kind of alert (commercial alerts only to sales roles), not to
    a narrower list per alert type.
-4. **Self-registration is open** and the registration form says when an
-   email is already registered (sign-in deliberately does not). New accounts
-   see nothing until an administrator grants a location.
+4. **No self-registration** (owner's decision, 16 October 2026): an
+   administrator creates every account in the Admin portal with its role,
+   then grants its locations. `/register` only sends old links to sign-in.
 5. **Sign-out is a plain link (GET)**, so another site could sign a user out.
    It cannot do anything else.
 6. **Not load-tested.** Sizing guidance in DEPLOYMENT.md (2 workers x 4
@@ -145,7 +145,6 @@ release of LOT-2026-00005, which traces back to its waste lot.
 
 | Decision | Options |
 |---|---|
-| Self-registration | Keep (accounts wait for an administrator) or turn off so only administrators create accounts |
 | Notification routing | Keep location-based, or route each alert type to chosen roles |
 | Backdated stock entry | Needed for importing history? It would require a controlled "opening balance" movement type |
 
@@ -155,7 +154,7 @@ release of LOT-2026-00005, which traces back to its waste lot.
   batch), like the production chain.
 - Opening-balance and backdated stock movements for data import.
 - Role-based notification routing; SMS or WhatsApp for critical alerts.
-- Sign-out by POST; optional switch to disable self-registration.
+- Sign-out by POST.
 - Automated browser tests for the main flows (Playwright).
 - Offline support for the farmer portal (field sites with poor signal).
 - Invoicing and payments on top of deliveries.

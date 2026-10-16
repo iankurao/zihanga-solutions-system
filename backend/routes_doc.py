@@ -9,7 +9,7 @@ import sys
 
 # Routes anyone may call without signing in.
 PUBLIC = {
-    '/', '/login', '/register', '/api/auth/login', '/api/auth/register', '/logout',
+    '/', '/login', '/register', '/api/auth/login', '/logout',
     '/healthz', '/readyz', '/api/demo/info', '/tour', '/api/demo/guest',
     '/<path:filename>',  # the frontend's static files
 }

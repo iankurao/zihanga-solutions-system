@@ -192,32 +192,39 @@ class AdministrationTest(ScenarioTestCase):
 class SignInFormsAndPagesTest(ScenarioTestCase):
     """The HTML forms and page routes, as browsers use them."""
 
-    def test_registration_and_sign_in_forms(self):
+    def test_no_self_registration_and_sign_in_form_messages(self):
         client = app.test_client()
-        self.assertEqual(client.get("/register", **HTTPS).status_code, 200)
-        name = f"reg{uuid4().hex[:8]}"
-        email = f"{name}@zehunger.farm"
-        self.addCleanup(db.execute_query, "DELETE FROM users WHERE email = %s", (email,))
-        self.addCleanup(db.execute_query, "DELETE FROM auth_login_attempts WHERE email = %s", (email,))
-        form = {"username": name, "full_name": "New Person", "email": email,
-                "password": "a long pass phrase", "confirm_password": "a long pass phrase"}
-        weak = client.post("/register", data={**form, "password": "short1", "confirm_password": "short1"}, **HTTPS)
-        self.assertIsNone(db.fetch_one("SELECT 1 FROM users WHERE email = %s", (email,)), weak.status_code)
-        created = client.post("/register", data=form, **HTTPS)
-        self.assertEqual(created.status_code, 302)
-        user = db.fetch_one("SELECT role, is_active FROM users WHERE email = %s", (email,))
-        self.assertEqual((user["role"], user["is_active"]), ("viewer", True))  # self-registered = read only
+        users = db.fetch_one("SELECT COUNT(*) AS n FROM users")["n"]
+        # Accounts come from an administrator; old registration links land on sign-in.
+        old_link = client.get("/register", **HTTPS)
+        self.assertEqual(old_link.status_code, 302)
+        self.assertTrue(old_link.headers["Location"].endswith("/login"))
+        self.assertEqual(client.post("/register", data={"username": "x"}, **HTTPS).status_code, 405)
+        self.assertIn(client.post("/api/auth/register", json={
+            "username": "selfmade", "fullName": "Self Made", "email": "selfmade@example.com",
+            "password": "a long pass phrase", "confirmPassword": "a long pass phrase"}, **HTTPS).status_code,
+            (404, 405))
+        self.assertIn(client.get("/register.html", **HTTPS).status_code, (404,))
+        self.assertEqual(db.fetch_one("SELECT COUNT(*) AS n FROM users")["n"], users)
 
-        self.assertEqual(client.get("/login", **HTTPS).status_code, 200)
-        wrong = client.post("/login", data={"email": email, "password": "not it"}, **HTTPS)
-        self.assertEqual(wrong.status_code, 200)  # form shown again
-        signed_in = client.post("/login?next=/labels", data={"email": email, "password": form["password"]}, **HTTPS)
+        page = client.get("/login", **HTTPS)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Ask your farm administrator", page.data)
+        self.assertNotIn(b"Register here", page.data)
+
+        person = self.make_user("viewer")
+        wrong = client.post("/login", data={"email": person.email, "password": "not it"}, **HTTPS)
+        self.assertEqual(wrong.status_code, 200)  # form shown again, with the reason
+        self.assertIn(b"Invalid email or password", wrong.data)
+        signed_in = client.post("/login?next=/labels", data={"email": person.email, "password": person.password},
+                                **HTTPS)
         self.assertEqual(signed_in.status_code, 302)
         self.assertTrue(signed_in.headers["Location"].endswith("/labels"))
         self.assertEqual(client.get("/api/me", **HTTPS).get_json()["data"]["home"], "/operations")
         out = client.get("/logout", **HTTPS)
         self.assertEqual(out.status_code, 302)
         self.assertEqual(client.get("/api/me", **HTTPS).status_code, 401)
+        self.assertIn(b"You have been logged out", client.get("/login", **HTTPS).data)
 
     def test_pages_and_static_files(self):
         operator = self.make_user("operator")

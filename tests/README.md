@@ -22,7 +22,7 @@ ROUTE_COVERAGE=route-coverage.txt python -m pytest
 ```
 
 The file lists every endpoint with its call count and any never called
-(currently 180 of 180 are exercised).
+(currently 179 of 179 are exercised).
 
 ## Files
 

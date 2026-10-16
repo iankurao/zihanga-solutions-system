@@ -3116,7 +3116,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
     def test_every_write_route_declares_a_permission(self):
         # Writes a signed-in user may make on their own account only.
         self_service = {
-            "login", "register", "api_login", "api_register", "demo_guest_sign_in",
+            "login", "api_login", "demo_guest_sign_in",
             "mark_notification_read", "mark_all_notifications_read",
             "set_notification_preferences", "refresh_alerts",
         }
@@ -3298,11 +3298,6 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         row = db.fetch_one("SELECT role, auth_version FROM users WHERE user_id = %s", (target.id,))
         self.assertEqual((row["role"], row["auth_version"]), ("qc_officer", 3))
 
-        registered = self.client.post("/api/auth/register", json={
-            "username": "bad name<script>", "fullName": "X Y", "email": "a@example.test",
-            "password": "a much longer passphrase", "confirmPassword": "a much longer passphrase",
-        })
-        self.assertEqual(registered.status_code, 400)
 
     # ---- Audit log --------------------------------------------------------------------
 
