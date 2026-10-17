@@ -88,6 +88,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var flow = document.getElementById('traceFlow');
     flow.textContent = '';
     data.stages.forEach(function (stage) {
+      // Current stock is a side branch of a product lot, not a link in the
+      // chain: show it only when the trace reached stock.
+      if (stage.type === 'inventory_location' && !stage.nodes.length) return;
       var column = el('section', 'trace-column');
       var heading = el('h4');
       heading.append(el('span', null, stage.label), el('span', null, String(stage.nodes.length)));

@@ -66,8 +66,8 @@ async function loadOverview(days) {
     if (!data.success) return;
     var d = data.data;
     document.getElementById('statsGrid').innerHTML = [
-      stat('fa-users',       'green', d.total_farmers,                   'Total Farmers'),
-      stat('fa-user-check',  'blue',  d.active_farmers,                  'Active Farmers'),
+      stat('fa-tractor',     'green', d.active_farmers + ' of ' + d.total_farmers, 'Active Farmers'),
+      stat('fa-users',       'blue',  d.active_accounts + ' of ' + d.total_accounts, 'Active Team Accounts'),
       stat('fa-recycle',     'amber', fmt(d.total_waste_kg) + ' kg',     'Waste Collected'),
       stat('fa-seedling',    'navy',  fmt(d.total_harvest_kg) + ' kg',   'Larvae Harvested'),
       stat('fa-box',         'teal',  fmt(d.total_dried_kg) + ' kg',     'Dried Output'),
@@ -120,7 +120,8 @@ function renderInactiveAlert(farmers, days) {
   el.innerHTML =
     '<div class="alert-icon"><i class="fas fa-exclamation-triangle"></i></div>' +
     '<div class="alert-body">' +
-      '<strong>' + farmers.length + ' active farmer' + (farmers.length > 1 ? 's' : '') + ' with no data in ' + days + '+ days</strong>' +
+      '<strong>' + farmers.length + (farmers.length > 1 ? ' people who record' : ' person who records') +
+        ' production with no data in ' + days + '+ days</strong>' +
       '<div class="alert-names">' + names + extra + '</div>' +
     '</div>' +
     '<div class="alert-actions">' +
@@ -191,13 +192,13 @@ function filterFarmers2() {
 function renderFarmersOverview(farmers) {
   var tbody = document.getElementById('farmerTableBody');
   if (!farmers.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-users"></i><p>No farmers found.</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-users"></i><p>No team members found.</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = farmers.map(function (f) {
     var active = f.is_active;
     return '<tr onclick="openFarmerById(' + Number(f.user_id) + ')">' +
-      '<td><div class="farmer-name">' + esc(f.full_name || f.username) + '</div><div class="farmer-email">' + esc(f.email) + '</div></td>' +
+      '<td><div class="farmer-name">' + esc(f.full_name || f.username) + '</div><div class="farmer-email">' + esc(f.email) + ' · ' + esc(roleLabel(f.role)) + '</div></td>' +
       '<td>' + statusBadge(active) + '</td>' +
       '<td style="font-size:.8rem;color:var(--slate-mid);">' + relDate(f.last_activity || f.last_login) + '</td>' +
       '<td><span class="metric-pill">' + fmt(f.total_waste_kg) + '</span></td>' +
@@ -232,7 +233,7 @@ function renderFarmersList2(farmers) {
   var tbody = document.getElementById('farmerTableBody2');
   if (!tbody) return;
   if (!farmers.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="fas fa-search"></i><p>No farmers match your filter.</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="fas fa-search"></i><p>No team members match your filter.</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = farmers.map(function (f) {

@@ -11,6 +11,7 @@ from backend.core.http import (
     InventoryConflictError,
     ProductionEventPermissionError,
     RecordNotFoundError,
+    _assert_not_future,
     _event_occurred_at,
     _jsonable,
     _optional_text,
@@ -280,6 +281,7 @@ def _create_order(data):
     customer_id = _parse_positive_integer(data.get('customer_id'), 'customer_id')
     farm_id = _parse_positive_integer(data.get('farm_id'), 'farm_id')
     order_date = _optional_date(data, 'order_date') or date.today()
+    _assert_not_future(order_date, 'order_date')
     requested = _optional_date(data, 'requested_delivery_date')
     if requested and requested < order_date:
         raise ValueError('requested_delivery_date cannot be before the order date')

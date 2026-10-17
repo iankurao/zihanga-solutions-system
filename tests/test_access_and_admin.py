@@ -135,6 +135,21 @@ class AdministrationTest(ScenarioTestCase):
         self.assertEqual(deleted.status_code, 200, deleted.get_json())
         self.assertIsNone(db.fetch_one("SELECT 1 FROM users WHERE user_id = %s", (farmer.id,)))
 
+    def test_portal_counts_farmers_by_role(self):
+        farmer = self.make_user("operator")
+        sales = self.make_user("sales_officer")
+        viewer = self.make_user("viewer")
+        overview = self.ok(self.admin.get("/api/admin/overview"))["data"]
+        counts = db.fetch_one("SELECT count(*) FILTER (WHERE role = 'operator') AS farmers, "
+                              "count(*) FILTER (WHERE role <> 'super_admin') AS accounts FROM users")
+        self.assertEqual((overview["total_farmers"], overview["total_accounts"]),
+                         (counts["farmers"], counts["accounts"]))
+        # Only people who record production are expected to have recent records.
+        idle = {u["username"] for u in self.ok(self.admin.get("/api/admin/inactive-farmers?days=1"))["data"]}
+        self.assertIn(farmer.username, idle)
+        self.assertNotIn(sales.username, idle)
+        self.assertNotIn(viewer.username, idle)
+
     def test_low_stock_minimums(self):
         place = self.make_farm()
         manager = self.make_user("manager", access=[("farm", place["farm"]["id"])])

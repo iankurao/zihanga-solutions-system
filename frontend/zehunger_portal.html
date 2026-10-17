@@ -599,7 +599,7 @@
           <i class="fas fa-th-large"></i> Overview
         </button>
         <button class="sidebar-link" data-section="farmers" onclick="showSection('farmers')">
-          <i class="fas fa-users"></i> Farmers
+          <i class="fas fa-users"></i> Team
         </button>
         <button class="sidebar-link" data-section="activity" onclick="showSection('activity')">
           <i class="fas fa-stream"></i> Activity Feed
@@ -608,7 +608,7 @@
       <div>
         <div class="sidebar-section">Actions</div>
         <button class="sidebar-link" onclick="openAddFarmerModal()">
-          <i class="fas fa-user-plus"></i> Add Farmer
+          <i class="fas fa-user-plus"></i> Add Account
         </button>
         <a class="sidebar-link" href="/audit">
           <i class="fas fa-clipboard-list"></i> Audit Log
@@ -626,7 +626,7 @@
       <div id="section-overview">
         <div class="page-header">
           <h1>Farm Network Overview</h1>
-          <p>Real-time summary of all farmers and production activity across the Zehunger network.</p>
+          <p>Real-time summary of the team and production activity across the Zehunger network.</p>
         </div>
 
         <!-- Date Range Filter -->
@@ -654,11 +654,11 @@
           <!-- Farmer Table -->
           <div class="panel">
             <div class="panel-header">
-              <span class="panel-title"><i class="fas fa-users"></i> Farmers <span class="panel-count" id="farmerCount">—</span></span>
+              <span class="panel-title"><i class="fas fa-users"></i> Team <span class="panel-count" id="farmerCount">—</span></span>
               <div class="panel-actions">
                 <div class="search-box">
                   <i class="fas fa-search"></i>
-                  <input type="text" id="farmerSearch" placeholder="Search farmers…" oninput="filterFarmers()">
+                  <input type="text" id="farmerSearch" placeholder="Search team…" oninput="filterFarmers()">
                 </div>
                 <button class="btn btn-green" onclick="openAddFarmerModal()"><i class="fas fa-plus"></i> Add</button>
               </div>
@@ -667,7 +667,7 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Farmer</th>
+                    <th>Name and role</th>
                     <th>Status</th>
                     <th>Last Active</th>
                     <th>Waste (kg)</th>
@@ -677,7 +677,7 @@
                   </tr>
                 </thead>
                 <tbody id="farmerTableBody">
-                  <tr><td colspan="7"><div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading farmers…</p></div></td></tr>
+                  <tr><td colspan="7"><div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading team…</p></div></td></tr>
                 </tbody>
               </table>
             </div>
@@ -700,7 +700,7 @@
           <div class="panel">
             <div class="panel-header">
               <span class="panel-title"><i class="fas fa-chart-bar"></i> Production Performance</span>
-              <span style="font-size:.75rem;color:var(--gray);">Top 8 farmers by total output</span>
+              <span style="font-size:.75rem;color:var(--gray);">Top 8 by total output</span>
             </div>
             <div class="chart-wrap">
               <canvas id="productionChart"></canvas>
@@ -721,12 +721,12 @@
       <!-- Farmers Section (full page) -->
       <div id="section-farmers" style="display:none;">
         <div class="page-header">
-          <h1>Farmer Management</h1>
-          <p>View, manage, and monitor all registered farmers in the Zehunger network.</p>
+          <h1>Team</h1>
+          <p>Farmers, managers, QC, stores and sales accounts: what each has recorded, and their access.</p>
         </div>
         <div class="panel">
           <div class="panel-header" style="flex-wrap:wrap;gap:.75rem;">
-            <span class="panel-title"><i class="fas fa-users"></i> All Farmers</span>
+            <span class="panel-title"><i class="fas fa-users"></i> All accounts</span>
             <div class="panel-actions" style="flex-wrap:wrap;gap:.5rem;">
               <div class="status-filter">
                 <button class="status-btn active" data-status="all" onclick="setStatusFilter('all')">All</button>
@@ -738,14 +738,14 @@
                 <input type="text" id="farmerSearch2" placeholder="Search…" oninput="filterFarmers2()">
               </div>
               <button class="btn btn-outline" onclick="exportFarmers()"><i class="fas fa-download"></i> Export CSV</button>
-              <button class="btn btn-green" onclick="openAddFarmerModal()"><i class="fas fa-plus"></i> Add Farmer</button>
+              <button class="btn btn-green" onclick="openAddFarmerModal()"><i class="fas fa-plus"></i> Add Account</button>
             </div>
           </div>
           <div class="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Farmer</th>
+                  <th>Name and role</th>
                   <th>Status</th>
                   <th>Joined</th>
                   <th>Last Active</th>
@@ -787,13 +787,13 @@
   <div class="modal-overlay" id="farmerModal" onclick="closeFarmerModal(event)">
     <div class="modal" id="farmerModalContent">
       <div class="modal-header">
-        <h2 id="modalFarmerName">Farmer Details</h2>
+        <h2 id="modalFarmerName">Account Details</h2>
         <button class="modal-close" onclick="closeFarmerModal()"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body">
         <div class="modal-action-bar" id="modalActionBar"></div>
         <div id="modalBody">
-          <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading farmer data…</p></div>
+          <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading…</p></div>
         </div>
       </div>
     </div>
@@ -803,7 +803,7 @@
   <div class="modal-overlay" id="editFarmerModal" onclick="closeEditModal(event)">
     <div class="modal" style="max-width:480px;">
       <div class="modal-header">
-        <h2><i class="fas fa-pen" style="color:var(--blue);margin-right:.4rem;"></i> Edit Farmer Details</h2>
+        <h2><i class="fas fa-pen" style="color:var(--blue);margin-right:.4rem;"></i> Edit Account</h2>
         <button class="modal-close" onclick="closeEditModal()"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body">
@@ -862,7 +862,7 @@
   <div class="modal-overlay" id="deleteFarmerModal" onclick="closeDeleteModal(event)">
     <div class="modal" style="max-width:420px;">
       <div class="modal-header">
-        <h2><i class="fas fa-trash" style="color:var(--red);margin-right:.4rem;"></i> Delete Farmer</h2>
+        <h2><i class="fas fa-trash" style="color:var(--red);margin-right:.4rem;"></i> Delete Account</h2>
         <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body" style="text-align:center;padding:1.5rem 1rem;">
@@ -883,7 +883,7 @@
   <div class="modal-overlay" id="addFarmerModal" onclick="closeAddFarmerModal(event)">
     <div class="modal" style="max-width:520px;">
       <div class="modal-header">
-        <h2><i class="fas fa-user-plus" style="color:var(--green);margin-right:.4rem;"></i> Add New Farmer</h2>
+        <h2><i class="fas fa-user-plus" style="color:var(--green);margin-right:.4rem;"></i> Add Account</h2>
         <button class="modal-close" onclick="closeAddFarmerModal()"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body">
@@ -899,7 +899,7 @@
             </div>
             <div class="form-group form-full">
               <label>Email Address</label>
-              <input type="email" class="form-control" name="email" placeholder="farmer@example.com" required>
+              <input type="email" class="form-control" name="email" placeholder="name@example.com" required>
             </div>
             <div class="form-group form-full">
               <label for="addRole">Role</label>

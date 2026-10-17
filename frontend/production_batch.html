@@ -335,9 +335,10 @@
         ['quantity_offered','quantity_consumed','larvae_biomass','larvae_age_days','start_weight_kg','end_weight_kg','temperature','humidity','ammonia','wet_weight'].forEach(key => {
           if (data[key] !== undefined && data[key] !== '') data[key] = Number(data[key]);
         });
-        if (type === 'harvest') {
-          data.occurred_at = new Date(`${data.harvest_date}T${data.event_time}`).toISOString();
-        }
+        // Dates and times typed here are local farm time.
+        data.occurred_at = ErpUI.localOccurredAt(
+          data.feeding_date || data.monitoring_date || data.health_date || data.harvest_date,
+          data.event_time || data.monitoring_time);
         const response = await fetch(`/api/production/batches/${encodeURIComponent(activeBatchReference)}/events/${type}`, {
           method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(data)
         });

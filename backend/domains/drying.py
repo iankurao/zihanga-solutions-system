@@ -12,7 +12,9 @@ from backend.core.http import (
     _event_decimal,
     _event_unit,
     _parse_positive_integer,
+    _assert_not_future,
     _production_actor,
+    _record_date,
     normalize_keys,
 )
 from backend.core.security import requires
@@ -62,6 +64,7 @@ def _drying_timestamp(value, field_name, *, required=False):
         raise ValueError(f'{field_name} must be a valid ISO date or timestamp')
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
+    _assert_not_future(parsed.date(), field_name)
     return parsed.astimezone(timezone.utc).isoformat()
 
 
@@ -305,8 +308,7 @@ def _drying_create_batch(data):
     if not batch_code:
         raise ValueError('batch_code is required for a Drying Batch')
     drying_date = data.get('drying_date') or data.get('batch_date')
-    if not drying_date:
-        raise ValueError('drying_date is required')
+    drying_date = _record_date(drying_date, 'drying_date')
     method = str(data.get('drying_method') or data.get('method') or '').strip()
     personnel = str(data.get('personnel') or data.get('operator') or '').strip()
     if not method:

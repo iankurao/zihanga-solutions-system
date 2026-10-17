@@ -10,6 +10,7 @@ from backend.core.http import (
     _chain_actor,
     _parse_chain_quantity,
     _production_actor,
+    _record_date,
     normalize_keys,
 )
 from backend.core.security import requires, super_admin_required
@@ -47,6 +48,7 @@ def handle_waste_sourcing():
         farm_id, site_id, facility_id = _production_scope_values(
             normalized_data, 'a Waste Lot'
         )
+        _record_date(normalized_data['collection_date'], 'collection_date')
         quantity = _parse_chain_quantity(normalized_data['waste_weight'], 'waste_weight')
         contaminants = normalized_data.get('contaminants_found', [])
         if isinstance(contaminants, list):
@@ -160,6 +162,7 @@ def handle_substrate_preparation():
         return jsonify({'success': False, 'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
 
     try:
+        _record_date(normalized_data['prep_date'], 'prep_date')
         input_rows = normalized_data.get('inputs')
         if not isinstance(input_rows, list) or not input_rows:
             raise ValueError('Select at least one available Waste Lot')

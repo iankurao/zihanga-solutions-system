@@ -586,10 +586,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             // A date and time typed on the form are local farm time.
-            const eventDate = data.harvestDate || data.monitoring_date;
-            const eventTime = data.event_time || data.monitoring_time;
-            if (productionEventTypes[formType] && eventDate && eventTime) {
-                data.occurred_at = new Date(`${eventDate}T${eventTime}`).toISOString();
+            const eventDate = data.harvestDate || data.monitoring_date || data.feeding_date || data.healthDate;
+            if (productionEventTypes[formType] && eventDate) {
+                data.occurred_at = ErpUI.localOccurredAt(eventDate, data.event_time || data.monitoring_time);
             }
             if (formType === 'substratePreparation') {
                 data.inputs = Array.from(form.querySelectorAll('.substrate-input-row')).map(row => ({

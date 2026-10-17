@@ -111,7 +111,8 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('newBatchToggle').addEventListener('click', async function () {
     card.hidden = !card.hidden;
     if (card.hidden || rows.length) return;
-    document.getElementById('nbStart').value = new Date().toISOString().slice(0, 10);
+    // Today in local time (toISOString alone gives the UTC date).
+    document.getElementById('nbStart').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     try {
       var response = await fetch('/api/locations/hierarchy', { credentials: 'include' });
       var payload = await response.json();

@@ -16,6 +16,17 @@
     return i;
   }
 
+  // When something happened, from a date and optional time typed in local
+  // farm time. A date alone means now (if it is today) or midday.
+  function localOccurredAt(day, time) {
+    if (!day) return null;
+    if (time) return new Date(day + 'T' + time).toISOString();
+    var now = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    return day === today ? now.toISOString() : new Date(day + 'T12:00').toISOString();
+  }
+
   // 'READY_FOR_HARVEST' -> 'Ready for harvest'
   function humanize(value) {
     var text = String(value == null ? '' : value).replace(/_/g, ' ').trim().toLowerCase();
@@ -225,6 +236,7 @@
     busy: busy,
     table: table,
     pager: pager,
-    confirm: confirmDialog
+    confirm: confirmDialog,
+    localOccurredAt: localOccurredAt
   };
 })();

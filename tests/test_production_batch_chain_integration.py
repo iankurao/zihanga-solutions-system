@@ -1656,6 +1656,31 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual(paused.status_code, 400)
         self.assertIn("reason is required", paused.get_json()["message"])
 
+    def test_records_cannot_be_dated_in_the_future(self):
+        from datetime import date, timedelta
+
+        from backend.domains.drying import _drying_timestamp
+
+        later = (date.today() + timedelta(days=3)).isoformat()
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()  # time-zone slack
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        feeding = {"feed_type": "mash", "quantity_offered": "1", "operator": self.actor}
+        url = f"/api/production/batches/{batch['business_id']}/events/feeding"
+        refused = self.client.post(url, json={**feeding, "feeding_date": later})
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("cannot be in the future", refused.get_json()["message"])
+        self.assertEqual(self.client.post(url, json={**feeding, "feeding_date": tomorrow}).status_code, 201)
+        waste = self.client.post("/api/waste-sourcing", json={
+            "collection_date": later, "collection_time": "08:00", "source_type": "market",
+            "source_name": self.marker, "waste_type": "vegetable", "waste_weight": "1",
+            "segregation_status": "organic", "collection_personnel": "x", "contaminants_found": [],
+            "farm_id": self.farm_id, "site_id": self.site_id, "facility_id": self.facility_id})
+        self.assertEqual(waste.status_code, 400)
+        self.assertIn("collection_date cannot be in the future", waste.get_json()["message"])
+        with self.assertRaisesRegex(ValueError, "output_date cannot be in the future"):
+            _drying_timestamp(later, "output_date")
+
     def test_health_tray_is_kept_on_the_health_event(self):
         created = self._create_production(self._create_substrate())
         batch = created.get_json()["record"]

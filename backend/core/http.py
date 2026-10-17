@@ -3,12 +3,33 @@
 import decimal
 import re
 
-from datetime import date, datetime, time as dt_time, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from flask import jsonify
 from flask_login import current_user
 
 from backend.core.web import logger
+
+
+# Records describe what already happened; one day of slack covers time zones.
+RECORD_DATE_SLACK = timedelta(days=1)
+
+
+def _assert_not_future(day, field_name):
+    if day > date.today() + RECORD_DATE_SLACK:
+        raise ValueError(f'{field_name} cannot be in the future')
+
+
+def _record_date(value, field_name):
+    """The YYYY-MM-DD date of something that has already happened."""
+    if value in (None, ''):
+        raise ValueError(f'{field_name} is required')
+    try:
+        parsed = date.fromisoformat(str(value)[:10])
+    except ValueError:
+        raise ValueError(f'{field_name} must be a date (YYYY-MM-DD)')
+    _assert_not_future(parsed, field_name)
+    return parsed
 
 
 def _parse_chain_quantity(value, field_name):
@@ -84,6 +105,7 @@ def _event_occurred_at(data, date_fields):
         raise ValueError('occurred_at must be a valid ISO timestamp or date')
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
+    _assert_not_future(parsed.date(), 'The event date')
     return parsed.astimezone(timezone.utc).isoformat()
 
 

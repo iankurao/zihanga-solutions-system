@@ -5,7 +5,7 @@ from flask_login import current_user, login_required
 from werkzeug.security import generate_password_hash
 
 from backend.passwords import password_problem
-from backend.roles import ASSIGNABLE_ROLES, PERMISSION_LABELS, ROLE_LABELS
+from backend.roles import ASSIGNABLE_ROLES, PERMISSION_LABELS, ROLE_LABELS, roles_with
 from backend.config import CURRENCY
 from backend.core.web import app, db, logger
 from backend.core.security import _permissions_for, super_admin_required
@@ -64,8 +64,10 @@ def admin_overview():
     since = f"CURRENT_DATE - make_interval(days => {days})" if days else "'-infinity'::date"
     row = db.fetch_one(f"""
         SELECT
-            (SELECT COUNT(*) FROM users WHERE role != 'super_admin') AS total_farmers,
-            (SELECT COUNT(*) FROM users WHERE role != 'super_admin' AND is_active) AS active_farmers,
+            (SELECT COUNT(*) FROM users WHERE role = 'operator') AS total_farmers,
+            (SELECT COUNT(*) FROM users WHERE role = 'operator' AND is_active) AS active_farmers,
+            (SELECT COUNT(*) FROM users WHERE role != 'super_admin') AS total_accounts,
+            (SELECT COUNT(*) FROM users WHERE role != 'super_admin' AND is_active) AS active_accounts,
             (SELECT COALESCE(SUM({KG.format(unit='unit', qty='quantity')}), 0)
                FROM waste_lots WHERE collection_date >= {since}) AS total_waste_kg,
             (SELECT COALESCE(SUM({KG.format(unit='h.unit', qty='h.wet_weight')}), 0)
@@ -120,7 +122,7 @@ def admin_farmer_stats(username):
         (username,)
     )
     if not farmer:
-        return jsonify({'success': False, 'message': 'Farmer not found'}), 404
+        return jsonify({'success': False, 'message': 'Account not found'}), 404
     user_id = farmer['user_id']
     totals = db.fetch_one(f"""
         SELECT total_waste_kg AS total_waste, total_harvest_kg AS total_harvest, total_dried_kg AS total_dried,
@@ -214,7 +216,7 @@ def admin_toggle_user(user_id):
         "UPDATE users SET is_active = %s, auth_version = auth_version + 1 WHERE user_id = %s",
         (new_status, user_id),
     )
-    return jsonify({'success': True, 'is_active': new_status, 'message': f"Farmer {'activated' if new_status else 'deactivated'} successfully"})
+    return jsonify({'success': True, 'is_active': new_status, 'message': f"Account {'activated' if new_status else 'deactivated'}"})
 
 @app.route('/api/admin/users', methods=['POST'])
 @login_required
@@ -243,10 +245,10 @@ def admin_create_farmer():
         return jsonify({'success': False, 'message': 'Username is already taken'}), 409
     try:
         create_user(username, full_name, email, password, role)
-        return jsonify({'success': True, 'message': f"Farmer account for {full_name} created successfully"}), 201
+        return jsonify({'success': True, 'message': f"Account for {full_name} created"}), 201
     except Exception as e:
         logger.error(f"Admin create farmer error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to create farmer account'}), 500
+        return jsonify({'success': False, 'message': 'The account could not be created'}), 500
 
 @app.route('/api/admin/roles', methods=['GET'])
 @login_required
@@ -307,7 +309,7 @@ def admin_delete_farmer(user_id):
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
     db.execute_query("DELETE FROM users WHERE user_id = %s AND role != 'super_admin'", (user_id,))
-    return jsonify({'success': True, 'message': f"Farmer account for {user['full_name']} deleted successfully"})
+    return jsonify({'success': True, 'message': f"Account for {user['full_name']} deleted"})
 
 @app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
 @login_required
@@ -342,14 +344,15 @@ def admin_edit_farmer(user_id):
         """,
         (full_name, email, role, role, user_id)
     )
-    return jsonify({'success': True, 'message': 'Farmer details updated successfully'})
+    return jsonify({'success': True, 'message': 'Account updated'})
 
 @app.route('/api/admin/inactive-farmers', methods=['GET'])
 @login_required
 @super_admin_required
 def admin_inactive_farmers():
-    """Active accounts with no recorded data for ``days`` days (any kind of
-    record, from the audit log)."""
+    """Active people who record production (farmers, managers) with no
+    recorded data for ``days`` days (any kind of record, from the audit log).
+    QC, stores, sales and read-only accounts are not expected to record it."""
     try:
         days = max(1, int(request.args.get('days', '14') or 14))
     except ValueError:
@@ -358,10 +361,10 @@ def admin_inactive_farmers():
         SELECT u.user_id, u.username, u.full_name, u.email, u.is_active, u.last_login,
                COALESCE(s.last_activity, '1970-01-01'::timestamptz) AS last_data_activity
         FROM users u JOIN ({USER_CHAIN_STATS}) s ON s.user_id = u.user_id
-        WHERE u.role != 'super_admin' AND u.is_active
+        WHERE u.role = ANY(%s) AND u.is_active
           AND COALESCE(s.last_activity, '1970-01-01'::timestamptz) < NOW() - make_interval(days => %s)
         ORDER BY last_data_activity ASC
-    """, (days,))
+    """, ([r for r in roles_with('production.write') if r != 'super_admin'], days))
     return jsonify({'success': True, 'data': rows, 'days': days})
 
 
