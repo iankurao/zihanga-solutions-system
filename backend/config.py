@@ -37,6 +37,9 @@ DB_POOL_MAX = max(2, int(os.getenv('DB_POOL_MAX', '10') or 10))
 # Email (Gmail SMTP) settings from environment
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+# Seconds between scheduled jobs run inside the web process; 0 = off (use the
+# jobs worker). For hosts that cannot run a worker, e.g. 900.
+JOBS_IN_WEB_INTERVAL = int(os.getenv('JOBS_IN_WEB_INTERVAL', '0') or 0)
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', '') 

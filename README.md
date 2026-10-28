@@ -228,7 +228,9 @@ Without `DATABASE_URL`, the `PG*` variables (`PGHOST`, `PGPORT`, `PGUSER`,
 See **[DEPLOYMENT.md](DEPLOYMENT.md)**: nginx with HTTPS, gunicorn and the
 background jobs worker under systemd, nightly verified backups with a restore
 drill, upgrade and rollback, and a checklist for after the first deployment.
-Ready-made files are in `deploy/` and `.env.example`.
+Ready-made files are in `deploy/` and `.env.example`. For free hosting (Oracle
+Always Free, or Render + Neon with `render.yaml`) see
+[docs/FREE_HOSTING.md](docs/FREE_HOSTING.md).
 
 Before every deployment, with the production settings loaded:
 
@@ -249,6 +251,7 @@ email queue are healthy, and the database connection budget. With
 | Document | For |
 |---|---|
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Installing, upgrading, backing up and restoring a server |
+| [docs/FREE_HOSTING.md](docs/FREE_HOSTING.md) | Free places to host the ERP (Oracle Always Free, Render + Neon) and how to deploy there |
 | [docs/PHASE_ONE_REVIEW.md](docs/PHASE_ONE_REVIEW.md) | What Phase One delivered, how it was verified, known limitations and open decisions |
 | [docs/api-routes.md](docs/api-routes.md) | Every route with the permission it requires (generated) |
 | [docs/engineering-rules.md](docs/engineering-rules.md) | Invariants every change must keep (ledger stock, scope, migrations) |

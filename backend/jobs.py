@@ -8,6 +8,9 @@ or keep running in a worker process:
 
     python -m backend.jobs --loop 300
 
+Hosts without worker processes or cron (free web plans) can run the same jobs
+on a thread of each web process instead: set JOBS_IN_WEB_INTERVAL=900.
+
 Safe to run alongside the web app and in several processes at once: alert
 evaluation is serialized by an advisory lock and each email is claimed with
 FOR UPDATE SKIP LOCKED before it is sent.
@@ -15,6 +18,7 @@ FOR UPDATE SKIP LOCKED before it is sent.
 
 import argparse
 import logging
+import threading
 import time
 
 from backend import notifications
@@ -37,6 +41,22 @@ def run_once():
     )
     logger.info("alerts evaluated=%s email=%s", ran, stats)
     return ran, stats
+
+
+def start_in_web(interval, *, sleep=time.sleep):
+    """Run the jobs every ``interval`` seconds (at least 60) on a daemon
+    thread of this web process. Returns the thread."""
+    def loop():
+        while True:
+            sleep(max(interval, 60))
+            try:
+                run_once()
+            except Exception:  # noqa: BLE001 - keep the loop alive
+                logger.exception("Scheduled job run failed")
+
+    thread = threading.Thread(target=loop, name="zehunger-jobs", daemon=True)
+    thread.start()
+    return thread
 
 
 def main():

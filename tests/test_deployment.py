@@ -337,6 +337,33 @@ class DeploymentFilesTest(unittest.TestCase):
         self.assertIn("include /etc/nginx/zehunger-proxy.conf", site)
         self.assertIn("X-Forwarded-Proto $scheme", (DEPLOY / "nginx" / "zehunger-proxy.conf").read_text())
 
+    def test_render_blueprint_matches_the_app(self):
+        blueprint = (ROOT / "render.yaml").read_text()
+        self.assertIn("python -m backend.init_db && gunicorn -c deploy/gunicorn.conf.py --bind 0.0.0.0:$PORT "
+                      "backend.app:app", blueprint)
+        self.assertIn("pip install -r backend/requirements.txt", blueprint)
+        self.assertIn("generateValue: true", blueprint)  # SECRET_KEY is never committed
+        for secret in ("DATABASE_URL", "EMAIL_HOST_PASSWORD"):
+            self.assertRegex(blueprint, rf"key: {secret}[^\n]*\n\s+sync: false")
+        self.assertIn("JOBS_IN_WEB_INTERVAL", blueprint)
+        self.assertIn("JOBS_IN_WEB_INTERVAL=0", (ROOT / ".env.example").read_text())
+
+    def test_jobs_can_run_inside_the_web_process(self):
+        from backend import jobs
+
+        runs, naps = [], []
+
+        def nap(seconds):
+            naps.append(seconds)
+            if len(naps) > 2:
+                raise SystemExit  # ends the daemon thread
+        with mock.patch.object(jobs, "run_once", side_effect=lambda: runs.append(1)):
+            thread = jobs.start_in_web(10, sleep=nap)
+            thread.join(timeout=5)
+        self.assertEqual(naps[0], 60)  # never more often than once a minute
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(thread.daemon)
+
     def test_env_example_covers_every_setting_preflight_reads(self):
         example = (ROOT / ".env.example").read_text()
         for name in ("APP_ENV", "SECRET_KEY", "DATABASE_URL", "PUBLIC_BASE_URL", "TRUSTED_PROXY_COUNT",

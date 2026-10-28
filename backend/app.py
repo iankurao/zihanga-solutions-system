@@ -30,5 +30,13 @@ import backend.domains.tour  # noqa: F401
 import backend.domains.health  # noqa: F401
 import backend.domains.pages  # noqa: F401
 
+# Hosts without a worker process (free web plans) run the scheduled jobs here.
+from backend.config import JOBS_IN_WEB_INTERVAL
+
+if JOBS_IN_WEB_INTERVAL:
+    from backend.jobs import start_in_web
+
+    start_in_web(JOBS_IN_WEB_INTERVAL)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

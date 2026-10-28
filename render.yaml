@@ -1,0 +1,54 @@
+# Render Blueprint for the free web service (docs/FREE_HOSTING.md, option B).
+# The database is external (Neon); Render's own free Postgres expires after 30 days.
+services:
+  - type: web
+    name: zehunger-erp
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r backend/requirements.txt
+    # Migrations run before the web server starts (free plans have no pre-deploy step).
+    startCommand: python -m backend.init_db && gunicorn -c deploy/gunicorn.conf.py --bind 0.0.0.0:$PORT backend.app:app
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL          # Neon connection string, ending in ?sslmode=require
+        sync: false
+      - key: PUBLIC_BASE_URL       # https://<service>.onrender.com
+        sync: false
+      # Render's proxy terminates HTTPS; its address is not fixed.
+      - key: TRUSTED_PROXY_COUNT
+        value: "1"
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+      # 512 MB of memory: one worker, a small pool.
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: GUNICORN_THREADS
+        value: "4"
+      - key: DB_POOL_MAX
+        value: "5"
+      # No worker processes on the free plan: alerts and email run in the web process.
+      - key: JOBS_IN_WEB_INTERVAL
+        value: "900"
+      - key: CURRENCY
+        value: KES
+      # Free plans block SMTP ports 25, 465 and 587; Brevo also listens on 2525.
+      - key: EMAIL_HOST
+        value: smtp-relay.brevo.com
+      - key: EMAIL_PORT
+        value: "2525"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
