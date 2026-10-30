@@ -36,10 +36,11 @@ INVENTORY_PRIVILEGED_TYPES = {'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'WASTAGE'}
 INVENTORY_INBOUND_TYPES = {'RECEIPT', 'ADJUSTMENT_IN'}
 INVENTORY_OUTBOUND_TYPES = {'ADJUSTMENT_OUT', 'WASTAGE'}
 
-# True when the lot's release approval is still the latest approved decision
-# for a passing QC check.  ``pl`` must alias product_lots.
+# True when the lot's release is still backed by the latest approved decision
+# on a passing check: the QC approval for dried larvae, or the frass quality
+# check for frass fertiliser.  ``pl`` must alias product_lots.
 PRODUCT_LOT_RELEASABLE_SQL = """
-    EXISTS (
+    (EXISTS (
         SELECT 1
         FROM quality_approvals AS rel_qa
         JOIN quality_checks AS rel_qc ON rel_qc.id = rel_qa.quality_check_id
@@ -52,7 +53,15 @@ PRODUCT_LOT_RELEASABLE_SQL = """
               ORDER BY latest.id DESC
               LIMIT 1
           ) = 'approved'
-    )
+    ) OR EXISTS (
+        SELECT 1
+        FROM frass_quality_checks AS rel_fq
+        WHERE rel_fq.id = pl.frass_quality_check_id
+          AND rel_fq.status = 'passed'
+          AND rel_fq.decision = 'approved'
+          AND rel_fq.id = (SELECT MAX(latest_fq.id) FROM frass_quality_checks AS latest_fq
+                           WHERE latest_fq.frass_lot_id = rel_fq.frass_lot_id)
+    ))
 """
 
 # One signed row per ledger leg: a transfer contributes -qty to its source
@@ -137,10 +146,8 @@ def _inventory_lot_row(cursor, lot_ref):
                batch.site_id, batch.facility_id,
                {PRODUCT_LOT_RELEASABLE_SQL} AS releasable
         FROM product_lots AS pl
-        JOIN drying_outputs AS output ON output.id = pl.drying_output_id
-        JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
-        WHERE pl.drying_output_id IS NOT NULL
-          AND (pl.id = %s OR pl.business_id = %s OR pl.lot_code = %s)
+        JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id
+        WHERE (pl.id = %s OR pl.business_id = %s OR pl.lot_code = %s)
         FOR UPDATE OF pl
         """,
         (lookup_id, str(lot_ref), str(lot_ref)),

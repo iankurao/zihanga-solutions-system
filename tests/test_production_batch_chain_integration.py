@@ -238,6 +238,16 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
                     """,
                     (self.farm_id,),
                 )
+                # Frass fertiliser lots, then the frass lots behind them.
+                for statement in (
+                    "DELETE FROM product_lots WHERE frass_lot_id IN (SELECT id FROM frass_lots WHERE farm_id = %s)",
+                    "DELETE FROM frass_quality_checks WHERE frass_lot_id IN "
+                    "(SELECT id FROM frass_lots WHERE farm_id = %s)",
+                    "DELETE FROM frass_curing_checks WHERE frass_lot_id IN "
+                    "(SELECT id FROM frass_lots WHERE farm_id = %s)",
+                    "DELETE FROM frass_lots WHERE farm_id = %s",
+                ):
+                    cursor.execute(statement, (self.farm_id,))
                 cursor.execute(
                     """
                     DELETE FROM quality_approvals
@@ -1680,6 +1690,83 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertIn("collection_date cannot be in the future", waste.get_json()["message"])
         with self.assertRaisesRegex(ValueError, "output_date cannot be in the future"):
             _drying_timestamp(later, "output_date")
+
+    def test_frass_is_cured_checked_released_and_sold_as_fertiliser(self):
+        created = self._create_production(self._create_substrate(), harvest_limit_kg="4.000")
+        batch = created.get_json()["record"]
+        self._move_to_harvest_ready(batch)
+        harvested = self._harvest(batch, wet_weight="1.000", frass_kg="2.500")
+        self.assertEqual(harvested.status_code, 201, harvested.get_json())
+        frass = harvested.get_json()["frass_lot"]
+        self.assertTrue(frass["business_id"].startswith("FRS-"))
+        self.assertIn(f"frass lot {frass['business_id']}", harvested.get_json()["message"])
+        ref = frass["business_id"]
+
+        def post(url, body, expected=200):
+            response = self.client.post(url, json=body)
+            self.assertEqual(response.status_code, expected, (url, response.get_json()))
+            return response.get_json()
+
+        # Curing: at least one check before it can finish; no QC while curing.
+        refused = self.client.post(f"/api/frass/lots/{ref}/cured", json={"cured_kg": "2"})
+        self.assertIn("at least one curing check", refused.get_json()["message"])
+        self.assertEqual(self.client.post(f"/api/frass/lots/{ref}/quality-checks", json={
+            "status": "passed", "maturity": "mature"}).status_code, 400)
+        post(f"/api/frass/lots/{ref}/curing-checks",
+             {"checked_at": "2026-09-27T09:00:00+03:00", "temperature_c": "48", "moisture_percent": "35"}, 201)
+        too_heavy = self.client.post(f"/api/frass/lots/{ref}/cured", json={"cured_kg": "3"})
+        self.assertIn("cannot be more than", too_heavy.get_json()["message"])
+        post(f"/api/frass/lots/{ref}/cured", {"cured_kg": "2.000", "cured_at": "2026-10-10T08:00:00+03:00"})
+
+        # Quality: immature or contaminated frass cannot pass; a failed check
+        # cannot be approved; only the latest passed and approved check releases.
+        self.assertEqual(self.client.post(f"/api/frass/lots/{ref}/quality-checks", json={
+            "status": "passed", "maturity": "immature"}).status_code, 400)
+        failed = post(f"/api/frass/lots/{ref}/quality-checks",
+                      {"status": "failed", "maturity": "immature", "inspector": "QC"}, 201)["data"]
+        self.assertEqual(self.client.post(f"/api/frass/quality-checks/{failed['id']}/decision",
+                                          json={"decision": "approved"}).status_code, 400)
+        post(f"/api/frass/quality-checks/{failed['id']}/decision",
+             {"decision": "rejected", "rationale": "Still warm, not mature"})
+        location = {"inventory_location_id": self.inventory_location_id}
+        self.assertEqual(self.client.post(f"/api/frass/lots/{ref}/release", json=location).status_code, 400)
+        passed = post(f"/api/frass/lots/{ref}/quality-checks",
+                      {"status": "passed", "maturity": "mature", "moisture_percent": "28", "inspector": "QC"}, 201)
+        self.assertTrue(passed["data"]["check_code"].startswith("FQC-"))
+        post(f"/api/frass/quality-checks/{passed['data']['id']}/decision", {"decision": "approved"})
+        released = post(f"/api/frass/lots/{ref}/release", location, 201)["data"]
+        self.assertEqual(float(released["quantity_kg"]), 2.0)
+        lot_ref = released["business_id"]
+
+        # The database refuses a frass lot without the approved check behind it.
+        with self.assertRaises(psycopg2.Error):
+            db.execute_query("UPDATE product_lots SET frass_quality_check_id = %s WHERE business_id = %s",
+                             (failed["id"], lot_ref))
+
+        # Stock, the product lot page and its source chain.
+        detail = self.client.get(f"/api/product-lots/{lot_ref}").get_json()["data"]
+        self.assertEqual((detail["product_type"], detail["status"], float(detail["inventory"]["on_hand_kg"])),
+                         ("frass_fertilizer", "AVAILABLE", 2.0))
+        self.assertEqual(detail["drying_batch_business_id"], ref)
+        self.assertEqual(detail["source_chain"][0]["production_batch_business_id"], batch["business_id"])
+        listed = [lot for lot in self.client.get("/api/frass/lots").get_json()["data"] if lot["business_id"] == ref]
+        self.assertEqual((listed[0]["status"], listed[0]["product_lot"]), ("RELEASED", lot_ref))
+
+        # Sold by the kg on an ordinary customer order, then traced back to waste.
+        order = self._order("1.500", product_type="frass_fertilizer")
+        lot = {"id": detail["id"]}
+        allocation = self._allocate(order, lot, "1.500")
+        self.assertEqual(allocation.status_code, 201, allocation.get_json())
+        allocation_id = allocation.get_json()["data"]["allocations"][0]["id"]
+        dispatched = self._dispatch(order, allocation_id, "1.500")
+        self.assertEqual(dispatched.status_code, 201, dispatched.get_json())
+        delivery_ref = dispatched.get_json()["data"]["created_delivery"]
+        trace = self.client.get(f"/api/traceability?ref={delivery_ref}").get_json()["data"]
+        kinds = {node["type"] for stage in trace["stages"] for node in stage["nodes"]}
+        self.assertTrue({"waste_lot", "harvest", "frass_lot", "product_lot", "customer_order"} <= kinds, kinds)
+        dried_larvae = self._order("1", product_type="dried_larvae")
+        wrong = self._allocate(dried_larvae, lot, "0.5")
+        self.assertEqual(wrong.status_code, 400)
 
     def test_last_entries_listed_under_the_data_entry_forms(self):
         created = self._create_production(self._create_substrate())

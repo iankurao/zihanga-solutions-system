@@ -30,7 +30,7 @@ from backend.domains.inventory import INVENTORY_LEDGER_CTE, PRODUCT_LOT_RELEASAB
 
 TRACE_STAGES = (
     'waste_lot', 'substrate_batch', 'production_batch', 'harvest',
-    'drying_batch', 'product_lot', 'inventory_location', 'customer_order',
+    'drying_batch', 'frass_lot', 'product_lot', 'inventory_location', 'customer_order',
     'delivery',
 )
 TRACE_LABELS = {
@@ -39,6 +39,7 @@ TRACE_LABELS = {
     'production_batch': 'Production Batch',
     'harvest': 'Harvest',
     'drying_batch': 'Drying Batch',
+    'frass_lot': 'Frass Lot',
     'product_lot': 'Product Lot',
     'inventory_location': 'Inventory Location',
     'customer_order': 'Customer Order',
@@ -56,7 +57,9 @@ TRACE_ID_SQL = {
     'production_batch': "SELECT id FROM production_batches WHERE id = %s",
     'harvest': "SELECT id FROM harvests WHERE id = %s",
     'drying_batch': "SELECT id FROM drying_batches WHERE id = %s",
-    'product_lot': "SELECT id FROM product_lots WHERE id = %s AND drying_output_id IS NOT NULL",
+    'frass_lot': "SELECT id FROM frass_lots WHERE id = %s",
+    'product_lot': "SELECT id FROM product_lots WHERE id = %s "
+                   "AND (drying_output_id IS NOT NULL OR frass_lot_id IS NOT NULL)",
     'customer_order': "SELECT id FROM customer_orders WHERE id = %s",
     'delivery': "SELECT id FROM customer_deliveries WHERE id = %s",
 }
@@ -82,8 +85,11 @@ TRACE_REF_SQL = {
         "SELECT id FROM drying_batches WHERE UPPER(business_id) = UPPER(%s) "
         "OR UPPER(batch_code) = UPPER(%s) OR UPPER(batch_id) = UPPER(%s)", 3,
     ),
+    'frass_lot': (
+        "SELECT id FROM frass_lots WHERE UPPER(business_id) = UPPER(%s)", 1,
+    ),
     'product_lot': (
-        "SELECT id FROM product_lots WHERE drying_output_id IS NOT NULL "
+        "SELECT id FROM product_lots WHERE (drying_output_id IS NOT NULL OR frass_lot_id IS NOT NULL) "
         "AND (UPPER(business_id) = UPPER(%s) OR UPPER(lot_code) = UPPER(%s))", 2,
     ),
     'customer_order': (
@@ -159,11 +165,18 @@ TRACE_NODE_SQL = {
                                  'qc_status', qc.status,
                                  'approval', qa.decision) AS details
         FROM product_lots AS pl
-        JOIN drying_outputs AS output ON output.id = pl.drying_output_id
-        JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+        JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id
         LEFT JOIN quality_approvals AS qa ON qa.id = pl.release_approval_id
         LEFT JOIN quality_checks AS qc ON qc.id = qa.quality_check_id
         WHERE pl.id = ANY(%s)
+    """,
+    'frass_lot': """
+        SELECT fl.id, fl.business_id AS ref, 'Frass for fertiliser' AS title,
+               fl.status, fl.curing_started_at AS occurred,
+               COALESCE(fl.cured_kg, fl.quantity_kg) AS quantity, 'kg' AS unit,
+               fl.recorded_by AS actor, fl.farm_id, fl.site_id, fl.facility_id,
+               json_build_object('separated_kg', fl.quantity_kg, 'cured_kg', fl.cured_kg) AS details
+        FROM frass_lots AS fl WHERE fl.id = ANY(%s)
     """,
     'inventory_location': """
         SELECT il.id, il.location_code AS ref, il.name AS title,
@@ -230,6 +243,14 @@ TRACE_EDGE_SQL = [
                'kg' AS unit
         FROM drying_inputs WHERE {side} = ANY(%s)
     """, ('harvest_id', 'drying_batch_id')),
+    ('harvest', 'frass_lot', """
+        SELECT harvest_id AS from_id, id AS to_id, quantity_kg AS quantity, 'kg' AS unit
+        FROM frass_lots WHERE {side} = ANY(%s)
+    """, ('harvest_id', 'id')),
+    ('frass_lot', 'product_lot', """
+        SELECT pl.frass_lot_id AS from_id, pl.id AS to_id, pl.quantity_kg AS quantity, 'kg' AS unit
+        FROM product_lots AS pl WHERE pl.frass_lot_id IS NOT NULL AND {side} = ANY(%s)
+    """, ('pl.frass_lot_id', 'pl.id')),
     ('drying_batch', 'product_lot', """
         SELECT output.drying_batch_id AS from_id, pl.id AS to_id,
                pl.quantity_kg AS quantity, 'kg' AS unit

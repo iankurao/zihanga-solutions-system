@@ -445,6 +445,9 @@ def create_tables(cursor):
     cursor.execute(farm_logs_migration_path.read_text(encoding="utf-8"))
     order_prices_migration_path = Path(__file__).parent / "migrations" / "order_prices.sql"
     cursor.execute(order_prices_migration_path.read_text(encoding="utf-8"))
+    # Frass sold as fertiliser: frass lots from harvests, curing, QC, release.
+    frass_migration_path = Path(__file__).parent / "migrations" / "frass_chain.sql"
+    cursor.execute(frass_migration_path.read_text(encoding="utf-8"))
     # Last: drop the tables from before the traceability chain once empty.
     kept = retire(cursor)
     if kept:

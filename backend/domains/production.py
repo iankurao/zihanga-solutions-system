@@ -382,6 +382,8 @@ def _create_harvest_event(data):
         raise ValueError('location is required')
     if len(location) > 200:
         raise ValueError('location must be at most 200 characters')
+    # Frass sieved off at harvest becomes a frass lot (fertiliser) to cure.
+    frass_kg = _event_decimal(data.get('frass_kg'), 'frass_kg', minimum='0.001')
 
     with db.transaction() as cursor:
         batch = _production_event_batch(cursor, batch_ref, data)
@@ -446,8 +448,30 @@ def _create_harvest_event(data):
             ),
         )
         harvest = cursor.fetchone()
+        frass_lot = None
+        if frass_kg is not None:
+            cursor.execute(
+                """
+                INSERT INTO frass_lots (
+                    business_id, harvest_id, production_batch_id, farm_id, site_id,
+                    facility_id, quantity_kg, curing_started_at, recorded_by, recorded_by_user_id
+                ) VALUES (
+                    'FRS-' || to_char(%s::timestamptz, 'YYYY') || '-' ||
+                        lpad(nextval('phase_one_frass_lot_seq')::text, 5, '0'),
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                RETURNING id, business_id, quantity_kg, status
+                """,
+                (
+                    occurred_at, harvest['id'], batch['id'], event['farm_id'], event['site_id'],
+                    event['facility_id'], frass_kg, occurred_at, operator,
+                    getattr(current_user, 'id', None) if getattr(current_user, 'is_authenticated', False) else None,
+                ),
+            )
+            frass_lot = dict(cursor.fetchone())
 
     result = _event_response(event)
+    result['frass_lot'] = frass_lot
     result['harvest'] = dict(harvest)
     result['harvest']['production_batch_id'] = batch['id']
     result['harvest']['occurred_at'] = event['occurred_at']
@@ -1177,9 +1201,12 @@ def create_production_health_event(batch_ref):
 def create_production_harvest_event(batch_ref):
     try:
         result = _create_harvest_event(_event_request_data(batch_ref))
+        frass = result.get('frass_lot')
+        message = 'Harvest recorded' + (
+            f"; frass lot {frass['business_id']} ({frass['quantity_kg']} kg) started curing" if frass else '')
         return jsonify({
             'success': True,
-            'message': 'Harvest recorded',
+            'message': message,
             **result,
         }), 201
     except ProductionEventPermissionError as e:

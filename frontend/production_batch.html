@@ -183,6 +183,7 @@
             <div><label for="harvestStage">Harvest stage</label><input id="harvestStage" name="harvest_stage" maxlength="80" required></div>
             <div><label for="harvestOperator">Operator</label><input id="harvestOperator" name="operator" maxlength="100" required></div>
             <div class="full"><label for="harvestLocation">Harvest location</label><input id="harvestLocation" name="location" maxlength="200" required></div>
+            <div><label for="harvestFrass">Frass separated (kg, optional)</label><input id="harvestFrass" name="frass_kg" type="number" min="0.001" step="0.001"></div>
             <div class="full"><label for="harvestNotes">Notes</label><textarea id="harvestNotes" name="notes" rows="2"></textarea></div>
             <div class="full erp-inline-message" id="harvestMessage" aria-live="polite"></div>
             <button class="erp-btn" type="submit">Record harvest</button>
@@ -332,7 +333,7 @@
       showMessage(messageId, '');
       try {
         const data = Object.fromEntries(new FormData(form).entries());
-        ['quantity_offered','quantity_consumed','larvae_biomass','larvae_age_days','start_weight_kg','end_weight_kg','temperature','humidity','ammonia','wet_weight'].forEach(key => {
+        ['quantity_offered','quantity_consumed','larvae_biomass','larvae_age_days','start_weight_kg','end_weight_kg','frass_kg','temperature','humidity','ammonia','wet_weight'].forEach(key => {
           if (data[key] !== undefined && data[key] !== '') data[key] = Number(data[key]);
         });
         // Dates and times typed here are local farm time.

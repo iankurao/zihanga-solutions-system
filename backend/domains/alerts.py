@@ -203,8 +203,7 @@ def _alert_candidates(cursor):
                SUM(ledger.delta) AS on_hand_kg
         FROM ledger
         JOIN product_lots AS pl ON pl.id = ledger.product_lot_id
-        JOIN drying_outputs AS output ON output.id = pl.drying_output_id
-        JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+        JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id
         WHERE NOT {PRODUCT_LOT_RELEASABLE_SQL}
         GROUP BY pl.id, batch.site_id, batch.facility_id
         HAVING SUM(ledger.delta) > 0

@@ -301,6 +301,36 @@ select.form-control {
     padding: 0 0.25rem;
 }
 
+/* Frass lots overview at the top of the Frass & Fertiliser section. */
+.frass-overview {
+    margin-bottom: 1.25rem;
+}
+
+.frass-table-wrap {
+    overflow-x: auto;
+}
+
+.frass-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.frass-table th,
+.frass-table td {
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--border-color, #dfe7e2);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.frass-table th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #5b6d64);
+}
+
 /* The last entries saved with a form, listed under it. */
 .recent-entries {
     margin-top: 1.25rem;

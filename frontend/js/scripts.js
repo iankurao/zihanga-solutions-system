@@ -78,6 +78,7 @@ function showSection(sectionId, element) {
   }
   // Pick-lists follow records saved since the page was opened.
   if (sectionId === 'drying' && window.refreshDryingData) window.refreshDryingData();
+  if (sectionId === 'frass' && window.refreshFrassLots) window.refreshFrassLots(true);
   if (element) {
     element.classList.add('active');
   }
@@ -200,7 +201,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // with the signed-in person's name. All stay editable.
     const PLANNED_DATE_FIELDS = new Set(['followUpDate', 'fermentationReady', 'expectedHatchDate']);
     const PERSON_FIELDS = new Set(['collectionPersonnel', 'handlerOperator', 'operator', 'personnel',
-        'cleaning_personnel', 'qcPersonnel', 'reviewedBy']);
+        'cleaning_personnel', 'qcPersonnel', 'reviewedBy', 'inspector']);
     const twoDigits = n => String(n).padStart(2, '0');
     const localToday = () => {
         const d = new Date();
@@ -909,7 +910,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const numericFields = [
                 'feed_quantity_kg', 'larvae_age_days', 'larvae_weight_g', 'consumption_rate_percent',
                 'temperature', 'humidity', 'moisture_percentage', 'larvae_collected_kg', 'wet_weight', 'storage_temp',
-                'start_weight_kg', 'end_weight_kg', 'consumption_g', 'larvae_biomass', 'quantity_consumed', 'substrateIntroducedKg',
+                'start_weight_kg', 'end_weight_kg', 'consumption_g', 'larvae_biomass', 'quantity_consumed', 'frass_kg', 'substrateIntroducedKg',
                 'lighting_hours', 'pupae_weight_added', 'old_pupae_removed', 'number_of_crates', 'eggs_collected'
             ];
 
@@ -968,6 +969,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (formType === 'harvestYield' && window.refreshDryingData) {
                 window.refreshDryingData();
+            }
+            if (formType === 'harvestYield' && window.refreshFrassLots) {
+                window.refreshFrassLots();
             }
             loadRecentEntries(form, formType);
             if (RECENT_KIND[formType]) loadBatchPickers();
@@ -1600,7 +1604,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Subsection Carousel
 (function() {
-  var CAROUSEL_SECTIONS = ['waste', 'hatchery', 'feeding', 'drying', 'facility'];
+  var CAROUSEL_SECTIONS = ['waste', 'hatchery', 'feeding', 'drying', 'frass', 'facility'];
   var carousels = {};
 
   function buildCarousel(sectionId) {
@@ -1917,3 +1921,182 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 })();
 /* ── end Cage Range Picker ──────────────────────────────────────────── */
+
+// ---- Frass & Fertiliser -----------------------------------------------------------
+// Frass lots come from harvests; this section records curing checks, the cured
+// weight, the quality check and decision, and the release to a store.
+(function() {
+  'use strict';
+  var STATUS = { CURING: 'Curing', QC_PENDING: 'Waiting for QC', APPROVED: 'Approved', REJECTED: 'Rejected',
+                 RELEASED: 'Released' };
+  var lots = [];
+  var byId = function(id) { return document.getElementById(id); };
+
+  function kg(value) { return value == null ? '—' : Number(value).toLocaleString(undefined, { maximumFractionDigits: 3 }) + ' kg'; }
+
+  function fill(select, items, placeholder, empty) {
+    if (!select) return;
+    var keep = select.value;
+    select.replaceChildren(new Option(items.length ? placeholder : empty, ''));
+    items.forEach(function(item) { select.add(new Option(item.label, item.value)); });
+    if (keep && items.some(function(item) { return String(item.value) === keep; })) select.value = keep;
+    else if (items.length === 1) select.value = items[0].value;
+  }
+
+  function lotItem(lot, extra) {
+    return { value: lot.business_id, label: lot.business_id + ' · ' + lot.production_batch + ' · ' +
+             kg(lot.cured_kg || lot.quantity_kg) + (extra ? ' · ' + extra : '') };
+  }
+
+  function renderTable() {
+    var box = byId('frassLotsTable');
+    if (!box) return;
+    if (!lots.length) {
+      box.innerHTML = '<p class="help-text">No frass lots yet. Enter the frass separated on the harvest form to start one.</p>';
+      return;
+    }
+    var table = document.createElement('table');
+    table.className = 'frass-table';
+    table.innerHTML = '<thead><tr><th>Frass lot</th><th>From</th><th>Separated</th><th>Cured</th><th>Status</th><th>Product lot</th></tr></thead>';
+    var body = document.createElement('tbody');
+    lots.forEach(function(lot) {
+      var row = document.createElement('tr');
+      [lot.business_id, lot.harvest_code + ' · ' + lot.production_batch, kg(lot.quantity_kg), kg(lot.cured_kg),
+       STATUS[lot.status] || lot.status, lot.product_lot || '—'].forEach(function(text, index) {
+        var cell = document.createElement('td');
+        if (index === 0) {
+          var link = document.createElement('a');
+          link.href = '/traceability?ref=' + encodeURIComponent(text) + '&type=frass_lot';
+          link.textContent = text;
+          cell.appendChild(link);
+        } else if (index === 5 && lot.product_lot) {
+          var lotLink = document.createElement('a');
+          lotLink.href = '/product-lot?ref=' + encodeURIComponent(lot.product_lot);
+          lotLink.textContent = lot.product_lot;
+          cell.appendChild(lotLink);
+        } else {
+          cell.textContent = text;
+        }
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    box.replaceChildren(table);
+  }
+
+  async function load() {
+    try {
+      var response = await fetch('/api/frass/lots', { credentials: 'include' });
+      var payload = await response.json();
+      lots = response.ok ? (payload.data || []) : [];
+    } catch (error) {
+      lots = [];
+    }
+    var curing = lots.filter(function(l) { return l.status === 'CURING'; });
+    fill(byId('frassCuringLot'), curing.map(function(l) { return lotItem(l, l.curing_checks + ' check(s)'); }),
+      'Select frass lot', 'No frass lot is curing');
+    fill(byId('frassCuredLot'), curing.map(function(l) {
+      return lotItem(l, Number(l.curing_checks) ? 'curing since ' + String(l.curing_started_at).slice(0, 10) : 'no curing check yet');
+    }), 'Select frass lot', 'No frass lot is curing');
+    var waiting = lots.filter(function(l) {
+      return l.status === 'QC_PENDING' && !(l.latest_check && !l.latest_check.decision) || l.status === 'REJECTED';
+    });
+    fill(byId('frassQualityLot'), waiting.map(function(l) { return lotItem(l, STATUS[l.status]); }),
+      'Select frass lot', 'No frass lot is waiting for a quality check');
+    var undecided = lots.filter(function(l) { return l.status === 'QC_PENDING' && l.latest_check && !l.latest_check.decision; });
+    fill(byId('frassDecisionCheck'), undecided.map(function(l) {
+      return { value: l.latest_check.id, label: l.latest_check.check_code + ' · ' + l.business_id + ' · ' +
+               l.latest_check.status + ' · ' + l.latest_check.maturity };
+    }), 'Select quality check', 'No quality check is waiting for a decision');
+    fill(byId('frassReleaseLot'), lots.filter(function(l) { return l.status === 'APPROVED'; }).map(function(l) { return lotItem(l); }),
+      'Select approved frass lot', 'No approved frass lot to release');
+    renderTable();
+  }
+
+  async function loadStores() {
+    var select = byId('frassReleaseLocation');
+    if (!select) return;
+    try {
+      var response = await fetch('/api/inventory/locations', { credentials: 'include' });
+      var rows = response.ok ? ((await response.json()).data || []) : [];
+      fill(select, rows.map(function(row) {
+        return { value: row.id, label: row.farm_name + ' / ' + row.facility_name + ' — ' + row.name + ' (' + row.location_code + ')' };
+      }), 'Select store', 'No stores set up — ask an administrator');
+    } catch (error) {
+      select.replaceChildren(new Option('Stores could not be loaded', ''));
+    }
+  }
+
+  function bind(formId, build) {
+    var form = byId(formId);
+    if (!form) return;
+    form.addEventListener('submit', async function(event) {
+      event.preventDefault();
+      if (window.reportFormProblems && window.reportFormProblems(form)) return;
+      var button = form.querySelector('[type="submit"]');
+      button.disabled = true;
+      try {
+        var request = build(form);
+        var response = await fetch(request.url, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request.body)
+        });
+        var result = await response.json().catch(function() { return {}; });
+        if (!response.ok) throw new Error(result.message || 'The server did not accept it.');
+        showFormResult(form, result.message || 'Saved', 'success');
+        form.reset();
+        await load();
+      } catch (error) {
+        showFormResult(form, 'Not saved: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  var lotUrl = function(form, tail) {
+    return '/api/frass/lots/' + encodeURIComponent(form.elements.frassLot.value) + tail;
+  };
+  var number = function(value) { return value === '' ? null : value; };
+
+  bind('frassCuringForm', function(form) {
+    return { url: lotUrl(form, '/curing-checks'), body: {
+      checked_at: ErpUI.localOccurredAt(form.elements.checkDate.value, form.elements.checkTime.value),
+      temperature_c: number(form.elements.temperature_c.value),
+      moisture_percent: number(form.elements.moisture_percent.value),
+      notes: form.elements.notes.value } };
+  });
+  bind('frassCuredForm', function(form) {
+    return { url: lotUrl(form, '/cured'), body: {
+      cured_kg: form.elements.cured_kg.value,
+      cured_at: ErpUI.localOccurredAt(form.elements.curedDate.value, '') } };
+  });
+  bind('frassQualityForm', function(form) {
+    return { url: lotUrl(form, '/quality-checks'), body: {
+      status: form.elements.status.value, maturity: form.elements.maturity.value,
+      moisture_percent: number(form.elements.moisture_percent.value),
+      contaminants: Array.from(form.elements.contaminants.selectedOptions).map(function(o) { return o.value; }),
+      inspector: form.elements.inspector.value, notes: form.elements.notes.value } };
+  });
+  bind('frassDecisionForm', function(form) {
+    return { url: '/api/frass/quality-checks/' + encodeURIComponent(form.elements.check.value) + '/decision', body: {
+      decision: form.elements.decision.value, rationale: form.elements.rationale.value } };
+  });
+  bind('frassReleaseForm', function(form) {
+    return { url: lotUrl(form, '/release'), body: {
+      inventory_location_id: form.elements.inventory_location_id.value,
+      lot_number: form.elements.lot_number.value } };
+  });
+
+  // A harvest saved elsewhere on this page may have started a new frass lot.
+  window.refreshFrassLots = function(withStores) { load(); if (withStores) loadStores(); };
+  function start() {
+    if (!byId('frass')) return;
+    load();
+    loadStores();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

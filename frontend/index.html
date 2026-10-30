@@ -71,6 +71,9 @@
       <div data-permission="production.write|quality.decide" hidden class="nav-link" onclick="showSection('drying', this)">
         <i class="fas fa-wind"></i><span>Drying Process</span>
       </div>
+      <div data-permission="production.write|quality.decide" hidden class="nav-link" onclick="showSection('frass', this)">
+        <i class="fas fa-seedling"></i><span>Frass &amp; Fertiliser</span>
+      </div>
       <div data-permission="production.write" hidden class="nav-link" onclick="showSection('hatchery', this)">
         <i class="fas fa-egg"></i><span>Hatchery</span>
       </div>
@@ -785,6 +788,11 @@
                 <label for="harvestLocation" class="required">Harvest Location</label>
                 <input type="text" id="harvestLocation" name="location" class="form-control" maxlength="200" required>
               </div>
+            </div>
+            <div class="form-group">
+              <label for="harvestFrassKg">Frass Separated (kg)</label>
+              <input type="number" id="harvestFrassKg" name="frass_kg" class="form-control" step="0.001" min="0.001">
+              <small class="form-text text-muted">The frass sieved off at harvest becomes a frass lot to cure and sell as fertiliser. Leave empty if none was kept.</small>
             </div>
             <div class="form-group">
               <label for="notes">Notes</label>
@@ -1787,6 +1795,181 @@
               <div class="invalid-feedback">Please enter maintenance details</div>
             </div>
             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Maintenance Record</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Frass & Fertiliser: frass lots from harvests, curing, QC, release (js/scripts.js, frass block) -->
+      <div id="frass" class="section">
+        <h1><i class="fas fa-seedling"></i> Frass &amp; Fertiliser</h1>
+
+        <div class="guidelines-panel">
+          <h3><i class="fas fa-info-circle"></i> Frass Guidelines</h3>
+          <ul>
+            <li><strong>At harvest:</strong> weigh the frass sieved off the larvae and enter it on the harvest form; it becomes a frass lot (FRS-) that starts curing.</li>
+            <li><strong>Curing:</strong> keep it in covered heaps, turn it regularly and record temperature and moisture.</li>
+            <li><strong>Ready:</strong> dark, crumbly, earthy smell, no live larvae. Weigh it again when curing ends.</li>
+            <li><strong>Before sale:</strong> a QC officer checks maturity, moisture and contaminants and approves it; only approved frass is released to a store as fertiliser.</li>
+          </ul>
+        </div>
+
+        <div class="frass-overview" aria-live="polite">
+          <h2><i class="fas fa-list"></i> Frass lots</h2>
+          <div id="frassLotsTable" class="frass-table-wrap"><p class="help-text">Loading frass lots…</p></div>
+        </div>
+
+        <div class="subsection">
+          <h2><i class="fas fa-thermometer-half"></i> Curing Check</h2>
+          <form id="frassCuringForm">
+            <div class="form-group">
+              <label for="frassCuringLot" class="required">Frass Lot</label>
+              <select id="frassCuringLot" name="frassLot" class="form-control" required></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="frassCheckDate" class="required">Date</label>
+                <input type="date" id="frassCheckDate" name="checkDate" class="form-control" required>
+              </div>
+              <div class="form-group">
+                <label for="frassCheckTime" class="required">Time</label>
+                <input type="time" id="frassCheckTime" name="checkTime" class="form-control" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="frassCheckTemperature">Heap Temperature (°C)</label>
+                <input type="number" id="frassCheckTemperature" name="temperature_c" class="form-control" step="0.1" min="-10" max="90">
+              </div>
+              <div class="form-group">
+                <label for="frassCheckMoisture">Moisture (%)</label>
+                <input type="number" id="frassCheckMoisture" name="moisture_percent" class="form-control" step="0.1" min="0" max="100">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="frassCheckNotes">Notes</label>
+              <textarea id="frassCheckNotes" name="notes" class="form-control" rows="2" placeholder="e.g. heap turned, covered"></textarea>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Record Curing Check</button>
+          </form>
+        </div>
+
+        <div class="subsection">
+          <h2><i class="fas fa-flag-checkered"></i> Finish Curing</h2>
+          <form id="frassCuredForm">
+            <div class="form-group">
+              <label for="frassCuredLot" class="required">Frass Lot</label>
+              <select id="frassCuredLot" name="frassLot" class="form-control" required></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="frassCuredKg" class="required">Weight After Curing (kg)</label>
+                <input type="number" id="frassCuredKg" name="cured_kg" class="form-control" step="0.001" min="0.001" required>
+              </div>
+              <div class="form-group">
+                <label for="frassCuredDate" class="required">Date Cured</label>
+                <input type="date" id="frassCuredDate" name="curedDate" class="form-control" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Finish Curing</button>
+          </form>
+        </div>
+
+        <div class="subsection">
+          <h2><i class="fas fa-microscope"></i> Frass Quality Check</h2>
+          <form id="frassQualityForm">
+            <div class="form-group">
+              <label for="frassQualityLot" class="required">Frass Lot</label>
+              <select id="frassQualityLot" name="frassLot" class="form-control" required></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="frassMaturity" class="required">Maturity</label>
+                <select id="frassMaturity" name="maturity" class="form-control" required>
+                  <option value="">Select maturity</option>
+                  <option value="mature">Mature (dark, crumbly, earthy)</option>
+                  <option value="immature">Not yet mature</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="frassQcMoisture">Moisture (%)</label>
+                <input type="number" id="frassQcMoisture" name="moisture_percent" class="form-control" step="0.1" min="0" max="100">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="frassContaminants">Contaminants Found</label>
+              <select id="frassContaminants" name="contaminants" class="form-control" multiple size="4">
+                <option value="plastic">Plastic</option>
+                <option value="metal">Metal</option>
+                <option value="glass">Glass</option>
+                <option value="stones">Stones</option>
+                <option value="larvae">Live larvae</option>
+                <option value="other">Other</option>
+              </select>
+              <small class="form-text text-muted">Leave none selected when clean. Hold Ctrl/Cmd to select several.</small>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="frassQcResult" class="required">Result</label>
+                <select id="frassQcResult" name="status" class="form-control" required>
+                  <option value="">Select result</option>
+                  <option value="passed">Passed</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="frassInspector" class="required">Inspector</label>
+                <input type="text" id="frassInspector" name="inspector" class="form-control" maxlength="100" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="frassQcNotes">Notes</label>
+              <textarea id="frassQcNotes" name="notes" class="form-control" rows="2"></textarea>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Record Quality Check</button>
+          </form>
+        </div>
+
+        <div class="subsection">
+          <h2><i class="fas fa-gavel"></i> Frass QC Decision</h2>
+          <form id="frassDecisionForm">
+            <div class="form-group">
+              <label for="frassDecisionCheck" class="required">Quality Check</label>
+              <select id="frassDecisionCheck" name="check" class="form-control" required></select>
+            </div>
+            <div class="form-group">
+              <label for="frassDecision" class="required">Decision</label>
+              <select id="frassDecision" name="decision" class="form-control" required>
+                <option value="">Select decision</option>
+                <option value="approved">Approve for sale</option>
+                <option value="rejected">Reject</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="frassRationale">Reason</label>
+              <textarea id="frassRationale" name="rationale" class="form-control" rows="2" placeholder="Required when rejecting"></textarea>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Record Decision</button>
+          </form>
+        </div>
+
+        <div class="subsection">
+          <h2><i class="fas fa-warehouse"></i> Release Fertiliser to Stock</h2>
+          <form id="frassReleaseForm">
+            <div class="form-group">
+              <label for="frassReleaseLot" class="required">Approved Frass Lot</label>
+              <select id="frassReleaseLot" name="frassLot" class="form-control" required></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="frassReleaseLocation" class="required">Store</label>
+                <select id="frassReleaseLocation" name="inventory_location_id" class="form-control" required></select>
+              </div>
+              <div class="form-group">
+                <label for="frassLotNumber">Lot Number (optional)</label>
+                <input type="text" id="frassLotNumber" name="lot_number" class="form-control" maxlength="30" placeholder="Given automatically if blank">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="fas fa-box"></i> Release as Fertiliser</button>
           </form>
         </div>
       </div>

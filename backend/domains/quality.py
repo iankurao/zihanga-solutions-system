@@ -99,6 +99,7 @@ def list_product_lots():
                    pl.quantity_kg, pl.unit, pl.production_date,
                    pl.farm_id, f.name AS farm_name,
                    batch.business_id AS drying_batch_business_id,
+                   batch.source_type,
                    CASE WHEN {PRODUCT_LOT_RELEASABLE_SQL}
                         THEN 'AVAILABLE' ELSE 'BLOCKED' END AS status,
                    COALESCE((
@@ -106,8 +107,7 @@ def list_product_lots():
                        WHERE ledger.product_lot_id = pl.id
                    ), 0) AS on_hand_kg
             FROM product_lots AS pl
-            JOIN drying_outputs AS output ON output.id = pl.drying_output_id
-            JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+            JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id
             JOIN farms AS f ON f.id = pl.farm_id
             WHERE {' AND '.join([visibility, *filters])}
             ORDER BY pl.production_date DESC, pl.id DESC
@@ -380,8 +380,90 @@ def _release_product_lot(data):
         return _product_lot_detail(cursor, created['id'])
 
 
+_SOURCE_CHAIN_FROM_HARVEST = """
+        SELECT harvest.id AS harvest_id, harvest.harvest_code,
+               harvest.wet_weight, harvest.unit AS harvest_unit,
+               production.id AS production_batch_id,
+               production.business_id AS production_batch_business_id,
+               production.batch_code AS production_batch_code,
+               production_input.quantity_issued AS substrate_issued_quantity,
+               production_input.unit AS substrate_issued_unit,
+               substrate.id AS substrate_batch_id,
+               substrate.business_id AS substrate_batch_business_id,
+               substrate.batch_code AS substrate_batch_code,
+               substrate_input.quantity_used AS waste_input_quantity,
+               substrate_input.unit AS waste_input_unit,
+               waste.id AS waste_lot_id,
+               waste.business_id AS waste_lot_business_id,
+               waste.waste_type, waste.source_name,
+               waste.quantity AS waste_lot_quantity,
+               waste.unit AS waste_lot_unit
+        FROM harvests AS harvest
+        JOIN production_events AS event ON event.id = harvest.production_event_id
+        JOIN production_batches AS production ON production.id = event.production_batch_id
+        LEFT JOIN production_batch_inputs AS production_input
+          ON production_input.production_batch_id = production.id
+        LEFT JOIN substrate_batches AS substrate ON substrate.id = production_input.substrate_batch_id
+        LEFT JOIN substrate_batch_inputs AS substrate_input
+          ON substrate_input.substrate_batch_id = substrate.id
+        LEFT JOIN waste_lots AS waste ON waste.id = substrate_input.waste_lot_id
+        WHERE harvest.id = %s
+        ORDER BY production.id, substrate.id, waste.id
+"""
+
+
+def _frass_product_lot_detail(cursor, lot_id):
+    """A frass fertiliser lot, in the shape the product lot page reads; the
+    frass lot stands where a dried larvae lot shows its drying batch."""
+    cursor.execute(
+        f"""
+        SELECT pl.id, pl.business_id, pl.lot_code, pl.product_type,
+               pl.quantity_kg AS quantity, pl.quantity_kg, pl.unit,
+               pl.production_date, pl.storage_location,
+               UPPER(pl.status) AS stored_status, pl.farm_id,
+               NULL::bigint AS drying_output_id,
+               fl.id AS frass_lot_id, fl.business_id AS drying_batch_business_id,
+               'frass lot' AS drying_batch_code, fl.quantity_kg AS frass_separated_kg,
+               fl.cured_kg, fl.harvest_id, fl.site_id, fl.facility_id,
+               farm.name AS farm_name,
+               fq.check_code, fq.status AS qc_status, fq.decision AS approval_status,
+               fq.approver AS released_by, fq.decided_at AS released_at,
+               CASE WHEN {PRODUCT_LOT_RELEASABLE_SQL} THEN UPPER(pl.status) ELSE 'BLOCKED' END AS status
+        FROM product_lots AS pl
+        JOIN frass_lots AS fl ON fl.id = pl.frass_lot_id
+        JOIN farms AS farm ON farm.id = pl.farm_id
+        JOIN frass_quality_checks AS fq ON fq.id = pl.frass_quality_check_id
+        WHERE pl.id = %s
+        """,
+        (lot_id,),
+    )
+    lot = cursor.fetchone()
+    _assert_production_scope_access(cursor, lot['farm_id'], lot['site_id'], lot['facility_id'])
+    cursor.execute(_SOURCE_CHAIN_FROM_HARVEST, (lot['harvest_id'],))
+    chain = []
+    for row in cursor.fetchall():
+        row = dict(row)
+        row['drying_input_quantity'] = lot['frass_separated_kg']
+        row['drying_input_unit'] = 'kg frass'
+        chain.append(row)
+    result = dict(lot)
+    if hasattr(result.get('production_date'), 'isoformat'):
+        result['production_date'] = result['production_date'].isoformat()
+    result['source_chain'] = chain
+    result['source_frass_lot'] = {'id': lot['frass_lot_id'], 'business_id': lot['drying_batch_business_id']}
+    result['inventory'] = _inventory_summary(cursor, lot['id'])
+    return result
+
+
 def _product_lot_detail(cursor, lot_ref):
     lookup_id = int(lot_ref) if str(lot_ref).isdigit() else -1
+    cursor.execute(
+        "SELECT id FROM product_lots WHERE frass_lot_id IS NOT NULL AND (id = %s OR business_id = %s OR lot_code = %s)",
+        (lookup_id, str(lot_ref), str(lot_ref)),
+    )
+    frass = cursor.fetchone()
+    if frass:
+        return _frass_product_lot_detail(cursor, frass['id'])
     cursor.execute(
         """
         SELECT pl.id, pl.business_id, pl.lot_code, pl.product_type,

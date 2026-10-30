@@ -106,6 +106,17 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/farmer/overview` | signed in |
 | GET | `/farmer` | signed in |
 
+## frass
+
+| Method | Path | Access |
+|---|---|---|
+| GET | `/api/frass/lots` | signed in |
+| POST | `/api/frass/lots/<string:lot_ref>/cured` | production.write |
+| POST | `/api/frass/lots/<string:lot_ref>/curing-checks` | production.write |
+| POST | `/api/frass/lots/<string:lot_ref>/quality-checks` | quality.decide |
+| POST | `/api/frass/lots/<string:lot_ref>/release` | quality.decide |
+| POST | `/api/frass/quality-checks/<int:check_id>/decision` | quality.decide |
+
 ## health
 
 | Method | Path | Access |

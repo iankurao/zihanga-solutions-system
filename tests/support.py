@@ -190,6 +190,10 @@ _FARM_PURGE = [
     "DELETE FROM inventory_movements WHERE farm_id = %(f)s",
     """DELETE FROM product_lots WHERE drying_output_id IN (
         SELECT o.id FROM drying_outputs o JOIN drying_batches b ON b.id = o.drying_batch_id WHERE b.farm_id = %(f)s)""",
+    "DELETE FROM product_lots WHERE frass_lot_id IN (SELECT id FROM frass_lots WHERE farm_id = %(f)s)",
+    "DELETE FROM frass_quality_checks WHERE frass_lot_id IN (SELECT id FROM frass_lots WHERE farm_id = %(f)s)",
+    "DELETE FROM frass_curing_checks WHERE frass_lot_id IN (SELECT id FROM frass_lots WHERE farm_id = %(f)s)",
+    "DELETE FROM frass_lots WHERE farm_id = %(f)s",
     """DELETE FROM quality_approvals WHERE quality_check_id IN (
         SELECT id FROM quality_checks WHERE drying_batch_id IN (SELECT id FROM drying_batches WHERE farm_id = %(f)s))""",
     "DELETE FROM quality_checks WHERE drying_batch_id IN (SELECT id FROM drying_batches WHERE farm_id = %(f)s)",

@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // ---- new order -----------------------------------------------------------
   function addLine() {
     var row = el('div', 'order-line');
-    var product = input('text', { list: 'productTypes', placeholder: 'Product type, e.g. dried_larvae', maxlength: '50', required: '' });
+    var product = input('text', { list: 'productTypes', placeholder: 'Product: dried_larvae or frass_fertilizer', maxlength: '50', required: '' });
     product.className = 'order-line-product';
     var quantity = input('number', { min: '0.001', step: '0.001', placeholder: 'kg', required: '' });
     quantity.className = 'order-line-qty';
@@ -197,10 +197,15 @@ document.addEventListener('DOMContentLoaded', function () {
       var stock = await api('/api/inventory');
       var list = document.getElementById('productTypes');
       list.textContent = '';
-      (stock.totals || []).forEach(function (total) {
+      // The farm's products, with what is free in stock now.
+      var free = {};
+      (stock.totals || []).forEach(function (total) { free[total.product_type] = total.available_kg; });
+      ['dried_larvae', 'frass_fertilizer'].concat(Object.keys(free)).filter(function (type, index, all) {
+        return all.indexOf(type) === index;
+      }).forEach(function (type) {
         var option = el('option');
-        option.value = total.product_type;
-        option.label = kg(total.available_kg) + ' free';
+        option.value = type;
+        option.label = type in free ? kg(free[type]) + ' free' : 'none in stock';
         list.appendChild(option);
       });
     } catch (error) { /* suggestions are optional */ }

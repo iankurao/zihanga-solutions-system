@@ -134,8 +134,7 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
                   "FROM drying_outputs AS o JOIN drying_batches AS db ON db.id = o.drying_batch_id {w}",
          'db', 'o.output_date'),
         ('Released to stock', 'SELECT COALESCE(SUM(pl.quantity_kg), 0) FROM product_lots AS pl '
-                              'JOIN drying_outputs AS o ON o.id = pl.drying_output_id '
-                              'JOIN drying_batches AS batch ON batch.id = o.drying_batch_id {w}',
+                              'JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id {w}',
          'batch', 'pl.production_date'),
         ('Dispatched', "SELECT COALESCE(SUM(im.quantity_kg), 0) FROM inventory_movements AS im "
                        "JOIN inventory_locations AS il ON il.id = im.from_location_id {w} "

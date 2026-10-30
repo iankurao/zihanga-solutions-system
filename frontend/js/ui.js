@@ -39,7 +39,7 @@
   var TONES = {
     success: ['completed', 'harvested', 'approved', 'released', 'passed', 'delivered',
       'fulfilled', 'resolved', 'available', 'sent', 'healthy'],
-    info: ['active', 'monitoring', 'ready_for_harvest', 'drying', 'received', 'dispatched',
+    info: ['active', 'monitoring', 'ready_for_harvest', 'drying', 'curing', 'received', 'dispatched',
       'submitted', 'acknowledged', 'info', 'posted', 'low'],
     warning: ['planned', 'paused', 'pending', 'qc_pending', 'draft', 'open', 'snoozed',
       'conditional', 'awaiting decision', 'warning', 'maintenance', 'follow_up', 'medium'],

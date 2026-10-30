@@ -78,8 +78,7 @@ LABEL_TYPES = {
                    pl.quantity_kg || ' kg · produced ' || to_char(pl.production_date, 'DD Mon YYYY') AS line2,
                    f.name AS farm, pl.production_date AS sort_date
             FROM product_lots AS pl
-            JOIN drying_outputs AS output ON output.id = pl.drying_output_id
-            JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+            JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id
             LEFT JOIN farms AS f ON f.id = pl.farm_id
         """,
     },
