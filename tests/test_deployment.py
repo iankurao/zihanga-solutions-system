@@ -351,15 +351,19 @@ class DeploymentFilesTest(unittest.TestCase):
     def test_jobs_can_run_inside_the_web_process(self):
         from backend import jobs
 
+        import threading
+
         runs, naps = [], []
+        third_nap, never = threading.Event(), threading.Event()
 
         def nap(seconds):
             naps.append(seconds)
             if len(naps) > 2:
-                raise SystemExit  # ends the daemon thread
+                third_nap.set()
+                never.wait()  # park the daemon thread for the rest of the run
         with mock.patch.object(jobs, "run_once", side_effect=lambda: runs.append(1)):
             thread = jobs.start_in_web(10, sleep=nap)
-            thread.join(timeout=5)
+            self.assertTrue(third_nap.wait(timeout=5))
         self.assertEqual(naps[0], 60)  # never more often than once a minute
         self.assertEqual(len(runs), 2)
         self.assertTrue(thread.daemon)

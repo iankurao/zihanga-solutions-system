@@ -514,9 +514,17 @@
   color: var(--erp-ink);
 }
 
-.erp-tab[aria-selected="true"] {
+.erp-tab[aria-selected="true"],
+.erp-tab[aria-current="page"] {
   color: var(--erp-accent);
   border-bottom-color: var(--erp-accent);
+}
+
+/* Tabs that are links to other pages */
+a.erp-tab {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 .erp-tabpanel {

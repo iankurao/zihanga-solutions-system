@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waste Collection | Zehunger BSF Farm</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/erp.css">
+  <link rel="stylesheet" href="/css/waste_collection.css">
+</head>
+<body class="erp-page">
+  <header data-erp-nav></header>
+
+  <main class="erp-main">
+    <header class="erp-pagehead">
+      <div>
+        <p class="erp-eyebrow">Data entry · Waste</p>
+        <h1>Record a waste collection</h1>
+        <p class="erp-subtitle">Each collection becomes a waste lot that substrate can be prepared from.</p>
+      </div>
+    </header>
+
+    <!-- Where the work happens: chosen once, remembered on this device. -->
+    <section class="wc-context" aria-label="Working at">
+      <span class="wc-context-label">Working at</span>
+      <span class="wc-place" id="wcFarm">…</span><span class="wc-sep" aria-hidden="true">›</span>
+      <span class="wc-place" id="wcSite">…</span><span class="wc-sep" aria-hidden="true">›</span>
+      <span class="wc-place" id="wcFacility">…</span>
+      <button type="button" class="erp-link-button" id="wcChange" aria-expanded="false" aria-controls="wcPicker">Change</button>
+      <div class="wc-picker" id="wcPicker" hidden>
+        <label for="wcFacilitySelect">Collections go to</label>
+        <select id="wcFacilitySelect"></select>
+      </div>
+    </section>
+
+    <nav class="erp-tabs" aria-label="Waste area">
+      <a class="erp-tab" aria-current="page" href="/waste-collection">Waste collection</a>
+      <a class="erp-tab" href="/dashboard#waste">Storage</a>
+      <a class="erp-tab" href="/dashboard#waste">Processing</a>
+      <a class="erp-tab" href="/dashboard#waste">Monitoring</a>
+    </nav>
+
+    <div id="wcNoAccess" hidden></div>
+
+    <div class="wc-layout" id="wcLayout">
+      <section class="erp-card wc-form-card" aria-labelledby="wcFormTitle">
+        <h2 id="wcFormTitle" class="wc-sr">Collection details</h2>
+        <form id="wcForm" novalidate>
+          <div id="wcBanner" aria-live="polite"></div>
+
+          <fieldset>
+            <legend>Source</legend>
+            <div class="wc-field">
+              <span class="erp-label" id="wcSourceTypeLabel">Source type <span class="wc-req" aria-hidden="true">*</span></span>
+              <div class="wc-choices" role="radiogroup" aria-labelledby="wcSourceTypeLabel">
+                <label class="wc-choice"><input type="radio" name="source_type" value="market" id="wcStMarket" checked><span>Market</span></label>
+                <label class="wc-choice"><input type="radio" name="source_type" value="restaurant" id="wcStRestaurant"><span>Restaurant / hotel</span></label>
+                <label class="wc-choice"><input type="radio" name="source_type" value="brewery" id="wcStBrewery"><span>Brewery</span></label>
+                <label class="wc-choice"><input type="radio" name="source_type" value="food_industry" id="wcStFood"><span>Food factory</span></label>
+                <label class="wc-choice"><input type="radio" name="source_type" value="household" id="wcStHousehold"><span>Households</span></label>
+              </div>
+            </div>
+            <div class="wc-field" id="wcSourceField">
+              <label class="erp-label" for="wcSource">Supplier <span class="wc-req" aria-hidden="true">*</span></label>
+              <input type="text" id="wcSource" list="wcSuppliers" autocomplete="off" maxlength="200" required
+                     placeholder="e.g. Kericho Municipal Market" aria-describedby="wcSourceHint wcSourceError">
+              <datalist id="wcSuppliers"></datalist>
+              <span class="erp-hint" id="wcSourceHint">Start typing to pick a supplier you have used before, or enter a new one.</span>
+              <span class="erp-field-error" id="wcSourceError" hidden></span>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>What was collected</legend>
+            <div class="wc-field">
+              <span class="erp-label" id="wcWasteTypeLabel">Waste type <span class="wc-req" aria-hidden="true">*</span></span>
+              <div class="wc-choices" role="radiogroup" aria-labelledby="wcWasteTypeLabel">
+                <label class="wc-choice"><input type="radio" name="waste_type" value="vegetable" id="wcWtVeg" checked><span>Vegetable scraps</span></label>
+                <label class="wc-choice"><input type="radio" name="waste_type" value="fruit" id="wcWtFruit"><span>Fruit waste</span></label>
+                <label class="wc-choice"><input type="radio" name="waste_type" value="brewers_grain" id="wcWtGrain"><span>Brewer's grain</span></label>
+                <label class="wc-choice"><input type="radio" name="waste_type" value="potato" id="wcWtPotato"><span>Potato waste</span></label>
+                <label class="wc-choice"><input type="radio" name="waste_type" value="food_leftovers" id="wcWtFood"><span>Food leftovers</span></label>
+              </div>
+            </div>
+            <div class="wc-row">
+              <div class="wc-field" id="wcWeightField">
+                <label class="erp-label" for="wcWeight">Weight <span class="wc-req" aria-hidden="true">*</span></label>
+                <div class="wc-unit">
+                  <input type="number" id="wcWeight" inputmode="decimal" min="0.1" step="0.1" required
+                         aria-describedby="wcWeightHint wcWeightMsg">
+                  <span aria-hidden="true">kg</span>
+                </div>
+                <span class="erp-hint" id="wcWeightHint">Read from the farm scale, without the crates.</span>
+                <span class="wc-msg" id="wcWeightMsg" hidden></span>
+              </div>
+              <div class="wc-field">
+                <label class="erp-label" for="wcCrates">Crates (optional)</label>
+                <input type="number" id="wcCrates" inputmode="numeric" min="0" step="1" aria-describedby="wcPerCrate">
+                <span class="erp-hint" id="wcPerCrate">Number of crates, if counted.</span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Quality on arrival</legend>
+            <div class="wc-field">
+              <span class="erp-label" id="wcSegLabel">Segregation <span class="wc-req" aria-hidden="true">*</span></span>
+              <div class="wc-choices" role="radiogroup" aria-labelledby="wcSegLabel">
+                <label class="wc-choice"><input type="radio" name="segregation_status" value="organic" id="wcSegOrganic" checked><span>Organic only</span></label>
+                <label class="wc-choice is-bad"><input type="radio" name="segregation_status" value="mixed" id="wcSegMixed"><span>Mixed</span></label>
+                <label class="wc-choice is-bad"><input type="radio" name="segregation_status" value="inorganic" id="wcSegInorganic"><span>Inorganic</span></label>
+              </div>
+            </div>
+            <div class="wc-field">
+              <span class="erp-label" id="wcConLabel">Contaminants found</span>
+              <div class="wc-choices" role="group" aria-labelledby="wcConLabel">
+                <label class="wc-choice is-bad"><input type="checkbox" name="contaminants" value="plastic" id="wcConPlastic"><span>Plastic</span></label>
+                <label class="wc-choice is-bad"><input type="checkbox" name="contaminants" value="metal" id="wcConMetal"><span>Metal</span></label>
+                <label class="wc-choice is-bad"><input type="checkbox" name="contaminants" value="glass" id="wcConGlass"><span>Glass</span></label>
+                <label class="wc-choice is-bad"><input type="checkbox" name="contaminants" value="sand" id="wcConSand"><span>Sand</span></label>
+                <label class="wc-choice is-bad"><input type="checkbox" name="contaminants" value="mites" id="wcConMites"><span>White mites</span></label>
+                <label class="wc-choice is-bad"><input type="checkbox" name="contaminants" value="other" id="wcConOther"><span>Other</span></label>
+              </div>
+              <span class="erp-hint">Leave all unticked when the load is clean.</span>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>When and who</legend>
+            <div class="wc-row">
+              <div class="wc-field" id="wcDateField">
+                <label class="erp-label" for="wcDate">Collection date <span class="wc-req" aria-hidden="true">*</span></label>
+                <input type="date" id="wcDate" required aria-describedby="wcDateNote wcDateError">
+                <span class="wc-default" id="wcDateNote">Today</span>
+                <span class="erp-field-error" id="wcDateError" hidden></span>
+              </div>
+              <div class="wc-field" id="wcTimeField">
+                <label class="erp-label" for="wcTime">Time <span class="wc-req" aria-hidden="true">*</span></label>
+                <input type="time" id="wcTime" required aria-describedby="wcTimeError">
+                <span class="erp-field-error" id="wcTimeError" hidden></span>
+              </div>
+            </div>
+            <div class="wc-field" id="wcCollectorField">
+              <label class="erp-label" for="wcCollector">Collected by <span class="wc-req" aria-hidden="true">*</span></label>
+              <input type="text" id="wcCollector" maxlength="100" required aria-describedby="wcCollectorHint wcCollectorError">
+              <span class="erp-hint" id="wcCollectorHint">Filled in with your name; change it if someone else collected the load.</span>
+              <span class="erp-field-error" id="wcCollectorError" hidden></span>
+            </div>
+            <div class="wc-field">
+              <label class="erp-label" for="wcNotes">Notes</label>
+              <textarea id="wcNotes" rows="2" maxlength="1000" placeholder="e.g. sorted on site, mostly cabbage leaves"></textarea>
+            </div>
+          </fieldset>
+
+          <div class="wc-actions">
+            <button type="submit" class="erp-btn" id="wcSave"><i class="fas fa-save" aria-hidden="true"></i> Save waste lot</button>
+            <button type="button" class="erp-btn erp-btn--secondary" id="wcSaveAnother">Save and add another</button>
+            <span class="wc-draft" id="wcDraft" aria-live="polite"></span>
+          </div>
+        </form>
+      </section>
+
+      <aside class="wc-side" aria-label="Summary">
+        <section class="erp-card wc-summary">
+          <h2>Will create</h2>
+          <p class="wc-ref">New waste lot <small>number given when saved</small></p>
+          <dl>
+            <dt>Weight</dt><dd id="wcSumKg">—</dd>
+            <dt>Waste</dt><dd id="wcSumType">—</dd>
+            <dt>From</dt><dd id="wcSumSource">—</dd>
+            <dt>Into</dt><dd id="wcSumPlace">—</dd>
+            <dt>Status</dt><dd><span class="erp-badge" id="wcSumStatus">—</span></dd>
+          </dl>
+          <p class="wc-why" id="wcSumWhy"></p>
+        </section>
+        <section class="erp-card wc-recent-card">
+          <h2 id="wcRecentTitle">Today</h2>
+          <ul class="wc-recent" id="wcRecent" aria-live="polite"></ul>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="/js/permissions.js"></script>
+  <script src="/js/appNav.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/wasteCollection.js"></script>
+  <script src="/js/notificationCenter.js" defer></script>
+</body>
+</html>
