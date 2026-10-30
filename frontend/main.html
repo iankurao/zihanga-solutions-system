@@ -195,6 +195,60 @@
     .btn-admin  { background: var(--erp-accent); color: #fff; }
     .btn-farmer { background: var(--erp-page); color: var(--erp-ink); border: 1px solid var(--erp-control); }
     .btn-farmer:hover { background: var(--erp-line); opacity: 1; }
+
+    /* ── Presentation guide ── */
+    .guide-section {
+      display: flex;
+      justify-content: center;
+      padding: 0 1.5rem 4rem;
+    }
+
+    .guide-card {
+      width: 100%;
+      max-width: 864px;
+      background: var(--erp-brand);
+      color: #fff;
+      border-radius: 16px;
+      padding: 2rem;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1.25rem 1.5rem;
+      align-items: start;
+    }
+
+    .guide-card .card-icon { background: rgba(255,255,255,0.12); color: #fff; }
+    .guide-card h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .guide-card p { font-size: 0.9rem; line-height: 1.55; color: var(--erp-on-brand-muted); }
+
+    .guide-downloads {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .guide-download {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      background: #fff;
+      color: var(--erp-ink);
+      text-decoration: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .guide-download:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.18); }
+    .guide-download:focus-visible { outline: 3px solid var(--erp-on-brand-muted); outline-offset: 2px; }
+    .guide-download i { font-size: 1.5rem; color: var(--erp-accent); width: 1.6rem; text-align: center; }
+    .guide-download strong { display: block; font-size: 0.925rem; }
+    .guide-download small { display: block; font-size: 0.78rem; color: var(--erp-muted); }
+
+    @media (max-width: 640px) {
+      .guide-card { grid-template-columns: 1fr; padding: 1.5rem; }
+      .guide-downloads { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -262,6 +316,33 @@
     </div>
 
   </div>
+
+  <!-- Presentation guide -->
+  <section class="guide-section" aria-labelledby="guide-title">
+    <div class="guide-card">
+      <div class="card-icon">
+        <i class="fas fa-book-open"></i>
+      </div>
+      <div>
+        <h3 id="guide-title">Phase One walkthrough guide</h3>
+        <p>Follow one batch from market waste to a delivered, fully traced sale: farm set-up, waste, substrate, rearing, harvest and frass, drying, quality control, sales, and the owner's dashboard and reports. Use it to present the system or to train staff.</p>
+      </div>
+      <div class="guide-downloads">
+        <a class="guide-download" href="/guides/zehunger-walkthrough-guide.pdf" download="Zehunger_Walkthrough_Guide.pdf">
+          <i class="fas fa-file-pdf"></i>
+          <span><strong>PDF guide</strong><small>22 pages, with screenshots</small></span>
+        </a>
+        <a class="guide-download" href="/guides/zehunger-walkthrough-guide.pptx" download="Zehunger_Walkthrough_Guide.pptx">
+          <i class="fas fa-file-powerpoint"></i>
+          <span><strong>PowerPoint</strong><small>19 slides, speaker notes</small></span>
+        </a>
+        <a class="guide-download" href="/guides/zehunger-walkthrough-guide.md" download="Zehunger_Walkthrough_Guide.md">
+          <i class="fab fa-markdown"></i>
+          <span><strong>Markdown</strong><small>Editable text version</small></span>
+        </a>
+      </div>
+    </div>
+  </section>
 
 </body>
 </html>
