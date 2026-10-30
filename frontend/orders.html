@@ -50,7 +50,12 @@
         <h3 class="erp-card-title"><span class="erp-chip"><i class="fas fa-file-invoice" aria-hidden="true"></i></span> New customer order</h3>
         <div class="erp-form">
           <div class="erp-field">
-            <label for="orderCustomer">Customer</label>
+            <div class="order-label-row">
+              <label for="orderCustomer" class="erp-label">Customer</label>
+              <button type="button" id="newCustomerButton" class="order-link-button">
+                <i class="fas fa-user-plus" aria-hidden="true"></i> New customer
+              </button>
+            </div>
             <select id="orderCustomer" required></select>
           </div>
           <div class="erp-field">
@@ -66,6 +71,31 @@
             <input id="orderReference" type="text" maxlength="60" placeholder="PO number (optional)">
           </div>
         </div>
+        <fieldset id="newCustomerPanel" class="order-customer-panel" hidden>
+          <legend>New customer</legend>
+          <div class="erp-form">
+            <div class="erp-field">
+              <label for="customerName">Name</label>
+              <input id="customerName" type="text" maxlength="100" placeholder="Business or person">
+            </div>
+            <div class="erp-field">
+              <label for="customerContact">Phone</label>
+              <input id="customerContact" type="tel" maxlength="50" placeholder="Optional">
+            </div>
+            <div class="erp-field">
+              <label for="customerEmail">Email</label>
+              <input id="customerEmail" type="email" maxlength="100" placeholder="Optional">
+            </div>
+            <div class="erp-field">
+              <label for="customerAddress">Delivery address</label>
+              <input id="customerAddress" type="text" maxlength="2000" placeholder="Optional">
+            </div>
+          </div>
+          <div class="erp-actions">
+            <button type="button" id="saveCustomer" class="erp-btn"><i class="fas fa-check" aria-hidden="true"></i> Save customer</button>
+            <button type="button" id="cancelCustomer" class="erp-btn erp-btn--secondary">Cancel</button>
+          </div>
+        </fieldset>
         <p class="erp-subhead">Order lines</p>
         <div id="orderLines" class="order-lines"></div>
         <datalist id="productTypes"></datalist>

@@ -169,17 +169,65 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('orderLines').appendChild(row);
   }
 
-  async function loadFormOptions() {
+  async function loadCustomers(selectId) {
     var customer = document.getElementById('orderCustomer');
-    var farm = document.getElementById('orderFarm');
     try {
       var customers = await api('/api/customers');
-      var rows = Array.isArray(customers) ? customers : customers.data || [];
-      customer.replaceChildren(new Option(rows.length ? 'Select customer' : 'No customers — add one under Sales', ''));
+      var rows = (Array.isArray(customers) ? customers : customers.data || []).slice()
+        .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+      customer.replaceChildren(new Option(rows.length ? 'Select customer' : 'No customers yet — add one with New customer', ''));
       rows.forEach(function (c) { customer.add(new Option(c.name, c.id)); });
+      if (selectId != null) customer.value = String(selectId);
     } catch (error) {
       customer.replaceChildren(new Option('Customers could not be loaded', ''));
     }
+  }
+
+  // ---- new customer (a small panel inside the order form) -------------------
+  var customerPanel = document.getElementById('newCustomerPanel');
+  var customerFields = ['customerName', 'customerContact', 'customerEmail', 'customerAddress']
+    .map(function (id) { return document.getElementById(id); });
+
+  function closeCustomerPanel() {
+    customerPanel.hidden = true;
+    customerFields.forEach(function (field) { field.value = ''; });
+  }
+
+  document.getElementById('newCustomerButton').addEventListener('click', function () {
+    customerPanel.hidden = false;
+    customerFields[0].focus();
+  });
+  document.getElementById('cancelCustomer').addEventListener('click', closeCustomerPanel);
+  document.getElementById('saveCustomer').addEventListener('click', async function () {
+    var name = customerFields[0].value.trim();
+    if (!name) {
+      showMessage('Give the customer a name.', true);
+      customerFields[0].focus();
+      return;
+    }
+    if (customerFields[2].value && !customerFields[2].checkValidity()) {
+      showMessage('The email address is not valid.', true);
+      customerFields[2].focus();
+      return;
+    }
+    try {
+      var created = await ErpUI.busy(this, post('/api/customers', {
+        name: name,
+        contact: customerFields[1].value.trim(),
+        email: customerFields[2].value.trim(),
+        address: customerFields[3].value.trim()
+      }));
+      await loadCustomers(created.id);
+      closeCustomerPanel();
+      showMessage(name + ' added and picked for this order.', false);
+    } catch (error) {
+      showMessage(error.message, true);
+    }
+  });
+
+  async function loadFormOptions() {
+    var farm = document.getElementById('orderFarm');
+    await loadCustomers();
     try {
       var hierarchy = await api('/api/locations/hierarchy');
       var seen = {};
@@ -219,6 +267,8 @@ document.addEventListener('DOMContentLoaded', function () {
     showMessage('');
     if (!document.querySelector('.order-line')) addLine();
     loadFormOptions();
+    // On narrow screens the form sits below the order list.
+    newForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   document.getElementById('addOrderLine').addEventListener('click', addLine);
 
@@ -486,12 +536,15 @@ document.addEventListener('DOMContentLoaded', function () {
         picker.appendChild(empty('No free, QC-released ' + line.product_type + ' stock on this farm.'));
         return;
       }
+      // Suggest amounts oldest lot first, only until the line is covered.
       var remaining = Number(line.remaining_to_allocate_kg);
       picker.appendChild(table(['Product lot', 'Produced', 'Location', 'On hand', 'Reserved', 'Free', 'Allocate (kg)', ''],
         payload.data.map(function (row) {
+          var suggested = Math.max(0, Math.min(remaining, Number(row.free_kg)));
+          remaining -= suggested;
           var qty = input('number', {
             min: '0.001', step: '0.001',
-            value: Math.min(remaining, Number(row.free_kg)).toFixed(3)
+            value: suggested > 0 ? suggested.toFixed(3) : ''
           });
           qty.className = 'qty-input';
           qty.setAttribute('aria-label', 'Quantity to allocate from ' + row.product_lot_business_id);

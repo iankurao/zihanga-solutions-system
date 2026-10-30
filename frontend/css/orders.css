@@ -166,3 +166,41 @@
     grid-column: 1 / -1;
   }
 }
+
+/* "New customer" sits beside the Customer label and opens a small panel in the order form. */
+.order-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.order-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--erp-accent);
+  font: inherit;
+  font-size: var(--erp-text-sm, 0.875rem);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.order-link-button:hover {
+  color: var(--erp-accent-hover);
+  text-decoration: underline;
+}
+
+.order-customer-panel {
+  margin: 1rem 0 0;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--erp-line);
+  border-radius: 10px;
+  background: var(--erp-accent-soft);
+}
+
+.order-customer-panel legend {
+  padding: 0 0.4rem;
+  font-weight: 700;
+  color: var(--erp-ink);
+}
