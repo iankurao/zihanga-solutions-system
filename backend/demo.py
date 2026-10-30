@@ -337,7 +337,7 @@ class DemoBuilder:
         if qc == 'failed':
             self.qc.post(f'/api/drying/batches/{dref}/quality-approvals', {
                 'quality_check_id': check['id'], 'decision': 'rejected', 'approver': self.qc.username,
-                'reason': 'Moisture too high for storage'})
+                'rationale': 'Moisture too high for storage'})
             return batch
         if qc == 'pending':
             return batch

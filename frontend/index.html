@@ -545,8 +545,8 @@
                 <div class="invalid-feedback">Please enter tray/facility ID</div>
               </div>
               <div class="form-group">
-                <label for="temperature" class="required">Temperature (°C)</label>
-                <input type="number" id="temperature" name="temperature" class="form-control" step="0.01" min="-50" max="100" required>
+                <label for="environmentalMonitoringForm-temperature" class="required">Temperature (°C)</label>
+                <input type="number" id="environmentalMonitoringForm-temperature" name="temperature" class="form-control" step="0.01" min="-50" max="100" required>
                 <div class="invalid-feedback">Please enter valid temperature (-50 to 100°C)</div>
               </div>
             </div>
@@ -657,8 +657,8 @@
             </div>
             
             <div class="form-group">
-              <label for="notes">Notes</label>
-              <textarea id="notes" name="notes" class="form-control" rows="3"></textarea>
+              <label for="substratePreparationForm-notes">Notes</label>
+              <textarea id="substratePreparationForm-notes" name="notes" class="form-control" rows="3"></textarea>
             </div>
             
             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Substrate Preparation</button>
@@ -795,8 +795,8 @@
               <small class="form-text text-muted">The frass sieved off at harvest becomes a frass lot to cure and sell as fertiliser. Leave empty if none was kept.</small>
             </div>
             <div class="form-group">
-              <label for="notes">Notes</label>
-              <textarea id="notes" name="notes" class="form-control" rows="3"></textarea>
+              <label for="harvestYieldForm-notes">Notes</label>
+              <textarea id="harvestYieldForm-notes" name="notes" class="form-control" rows="3"></textarea>
             </div>
             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Record Batch Harvest</button>
           </form>
@@ -1026,8 +1026,8 @@
 
         <div class="subsection">
           <h2><i class="fas fa-forward"></i> Move a Drying Batch to its Next Stage</h2>
-          <p class="help-text">Draft, then Received, Drying, Waiting for QC and Completed. A batch can only
-            complete after its output passes QC and is approved.</p>
+          <p class="help-text">Draft, then Received, Drying, Waiting for QC and Completed. A batch completes
+            by itself once every output is approved or rejected in QC, with at least one approved.</p>
           <form id="dryingStatusForm">
             <div class="form-row">
               <div class="form-group">
@@ -1103,8 +1103,8 @@
                 </select>
               </div>
               <div class="form-group">
-                <label for="contaminantsFound">Contaminants Found</label>
-                <select id="contaminantsFound" name="contaminantsFound" class="form-control" multiple>
+                <label for="qualityControlForm-contaminantsFound">Contaminants Found</label>
+                <select id="qualityControlForm-contaminantsFound" name="contaminantsFound" class="form-control" multiple>
                   <option value="none">None</option>
                   <option value="sand">Sand</option>
                   <option value="stones">Stones</option>
@@ -1185,7 +1185,7 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="approvalComments">Comments</label>
+              <label for="approvalComments">Comments <span class="help-text">(required when rejecting)</span></label>
               <textarea id="approvalComments" name="comments" class="form-control" rows="3"></textarea>
             </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Decision</button>
@@ -1196,7 +1196,8 @@
           <h2><i class="fas fa-box-open"></i> Release Product Lot</h2>
           <p class="help-text">
             Product Lot quantity and production date come from the Drying Output.
-            Release requires an output-specific passed QC check and an approved review.
+            Release requires an output-specific passed QC check and an approved review, and opens once
+            QC is settled on every output of the batch.
           </p>
           <form id="productLotReleaseForm">
             <div class="form-row">
@@ -1206,7 +1207,9 @@
               </div>
               <div class="form-group">
                 <label for="productLotType" class="required">Product Type</label>
-                <input type="text" id="productLotType" name="productType" class="form-control" maxlength="50" placeholder="e.g. dried larvae" required>
+                <select id="productLotType" name="productType" class="form-control" required>
+                  <option value="dried_larvae" selected>Dried larvae (dried_larvae)</option>
+                </select>
               </div>
               <div class="form-group">
                 <label for="productLotNumber">Lot Number</label>
@@ -1508,8 +1511,8 @@
                 <div class="invalid-feedback">Please select date</div>
               </div>
               <div class="form-group">
-                <label for="collectionTime" class="required">Time</label>
-                <select id="collectionTime" name="time" class="form-control" required>
+                <label for="eggCollectionForm-collectionTime" class="required">Time</label>
+                <select id="eggCollectionForm-collectionTime" name="time" class="form-control" required>
                   <option value="">Select time</option>
                   <option value="early_morning">Early Morning (5-7AM)</option>
                   <option value="late_evening">Late Evening (5-7PM)</option>
@@ -1617,8 +1620,8 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="monitoringDate" class="required">Date</label>
-                <input type="date" id="monitoringDate" name="date" class="form-control" required>
+                <label for="cageMonitoringForm-monitoringDate" class="required">Date</label>
+                <input type="date" id="cageMonitoringForm-monitoringDate" name="date" class="form-control" required>
                 <div class="invalid-feedback">Please select monitoring date</div>
               </div>
               <div class="form-group">
@@ -2128,8 +2131,8 @@
                 <input type="text" id="feedType" name="feedType" class="form-control" required>
               </div>
               <div class="form-group">
-                <label for="feed_quantity_kg" class="required">Feed Quantity (kg)</label>
-                <input type="number" id="feed_quantity_kg" name="feed_quantity_kg" class="form-control" step="0.1" required>
+                <label for="feedingRecordsForm-feed_quantity_kg" class="required">Feed Quantity (kg)</label>
+                <input type="number" id="feedingRecordsForm-feed_quantity_kg" name="feed_quantity_kg" class="form-control" step="0.1" required>
               </div>
               <div class="form-group">
                 <label for="distributionMethod" class="required">Distribution Method</label>
@@ -2170,21 +2173,21 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="monitoringDate" class="required">Date</label>
-                <input type="date" id="monitoringDate" name="monitoring_date" class="form-control" required>
+                <label for="hatcheryEnvironmentalMonitoringForm-monitoringDate" class="required">Date</label>
+                <input type="date" id="hatcheryEnvironmentalMonitoringForm-monitoringDate" name="monitoring_date" class="form-control" required>
                 <div class="invalid-feedback">Please select a date</div>
               </div>
               <div class="form-group">
-                <label for="temperature" class="required">Temperature (°C)</label>
-                <input type="number" id="temperature" name="temperature_c" class="form-control" step="0.1" required>
+                <label for="hatcheryEnvironmentalMonitoringForm-temperature" class="required">Temperature (°C)</label>
+                <input type="number" id="hatcheryEnvironmentalMonitoringForm-temperature" name="temperature_c" class="form-control" step="0.1" required>
                 <div class="invalid-feedback">Please enter temperature</div>
               </div>
             </div>
             
             <div class="form-row">
               <div class="form-group">
-                <label for="humidity" class="required">Humidity (%)</label>
-                <input type="number" id="humidity" name="humidity_percent" class="form-control" step="0.1" required>
+                <label for="hatcheryEnvironmentalMonitoringForm-humidity" class="required">Humidity (%)</label>
+                <input type="number" id="hatcheryEnvironmentalMonitoringForm-humidity" name="humidity_percent" class="form-control" step="0.1" required>
                 <div class="invalid-feedback">Please enter humidity</div>
               </div>
             </div>

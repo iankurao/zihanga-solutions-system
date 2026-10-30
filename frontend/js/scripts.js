@@ -324,6 +324,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return field.type === 'date' ? `${label} cannot be in the future` : `${label} must be at most ${field.max}`;
         }
         if (v.typeMismatch || v.patternMismatch) return `${label} is not valid`;
+        // A list with a "None" choice cannot have None and something else.
+        if (field.multiple && field.selectedOptions.length > 1 &&
+            Array.from(field.selectedOptions).some(o => o.value === 'none')) {
+            return `${label}: choose None or what was found, not both`;
+        }
         return '';
     }
 
@@ -1358,6 +1363,7 @@ document.addEventListener('DOMContentLoaded', function() {
     items.forEach(function(item) {
       var option = new Option(item.label, item.value);
       if (item.batch) option.dataset.batch = item.batch;
+      if (item.farm != null) option.dataset.farm = item.farm;
       select.add(option);
     });
     if (items.some(function(item) { return String(item.value) === previous; })) select.value = previous;
@@ -1399,14 +1405,17 @@ document.addEventListener('DOMContentLoaded', function() {
         var label = b.business_id + ' · output ' + o.line_no + ' · ' + kgText(o.quantity);
         var latest = o.checks[o.checks.length - 1];
         var approved = latest && latest.status === 'passed' && latest.decision === 'approved';
-        if (!o.product_lot && approved) toRelease.push({ value: o.id, label: label });
-        // The server takes quality checks only once a batch waits for QC.
-        if (!o.product_lot && !approved && b.status === 'QC_PENDING') {
-          toCheck.push({ value: o.id, label: label, batch: b.business_id });
+        // Release opens once QC is settled on every output and the batch completes.
+        if (!o.product_lot && approved && b.status === 'COMPLETED') {
+          toRelease.push({ value: o.id, label: label, farm: b.farm_id });
         }
-        o.checks.forEach(function(c) {
-          if (!c.decision) undecided.push({ value: c.id, label: c.check_code + ' · ' + label + ' · ' + c.status });
-        });
+        // The server takes quality checks and decisions only while a batch waits
+        // for QC, and a decision only on the latest check of an output.
+        if (b.status !== 'QC_PENDING') return;
+        if (!o.product_lot && !approved) toCheck.push({ value: o.id, label: label, batch: b.business_id });
+        if (latest && !latest.decision) {
+          undecided.push({ value: latest.id, label: latest.check_code + ' · ' + label + ' · ' + latest.status });
+        }
       });
     });
     document.querySelectorAll('select.drying-output').forEach(function(select) {
@@ -1417,6 +1426,8 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('select.drying-check').forEach(function(select) {
       fillDryingSelect(select, undecided, 'Select quality check', 'No quality check waiting for a decision');
     });
+
+    updateReleaseStores();
 
     var stageButton = document.getElementById('dryingStatusButton');
     var stageBatch = findDryingBatch((document.getElementById('dryingStatusBatch') || {}).value);
@@ -1444,6 +1455,15 @@ document.addEventListener('DOMContentLoaded', function() {
     var select = document.getElementById(id);
     if (select) select.addEventListener('change', renderDryingSelects);
   });
+
+  // The release store list follows the farm of the chosen output.
+  function updateReleaseStores() {
+    var output = document.getElementById('productLotOutputId');
+    var option = output && output.selectedOptions[0];
+    limitStoresToFarm(document.getElementById('productLotInventoryLocation'), option && option.dataset.farm);
+  }
+  var releaseOutputSelect = document.getElementById('productLotOutputId');
+  if (releaseOutputSelect) releaseOutputSelect.addEventListener('change', updateReleaseStores);
   // The farm list arrives later and may pick the only farm by itself.
   document.addEventListener('locations-loaded', renderDryingSelects);
   window.refreshDryingData = loadDryingData;
@@ -1510,11 +1530,14 @@ document.addEventListener('DOMContentLoaded', function() {
           rows.length ? 'Select inventory location' : 'No inventory locations — ask an administrator', ''
         ));
         rows.forEach(function(row) {
-          releaseLocationSelect.add(new Option(
+          var option = new Option(
             row.farm_name + ' / ' + row.facility_name + ' — ' + row.name + ' (' + row.location_code + ')',
             row.id
-          ));
+          );
+          option.dataset.farm = row.farm_id;
+          releaseLocationSelect.add(option);
         });
+        updateReleaseStores();
       })
       .catch(function(error) {
         console.error(error);
@@ -1670,6 +1693,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     prevBtn.addEventListener('click', function() { goTo(currentIndex - 1); });
     nextBtn.addEventListener('click', function() { goTo(currentIndex + 1); });
+    // The track moves by transform only. When a field on another slide takes focus
+    // (Tab, or an error focusing a field), the browser scrolls the hidden slider
+    // sideways and shows the wrong form; undo that and switch to the focused slide.
+    slider.addEventListener('scroll', function() { slider.scrollLeft = 0; });
+    track.addEventListener('focusin', function(e) {
+      var index = subsections.findIndex(function(sub) { return sub.contains(e.target); });
+      if (index >= 0 && index !== currentIndex) goTo(index);
+    });
     goTo(0);
     carousels[sectionId] = { goTo: goTo, getIndex: function() { return currentIndex; } };
   }
@@ -1923,6 +1954,23 @@ document.addEventListener('DOMContentLoaded', function() {
 /* ── end Cage Range Picker ──────────────────────────────────────────── */
 
 // ---- Frass & Fertiliser -----------------------------------------------------------
+// A store list shows only the stores on the farm of the record being released
+// (options carry data-farm); when one store is left it is picked.
+function limitStoresToFarm(select, farmId) {
+  if (!select) return;
+  var shown = [];
+  Array.prototype.forEach.call(select.options, function(option) {
+    if (!option.value) return;
+    var match = !farmId || option.dataset.farm === String(farmId);
+    option.hidden = !match;
+    option.disabled = !match;
+    if (match) shown.push(option);
+  });
+  var picked = select.selectedOptions[0];
+  if (picked && picked.disabled) select.value = '';
+  if (farmId && shown.length === 1) select.value = shown[0].value;
+}
+
 // Frass lots come from harvests; this section records curing checks, the cured
 // weight, the quality check and decision, and the release to a store.
 (function() {
@@ -1938,14 +1986,24 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!select) return;
     var keep = select.value;
     select.replaceChildren(new Option(items.length ? placeholder : empty, ''));
-    items.forEach(function(item) { select.add(new Option(item.label, item.value)); });
+    items.forEach(function(item) {
+      var option = new Option(item.label, item.value);
+      if (item.farm != null) option.dataset.farm = item.farm;
+      select.add(option);
+    });
     if (keep && items.some(function(item) { return String(item.value) === keep; })) select.value = keep;
     else if (items.length === 1) select.value = items[0].value;
   }
 
   function lotItem(lot, extra) {
-    return { value: lot.business_id, label: lot.business_id + ' · ' + lot.production_batch + ' · ' +
+    return { value: lot.business_id, farm: lot.farm_id, label: lot.business_id + ' · ' + lot.production_batch + ' · ' +
              kg(lot.cured_kg || lot.quantity_kg) + (extra ? ' · ' + extra : '') };
+  }
+
+  function updateReleaseStores() {
+    var lot = byId('frassReleaseLot');
+    var option = lot && lot.selectedOptions[0];
+    limitStoresToFarm(byId('frassReleaseLocation'), option && option.dataset.farm);
   }
 
   function renderTable() {
@@ -2011,6 +2069,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }), 'Select quality check', 'No quality check is waiting for a decision');
     fill(byId('frassReleaseLot'), lots.filter(function(l) { return l.status === 'APPROVED'; }).map(function(l) { return lotItem(l); }),
       'Select approved frass lot', 'No approved frass lot to release');
+    updateReleaseStores();
     renderTable();
   }
 
@@ -2021,8 +2080,10 @@ document.addEventListener('DOMContentLoaded', function() {
       var response = await fetch('/api/inventory/locations', { credentials: 'include' });
       var rows = response.ok ? ((await response.json()).data || []) : [];
       fill(select, rows.map(function(row) {
-        return { value: row.id, label: row.farm_name + ' / ' + row.facility_name + ' — ' + row.name + ' (' + row.location_code + ')' };
+        return { value: row.id, farm: row.farm_id,
+                 label: row.farm_name + ' / ' + row.facility_name + ' — ' + row.name + ' (' + row.location_code + ')' };
       }), 'Select store', 'No stores set up — ask an administrator');
+      updateReleaseStores();
     } catch (error) {
       select.replaceChildren(new Option('Stores could not be loaded', ''));
     }
@@ -2094,6 +2155,8 @@ document.addEventListener('DOMContentLoaded', function() {
   window.refreshFrassLots = function(withStores) { load(); if (withStores) loadStores(); };
   function start() {
     if (!byId('frass')) return;
+    var releaseLot = byId('frassReleaseLot');
+    if (releaseLot) releaseLot.addEventListener('change', updateReleaseStores);
     load();
     loadStores();
   }

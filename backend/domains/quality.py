@@ -17,6 +17,7 @@ from backend.core.scope import _assert_production_scope_access, _scope_visibilit
 from backend.domains.drying import (
     _drying_actor,
     _drying_batch_row,
+    _drying_qc_state,
     _drying_quantity_kg,
     _drying_timestamp,
     _drying_transition,
@@ -145,6 +146,9 @@ def _drying_create_quality_check(data):
     parameters = data.get('parameters') or {}
     if not isinstance(parameters, dict):
         raise ValueError('parameters must be an object')
+    contaminants = parameters.get('contaminants_found') or []
+    if isinstance(contaminants, list) and 'none' in contaminants and len(contaminants) > 1:
+        raise ValueError('Contaminants found: choose None or what was found, not both')
     with db.transaction() as cursor:
         output = None
         if output_ref not in (None, ''):
@@ -199,10 +203,13 @@ def _drying_create_quality_approval(data):
     approver = str(data.get('approver') or data.get('reviewed_by') or '').strip()
     if not approver:
         raise ValueError('approver is required')
+    rationale = str(data.get('rationale') or data.get('comments') or '').strip() or None
+    if decision == 'rejected' and not rationale:
+        raise ValueError('Give a reason for rejecting')
     with db.transaction() as cursor:
         cursor.execute(
             """
-            SELECT qc.id, qc.check_code, qc.drying_batch_id, qc.status,
+            SELECT qc.id, qc.check_code, qc.drying_batch_id, qc.drying_output_id, qc.status,
                    db.status AS batch_status
             FROM quality_checks AS qc
             JOIN drying_batches AS db ON db.id = qc.drying_batch_id
@@ -219,6 +226,15 @@ def _drying_create_quality_approval(data):
             raise ValueError('Quality approval can only be recorded while a Drying Batch is QC_PENDING')
         if decision == 'approved' and check['status'] != 'passed':
             raise ValueError('An approved Drying Batch requires a passed quality check')
+        if check['drying_output_id'] is not None:
+            cursor.execute(
+                "SELECT MAX(id) AS latest FROM quality_checks WHERE drying_output_id = %s",
+                (check['drying_output_id'],),
+            )
+            if cursor.fetchone()['latest'] != check['id']:
+                raise ValueError(
+                    f"A newer quality check exists for this output; decide on that one, not {check['check_code']}"
+                )
         actor, actor_user_id = _drying_actor(data)
         cursor.execute(
             """
@@ -228,11 +244,13 @@ def _drying_create_quality_approval(data):
             RETURNING id, approval_code, quality_check_id, decision,
                       rationale, decided_at, approver, created_at
             """,
-            (check_id, decision, data.get('rationale') or data.get('comments'),
-             approver, actor_user_id),
+            (check_id, decision, rationale, approver, actor_user_id),
         )
         approval = dict(cursor.fetchone())
-        if decision == 'approved':
+        # The batch completes once every output is approved or rejected and at
+        # least one was approved; until then the other outputs stay open for QC.
+        qc = _drying_qc_state(cursor, batch['id'])
+        if not qc['undecided'] and qc['approved']:
             _drying_transition(cursor, batch, 'COMPLETED', data)
         return approval
 
@@ -316,7 +334,10 @@ def _release_product_lot(data):
             )
 
         if batch['status'] != 'COMPLETED':
-            raise ValueError('A Product Lot can only be released from a completed Drying Batch')
+            raise ValueError(
+                f"Finish QC on every output of {batch['business_id']} first: it can be released "
+                'once each output is approved or rejected'
+            )
 
         # A released lot is received into stock in the same transaction, so
         # every available canonical lot has exactly one RECEIPT in the ledger.

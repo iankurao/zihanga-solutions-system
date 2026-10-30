@@ -357,6 +357,36 @@ def _drying_create_batch(data):
     return detail
 
 
+def _drying_qc_state(cursor, batch_id):
+    """Where QC stands on each output of a Drying Batch: the latest check on an
+    output is settled once its latest decision is approved (and the check
+    passed) or rejected. A batch completes only when every output is settled.
+    A batch-wide check (no output named) counts for every output."""
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS outputs,
+               COUNT(*) FILTER (WHERE decision.decision = 'approved' AND latest.status = 'passed') AS approved,
+               COUNT(*) FILTER (WHERE NOT (
+                   (decision.decision = 'approved' AND latest.status = 'passed')
+                   OR decision.decision = 'rejected') OR decision.decision IS NULL) AS undecided
+        FROM drying_outputs AS output
+        LEFT JOIN LATERAL (
+            SELECT id, status FROM quality_checks
+            WHERE drying_output_id = output.id
+               OR (drying_output_id IS NULL AND drying_batch_id = output.drying_batch_id)
+            ORDER BY id DESC LIMIT 1
+        ) AS latest ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT decision FROM quality_approvals
+            WHERE quality_check_id = latest.id ORDER BY id DESC LIMIT 1
+        ) AS decision ON TRUE
+        WHERE output.drying_batch_id = %s
+        """,
+        (batch_id,),
+    )
+    return cursor.fetchone()
+
+
 def _drying_transition(cursor, batch, new_status, data):
     current_status = batch['status']
     if new_status not in DRYING_BATCH_STATUSES:
@@ -380,20 +410,13 @@ def _drying_transition(cursor, batch, new_status, data):
     if new_status == 'QC_PENDING' and output_count == 0:
         raise ValueError('A Drying Batch must have at least one output before QC_PENDING')
     if new_status == 'COMPLETED':
-        cursor.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM quality_approvals AS qa
-                JOIN quality_checks AS qc ON qc.id = qa.quality_check_id
-                WHERE qc.drying_batch_id = %s
-                  AND qc.status = 'passed'
-                  AND qa.decision = 'approved'
-            ) AS approved
-            """,
-            (batch['id'],),
-        )
-        if not cursor.fetchone()['approved']:
+        qc = _drying_qc_state(cursor, batch['id'])
+        if qc['undecided']:
+            raise ValueError(
+                f"Every output needs an approved or rejected quality check before COMPLETED "
+                f"({qc['undecided']} of {qc['outputs']} still waiting)"
+            )
+        if not qc['approved']:
             raise ValueError(
                 'A Drying Batch requires an approved passing quality check before COMPLETED'
             )
