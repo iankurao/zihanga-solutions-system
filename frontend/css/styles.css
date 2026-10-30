@@ -301,6 +301,58 @@ select.form-control {
     padding: 0 0.25rem;
 }
 
+/* The last entries saved with a form, listed under it. */
+.recent-entries {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color, #dfe7e2);
+}
+
+.recent-entries h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted, #5b6d64);
+}
+
+.recent-entries ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.recent-entries li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.1rem 0.75rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border-color, #eef2f0);
+    font-size: 0.9rem;
+}
+
+.recent-entries .recent-ref {
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.recent-entries .recent-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.recent-entries .recent-meta {
+    grid-column: 2;
+    color: var(--text-muted, #5b6d64);
+    font-size: 0.8rem;
+}
+
+.recent-entries .recent-empty {
+    display: block;
+    color: var(--text-muted, #5b6d64);
+}
+
 /* The result of the last save, right under the form's button. */
 .form-result {
     margin: 0.75rem 0 0;

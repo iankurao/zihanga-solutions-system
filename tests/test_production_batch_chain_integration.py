@@ -1681,6 +1681,33 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "output_date cannot be in the future"):
             _drying_timestamp(later, "output_date")
 
+    def test_last_entries_listed_under_the_data_entry_forms(self):
+        created = self._create_production(self._create_substrate())
+        batch = created.get_json()["record"]
+        fed = self.client.post(
+            f"/api/production/batches/{batch['business_id']}/events/feeding",
+            json={"feeding_date": "2026-09-25", "feed_type": "brewer grain", "quantity_offered": "2.5",
+                  "operator": self.actor},
+        )
+        self.assertEqual(fed.status_code, 201, fed.get_json())
+
+        def recent(kind):
+            response = self.client.get(f"/api/data-entry/recent?kind={kind}")
+            self.assertEqual(response.status_code, 200, (kind, response.get_json()))
+            rows = response.get_json()["data"]
+            self.assertLessEqual(len(rows), 5)
+            return rows
+
+        feeding = recent("feeding")
+        self.assertEqual(feeding[0]["ref"], batch["business_id"])
+        self.assertEqual(feeding[0]["text"], "2.5 kg brewer grain")
+        self.assertIn(f"batch={batch['business_id']}", feeding[0]["href"])
+        self.assertTrue(any(r["ref"].startswith("WL-") for r in recent("waste")))
+        self.assertTrue(any(r["ref"].startswith("SUB-") for r in recent("substrate")))
+        for kind in ("monitoring", "health", "harvest", "waste-storage", "hatchery-batch", "egg-collection"):
+            recent(kind)
+        self.assertEqual(self.client.get("/api/data-entry/recent?kind=nope").status_code, 400)
+
     def test_health_tray_is_kept_on_the_health_event(self):
         created = self._create_production(self._create_substrate())
         batch = created.get_json()["record"]

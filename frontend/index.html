@@ -695,8 +695,9 @@
                 <div class="invalid-feedback">Please enter valid age</div>
               </div>
               <div class="form-group">
-                <label for="larvae_weight_g" class="required">Larvae Weight (g)</label>
-                <input type="number" id="larvae_weight_g" name="larvae_weight_g" class="form-control" step="0.1" min="0" required>
+                <label for="larvae_biomass" class="required">Larvae Weight (kg)</label>
+                <input type="number" id="larvae_biomass" name="larvae_biomass" class="form-control" step="0.001" min="0" required>
+                <input type="hidden" name="biomass_unit" value="kg">
                 <div class="invalid-feedback">Please enter valid weight</div>
               </div>
             </div>
@@ -707,7 +708,7 @@
               </div>
               <div class="form-group">
                 <label for="feed_quantity_kg" class="required">Feed Quantity (kg)</label>
-                <input type="number" id="feed_quantity_kg" name="feed_quantity_kg" class="form-control" step="0.1" required>
+                <input type="number" id="feed_quantity_kg" name="feed_quantity_kg" class="form-control" step="0.001" min="0.001" required>
               </div>
             </div>
             <div class="form-row">
@@ -722,8 +723,9 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="consumption_g">Consumption (g)</label>
-                <input type="number" id="consumption_g" name="consumption_g" class="form-control" step="0.1" min="0">
+                <label for="quantity_consumed">Feed Consumed (kg)</label>
+                <input type="number" id="quantity_consumed" name="quantity_consumed" class="form-control" step="0.001" min="0">
+                <input type="hidden" name="consumed_unit" value="kg">
               </div>
               <div class="form-group">
                 <label for="operator" class="required">Operator</label>

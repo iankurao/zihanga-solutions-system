@@ -183,6 +183,12 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/product-lots/<string:lot_ref>` | signed in |
 | GET | `/product-lot` | signed in |
 
+## recent_entries
+
+| Method | Path | Access |
+|---|---|---|
+| GET | `/api/data-entry/recent` | signed in |
+
 ## records
 
 | Method | Path | Access |

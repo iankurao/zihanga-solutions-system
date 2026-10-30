@@ -211,6 +211,238 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${twoDigits(d.getHours())}:${twoDigits(d.getMinutes())}`;
     };
 
+    // ---- Production batch pickers and tray suggestions -------------------------
+    // Batches are chosen from a list instead of typed, so a number cannot be
+    // mistyped; harvests only offer batches that are ready for harvest.
+    const BATCH_FIELDS = {
+        feedingProductionBatchId: 'open', monitoringProductionBatchId: 'open',
+        healthProductionBatchId: 'open', harvestProductionBatch: 'ready'
+    };
+    const BATCH_STATUS_TEXT = {
+        PLANNED: 'Planned', ACTIVE: 'Active', MONITORING: 'Monitoring', READY_FOR_HARVEST: 'Ready for harvest',
+        HARVESTED: 'Harvested', PAUSED: 'Paused', HEALTH_ALERT: 'Health alert'
+    };
+    const TRAY_FIELDS = { feedingScheduleForm: 'tray_reference', healthInterventionForm: 'tray_reference',
+        environmentalMonitoringForm: 'tray_facility_id' };
+    let pickerBatches = [];
+    let pickerUnits = [];
+    const batchRef = batch => batch.business_id || batch.batch_code;
+
+    function batchLabel(batch) {
+        const age = batch.age_days == null ? null : `${batch.age_days} day${batch.age_days === 1 ? '' : 's'}`;
+        return [batchRef(batch), BATCH_STATUS_TEXT[batch.status] || batch.status, batch.facility_name, age]
+            .filter(Boolean).join(' · ');
+    }
+
+    function asSelect(field) {
+        if (field.tagName === 'SELECT') return field;
+        const select = document.createElement('select');
+        select.id = field.id;
+        select.name = field.name;
+        select.className = field.className;
+        select.required = field.required;
+        field.replaceWith(select);
+        return select;
+    }
+
+    function refreshTrayOptions(form) {
+        const name = form && TRAY_FIELDS[form.id];
+        const tray = name && form.querySelector(`[name="${name}"]`);
+        if (!tray) return;
+        const chosen = (form.querySelector('[name="production_batch_id"]') || {}).value;
+        const batch = pickerBatches.find(b => batchRef(b) === chosen);
+        const units = pickerUnits
+            .filter(unit => !batch || unit.facility_id === batch.facility_id)
+            .sort((a, b) => (b.batch_business_id === chosen) - (a.batch_business_id === chosen));
+        const listId = `${form.id}Trays`;
+        let list = document.getElementById(listId);
+        if (!list) {
+            list = document.createElement('datalist');
+            list.id = listId;
+            form.appendChild(list);
+            tray.setAttribute('list', listId);
+            tray.setAttribute('autocomplete', 'off');
+        }
+        list.replaceChildren(...units.map(unit => {
+            const holds = unit.batch_business_id ? ` (holds ${unit.batch_business_id})` : ' (free)';
+            const option = new Option(`${unit.name}${holds}`, unit.unit_code);
+            return option;
+        }));
+        // The batch's own bio-pod is the usual answer.
+        const own = units.filter(unit => unit.batch_business_id === chosen);
+        if (own.length === 1 && !tray.value) tray.value = own[0].unit_code;
+    }
+
+    async function loadBatchPickers() {
+        try {
+            const [batches, units] = await Promise.all([
+                fetch('/api/production/batches', { credentials: 'include' }),
+                fetch('/api/production/units', { credentials: 'include' })
+            ]);
+            pickerBatches = batches.ok ? ((await batches.json()).data || []) : [];
+            pickerUnits = units.ok ? ((await units.json()).data || []) : [];
+        } catch (error) {
+            pickerBatches = [];
+            pickerUnits = [];
+        }
+        Object.entries(BATCH_FIELDS).forEach(([id, which]) => {
+            const field = document.getElementById(id);
+            if (!field) return;
+            const select = asSelect(field);
+            const keep = select.value;
+            const choices = pickerBatches.filter(batch => which === 'ready'
+                ? batch.status === 'READY_FOR_HARVEST'
+                : !['COMPLETED', 'CANCELLED'].includes(batch.status));
+            const empty = which === 'ready' ? 'No batch is ready for harvest' : 'No open production batches';
+            select.replaceChildren(new Option(choices.length ? 'Select production batch' : empty, ''));
+            choices.forEach(batch => select.add(new Option(batchLabel(batch), batchRef(batch))));
+            if (keep && choices.some(batch => batchRef(batch) === keep)) select.value = keep;
+            else if (choices.length === 1) select.value = batchRef(choices[0]);
+            refreshTrayOptions(select.form);
+        });
+    }
+
+    document.addEventListener('change', event => {
+        if (event.target.name === 'production_batch_id') refreshTrayOptions(event.target.form);
+    });
+
+    // ---- Checks as you type ---------------------------------------------------------
+    function fieldLabel(field) {
+        const label = field.id && document.querySelector(`label[for="${field.id}"]`);
+        return (label ? label.textContent : field.name).replace(/\*/g, '').trim();
+    }
+
+    function fieldProblem(field) {
+        if (field.type === 'hidden' || field.disabled || !field.willValidate) return '';
+        const v = field.validity;
+        const label = fieldLabel(field);
+        if (v.valueMissing || (field.required && !String(field.value).trim())) return `${label} is required`;
+        if (v.badInput) return `${label}: enter a number`;
+        if (v.rangeUnderflow) return `${label} must be at least ${field.min}`;
+        if (v.rangeOverflow) {
+            return field.type === 'date' ? `${label} cannot be in the future` : `${label} must be at most ${field.max}`;
+        }
+        if (v.typeMismatch || v.patternMismatch) return `${label} is not valid`;
+        return '';
+    }
+
+    function showFieldProblem(field, problem) {
+        field.classList.toggle('is-invalid', !!problem);
+        let feedback = field.nextElementSibling;
+        if (!(feedback && feedback.classList.contains('invalid-feedback'))) {
+            if (!problem) return;
+            feedback = document.createElement('div');
+            feedback.className = 'invalid-feedback';
+            field.insertAdjacentElement('afterend', feedback);
+        }
+        if (problem) feedback.textContent = problem;
+    }
+
+    // Every problem in the form, marked on its field; the first one gets focus.
+    function reportProblems(form, extra = {}) {
+        const problems = [];
+        form.querySelectorAll('input, select, textarea').forEach(field => {
+            const problem = extra[field.name] || fieldProblem(field);
+            showFieldProblem(field, problem);
+            if (problem) problems.push({ field, problem });
+        });
+        Object.entries(extra).forEach(([name, problem]) => {
+            if (!problems.some(p => p.field.name === name)) problems.push({ field: null, problem });
+        });
+        if (!problems.length) return false;
+        const shown = problems.slice(0, 4).map(p => p.problem).join('; ');
+        const more = problems.length > 4 ? ` and ${problems.length - 4} more` : '';
+        showFormResult(form, `Not saved yet. ${shown}${more}.`, 'error');
+        const first = problems.find(p => p.field);
+        if (first) {
+            first.field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            first.field.focus({ preventScroll: true });
+        }
+        return true;
+    }
+
+    window.reportFormProblems = reportProblems;
+
+    function enableLiveChecks() {
+        document.querySelectorAll('.main-content form').forEach(form => {
+            // The page shows its own messages instead of the browser's bubbles.
+            form.setAttribute('novalidate', '');
+            form.addEventListener('focusout', event => {
+                if (event.target.matches('input, select, textarea')) {
+                    showFieldProblem(event.target, fieldProblem(event.target));
+                }
+            });
+            form.addEventListener('change', event => {
+                if (event.target.matches('select, input[type="date"], input[type="time"]')) {
+                    showFieldProblem(event.target, fieldProblem(event.target));
+                }
+            });
+        });
+    }
+
+    // ---- Last 5 entries under each form -----------------------------------------------
+    const RECENT_KIND = {
+        wasteSourcing: 'waste', substratePreparation: 'substrate', feedingSchedule: 'feeding',
+        feedingEnvironmentalMonitoring: 'monitoring', healthIntervention: 'health', harvestYield: 'harvest'
+    };
+
+    function recentKind(formType) {
+        if (RECENT_KIND[formType]) return RECENT_KIND[formType];
+        const endpoint = apiEndpoints[formType] || '';
+        return endpoint.startsWith('farm-operations/') ? endpoint.slice('farm-operations/'.length) : null;
+    }
+
+    function recentWhen(value) {
+        if (!value) return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        const date = new Date(value);
+        return isNaN(date) ? value : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    async function loadRecentEntries(form, formType) {
+        const kind = recentKind(formType);
+        if (!form || !kind) return;
+        let box = form.nextElementSibling;
+        if (!(box && box.classList.contains('recent-entries'))) {
+            box = document.createElement('section');
+            box.className = 'recent-entries';
+            box.setAttribute('aria-label', 'Last 5 entries');
+            const heading = document.createElement('h3');
+            heading.textContent = 'Last 5 entries';
+            box.append(heading, document.createElement('ul'));
+            form.insertAdjacentElement('afterend', box);
+        }
+        const list = box.querySelector('ul');
+        const line = text => { const li = document.createElement('li'); li.className = 'recent-empty'; li.textContent = text; return li; };
+        try {
+            const response = await fetch(`/api/data-entry/recent?kind=${encodeURIComponent(kind)}`, { credentials: 'include' });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message);
+            if (!payload.data.length) { list.replaceChildren(line('Nothing recorded yet.')); return; }
+            list.replaceChildren(...payload.data.map(row => {
+                const li = document.createElement('li');
+                const ref = document.createElement(row.href ? 'a' : 'strong');
+                if (row.href) ref.href = row.href;
+                ref.className = 'recent-ref';
+                ref.textContent = row.ref;
+                const text = document.createElement('span');
+                text.className = 'recent-text';
+                text.textContent = row.text;
+                const meta = document.createElement('span');
+                meta.className = 'recent-meta';
+                meta.textContent = [recentWhen(row.when), row.by].filter(Boolean).join(' · ');
+                li.append(ref, text, meta);
+                return li;
+            }));
+        } catch (error) {
+            list.replaceChildren(line('Could not load the last entries.'));
+        }
+    }
+
+    function loadAllRecentEntries() {
+        Object.entries(forms).forEach(([formType, form]) => loadRecentEntries(form, formType));
+    }
+
     function applyFormDefaults() {
         const page = document.querySelector('.main-content');
         if (!page) return;
@@ -504,14 +736,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         console.log('Form fields:', Array.from(formData.entries()));
         
-        form.querySelectorAll('[required]').forEach(field => {
-            if (!field.value.trim()) {
-                errors[field.name] = `${field.name.replace(/([A-Z])/g, ' $1').trim()} is required`;
-                field.classList.add('is-invalid');
-                console.log(`Missing required field: ${field.name}`);
-            } else {
-                field.classList.remove('is-invalid');
-            }
+        form.querySelectorAll('input, select, textarea').forEach(field => {
+            const problem = fieldProblem(field);
+            if (problem) errors[field.name] = problem;
         });
 
         // Form-specific validation
@@ -674,21 +901,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             const errors = await validateForm(form, formType);
-            if (errors) {
-                Object.entries(errors).forEach(([field, message]) => {
-                    const input = form.querySelector(`[name="${field}"]`);
-                    if (input) {
-                        input.classList.add('is-invalid');
-                        const feedback = input.nextElementSibling;
-                        if (feedback && feedback.classList.contains('invalid-feedback')) {
-                            feedback.textContent = message;
-                        }
-                    }
-                });
-                // This is a placeholder for a real alert function
-                console.error('Please fix the errors in the form', errors);
-                return;
-            }
+            if (errors && reportProblems(form, errors)) return;
 
             const formData = new FormData(form);
             const data = {};
@@ -696,7 +909,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const numericFields = [
                 'feed_quantity_kg', 'larvae_age_days', 'larvae_weight_g', 'consumption_rate_percent',
                 'temperature', 'humidity', 'moisture_percentage', 'larvae_collected_kg', 'wet_weight', 'storage_temp',
-                'start_weight_kg', 'end_weight_kg', 'consumption_g', 'substrateIntroducedKg',
+                'start_weight_kg', 'end_weight_kg', 'consumption_g', 'larvae_biomass', 'quantity_consumed', 'substrateIntroducedKg',
                 'lighting_hours', 'pupae_weight_added', 'old_pupae_removed', 'number_of_crates', 'eggs_collected'
             ];
 
@@ -756,6 +969,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (formType === 'harvestYield' && window.refreshDryingData) {
                 window.refreshDryingData();
             }
+            loadRecentEntries(form, formType);
+            if (RECENT_KIND[formType]) loadBatchPickers();
         } catch (error) {
             console.error('Error details:', error);
             showNotification(`Not saved: ${error.message}`, 'error', form);
@@ -802,6 +1017,9 @@ document.addEventListener('DOMContentLoaded', function() {
         addSubstrateInputButton.addEventListener('click', addSubstrateInputRow);
     }
     applyFormDefaults();
+    enableLiveChecks();
+    loadBatchPickers();
+    loadAllRecentEntries();
     addSubstrateInputRow();
     refreshSubstrateChainData();
     loadLocationHierarchy();
@@ -1305,12 +1523,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!form) return;
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
-      form.querySelectorAll('.is-invalid').forEach(function(el) { el.classList.remove('is-invalid'); });
-      var valid = true;
-      form.querySelectorAll('[required]').forEach(function(input) {
-        if (!input.value.trim()) { input.classList.add('is-invalid'); valid = false; }
-      });
-      if (!valid) { showFormResult(form, 'Please fill in all required fields.', 'error'); return; }
+      if (window.reportFormProblems && window.reportFormProblems(form)) return;
       var formData = new FormData(form);
       var data = {};
       formData.forEach(function(value, key) {
