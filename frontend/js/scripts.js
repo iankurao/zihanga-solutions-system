@@ -195,15 +195,79 @@ document.addEventListener('DOMContentLoaded', function() {
         return [...seen.values()];
     }
 
-    function fillLocationSelect(select, rows, idKey, nameKey, placeholder) {
+    // Dates of things that happened start at today and cannot be later;
+    // planned dates are left empty. Times start at now. People fields start
+    // with the signed-in person's name. All stay editable.
+    const PLANNED_DATE_FIELDS = new Set(['followUpDate', 'fermentationReady', 'expectedHatchDate']);
+    const PERSON_FIELDS = new Set(['collectionPersonnel', 'handlerOperator', 'operator', 'personnel',
+        'cleaning_personnel', 'qcPersonnel', 'reviewedBy']);
+    const twoDigits = n => String(n).padStart(2, '0');
+    const localToday = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${twoDigits(d.getMonth() + 1)}-${twoDigits(d.getDate())}`;
+    };
+    const localNow = () => {
+        const d = new Date();
+        return `${twoDigits(d.getHours())}:${twoDigits(d.getMinutes())}`;
+    };
+
+    function applyFormDefaults() {
+        const page = document.querySelector('.main-content');
+        if (!page) return;
+        const today = localToday();
+        page.querySelectorAll('input[type="date"]').forEach(input => {
+            if (PLANNED_DATE_FIELDS.has(input.id)) return;
+            input.max = today;
+            if (!input.value) input.value = input.defaultValue = today;
+        });
+        page.querySelectorAll('input[type="time"]').forEach(input => {
+            if (!input.value) input.value = localNow();
+        });
+        // After a save the form resets: the time moves on to now again.
+        page.querySelectorAll('form').forEach(form => form.addEventListener('reset', () => setTimeout(() => {
+            form.querySelectorAll('input[type="time"]').forEach(input => { input.value = localNow(); });
+        }, 0)));
+        (window.currentUser || Promise.resolve(null)).then(profile => {
+            const name = profile && (profile.full_name || profile.username);
+            if (!name) return;
+            page.querySelectorAll('input[type="text"]').forEach(input => {
+                if (PERSON_FIELDS.has(input.name) && !input.value) input.value = input.defaultValue = name;
+            });
+        });
+    }
+
+    function fillLocationSelect(select, rows, idKey, nameKey, placeholder, preferred) {
         const previousValue = select.value;
         select.replaceChildren(new Option(placeholder, ''));
         uniqueBy(rows, idKey).forEach(row => select.add(new Option(row[nameKey], row[idKey])));
-        if ([...select.options].some(option => option.value === previousValue && previousValue)) {
+        const has = value => value && [...select.options].some(option => option.value === String(value));
+        if (has(previousValue)) {
             select.value = previousValue;
+        } else if (has(preferred)) {
+            select.value = String(preferred);
         } else if (select.options.length === 2) {
             select.selectedIndex = 1;
         }
+    }
+
+    // Each form remembers the farm, site and facility it was last used for on
+    // this device, so a farmer picks their place once.
+    function placeKey(picker) {
+        const form = picker.closest('form');
+        return form && form.id ? 'zehunger.place.' + form.id : null;
+    }
+    function rememberedPlace(picker) {
+        try { return JSON.parse(localStorage.getItem(placeKey(picker)) || 'null') || {}; } catch (e) { return {}; }
+    }
+    function rememberPlace(picker) {
+        const key = placeKey(picker);
+        if (!key) return;
+        const value = cls => (picker.querySelector(cls) || {}).value || '';
+        try {
+            localStorage.setItem(key, JSON.stringify({
+                farm: value('.location-farm'), site: value('.location-site'), facility: value('.location-facility')
+            }));
+        } catch (e) { /* storage blocked: the form still works */ }
     }
 
     // Farm -> Site -> Facility selects, limited to active locations the
@@ -212,16 +276,18 @@ document.addEventListener('DOMContentLoaded', function() {
         const farm = picker.querySelector('.location-farm');
         const site = picker.querySelector('.location-site');
         const facility = picker.querySelector('.location-facility');
+        const saved = rememberedPlace(picker);
         fillLocationSelect(
             farm, locationRows, 'farm_id', 'farm_name',
-            locationRows.length ? 'Select farm' : 'No farms available — ask an administrator'
+            locationRows.length ? 'Select farm' : 'No farms available — ask an administrator', saved.farm
         );
         const sites = locationRows.filter(row => String(row.farm_id) === farm.value);
-        fillLocationSelect(site, sites, 'site_id', 'site_name', farm.value ? 'Select site' : 'Select a farm first');
+        fillLocationSelect(site, sites, 'site_id', 'site_name', farm.value ? 'Select site' : 'Select a farm first',
+            saved.site);
         const facilities = sites.filter(row => String(row.site_id) === site.value);
         fillLocationSelect(
             facility, facilities, 'facility_id', 'facility_name',
-            site.value ? 'Select facility' : 'Select a site first'
+            site.value ? 'Select facility' : 'Select a site first', saved.facility
         );
     }
 
@@ -248,6 +314,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.querySelectorAll('.location-picker').forEach(picker => {
         picker.addEventListener('change', event => {
+            if (event.target.matches('.location-facility')) rememberPlace(picker);
             if (!event.target.matches('.location-farm, .location-site')) return;
             renderLocationPicker(picker);
             if (picker.id === 'substrateLocationPicker') refreshWasteLotSelects();
@@ -734,6 +801,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (addSubstrateInputButton) {
         addSubstrateInputButton.addEventListener('click', addSubstrateInputRow);
     }
+    applyFormDefaults();
     addSubstrateInputRow();
     refreshSubstrateChainData();
     loadLocationHierarchy();
