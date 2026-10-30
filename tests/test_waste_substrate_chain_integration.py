@@ -282,29 +282,6 @@ class WasteToSubstrateChainIntegrationTest(unittest.TestCase):
             self.waste_lot["business_id"],
         )
 
-    def test_waste_collection_page_and_its_recent_list(self):
-        page = self.client.get("/waste-collection")
-        self.assertEqual(page.status_code, 200)
-        self.assertIn(b'id="wcForm"', page.data)
-
-        lot = self._create_waste_lot(self.scope, "12.500")
-        url = f"/api/waste-lots/recent?days=1&facility_id={self.scope['facility_id']}"
-        recent = self.client.get(url)
-        self.assertEqual(recent.status_code, 200, recent.get_json())
-        body = recent.get_json()
-        row = next(r for r in body["data"] if r["business_id"] == lot["business_id"])
-        self.assertEqual((float(row["quantity"]), row["status"], str(row["collection_time"])[:5]),
-                         (12.5, "available", "09:30"))
-        self.assertIn({"name": self.marker, "source_type": "market"},
-                      [{"name": s["name"], "source_type": s["source_type"]} for s in body["suppliers"]])
-        self.assertEqual(body["max_collection_kg"], 5000)
-        self.assertEqual(self.client.get("/api/waste-lots/recent?days=soon").status_code, 400)
-
-        # One collection is one load: the form and the server share the limit.
-        too_heavy = self.client.post("/api/waste-sourcing", json=self._waste_payload(self.scope, "5000.5"))
-        self.assertEqual(too_heavy.status_code, 400)
-        self.assertIn("more than one collection", too_heavy.get_json()["message"])
-
     def test_negative_and_over_available_consumption_are_rejected(self):
         negative = self._create_substrate(
             [{"waste_lot_id": self.waste_lot["id"], "quantity_used": "-0.001"}]

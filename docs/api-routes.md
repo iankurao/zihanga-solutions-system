@@ -155,7 +155,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/dashboard` | signed in |
 | GET | `/design-system` | signed in |
 | GET | `/setup` | super_admin |
-| GET | `/waste-collection` | signed in |
 
 ## production
 
@@ -253,7 +252,6 @@ Routes under `/tour` and `/api/demo/*` exist only on demonstration databases.
 | GET | `/api/substrate/batches/<string:batch_no>` | signed in |
 | GET | `/api/waste-lots` | signed in |
 | POST | `/api/waste-lots/<string:lot_ref>/location` | super_admin |
-| GET | `/api/waste-lots/recent` | signed in |
 | POST | `/api/waste-sourcing` | production.write |
 
 ## web

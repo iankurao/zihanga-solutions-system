@@ -5,10 +5,6 @@ from flask import jsonify, request
 from flask_login import current_user, login_required
 
 from backend.core.web import app, db, logger
-
-# One collection is one load from one supplier; more than this is a typing
-# slip or several loads, and the form says so before saving.
-MAX_COLLECTION_KG = 5000
 from backend.core.http import (
     ProductionEventPermissionError,
     _chain_actor,
@@ -54,11 +50,6 @@ def handle_waste_sourcing():
         )
         _record_date(normalized_data['collection_date'], 'collection_date')
         quantity = _parse_chain_quantity(normalized_data['waste_weight'], 'waste_weight')
-        if quantity > MAX_COLLECTION_KG:
-            raise ValueError(
-                f'waste_weight above {MAX_COLLECTION_KG:,} kg is more than one collection; '
-                'record each load separately'
-            )
         contaminants = normalized_data.get('contaminants_found', [])
         if isinstance(contaminants, list):
             contaminants = ','.join(str(item) for item in contaminants)
@@ -412,58 +403,6 @@ def get_available_waste_lots():
     except Exception as e:
         logger.error(f"Error fetching available Waste Lots: {e}")
         return jsonify({'success': False, 'message': 'Could not load Waste Lots'}), 500
-
-
-@app.route('/api/waste-lots/recent', methods=['GET'])
-@login_required
-def get_recent_waste_lots():
-    """Waste lots recorded in the last ``days`` days (any status), newest
-    first, and the suppliers used before, for the waste collection page."""
-    try:
-        days = min(max(int(request.args.get('days', '1') or 1), 1), 60)
-    except ValueError:
-        return jsonify({'success': False, 'message': 'days must be a whole number'}), 400
-    try:
-        visibility, visibility_params = _scope_visibility_clause('wl')
-        filters, filter_params = _optional_scope_filters('wl')
-        where = ' AND '.join([
-            "wl.created_at >= now() - make_interval(days => %s)", visibility, *filters,
-        ])
-        lots = db.fetch_all(
-            f"""
-            SELECT wl.id, wl.business_id, wl.facility_id, fa.name AS facility_name,
-                   wl.source_type, wl.source_name, wl.waste_type, wl.collection_date,
-                   wl.quantity, wl.unit, wl.quality_status, wl.status,
-                   wl.recorded_by, wl.created_at, ws.collection_time
-            FROM waste_lots AS wl
-            LEFT JOIN facilities AS fa ON fa.id = wl.facility_id
-            LEFT JOIN waste_sourcing AS ws ON ws.id = wl.waste_sourcing_id
-            WHERE {where}
-            ORDER BY wl.created_at DESC, wl.id DESC
-            LIMIT 20
-            """,
-            (days, *visibility_params, *filter_params),
-        )
-        supplier_visibility, supplier_params = _scope_visibility_clause('wl')
-        suppliers = db.fetch_all(
-            f"""
-            SELECT wl.source_name AS name, MAX(wl.source_type) AS source_type,
-                   COUNT(*) AS collections, MAX(wl.created_at) AS last_used
-            FROM waste_lots AS wl
-            WHERE {supplier_visibility} AND wl.source_name IS NOT NULL
-            GROUP BY wl.source_name
-            ORDER BY MAX(wl.created_at) DESC
-            LIMIT 50
-            """,
-            supplier_params,
-        )
-        return jsonify({'success': True, 'data': lots, 'suppliers': suppliers,
-                        'max_collection_kg': MAX_COLLECTION_KG}), 200
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error fetching recent Waste Lots: {e}")
-        return jsonify({'success': False, 'message': 'Could not load recent collections'}), 500
 
 
 @app.route('/api/waste-lots/<string:lot_ref>/location', methods=['POST'])

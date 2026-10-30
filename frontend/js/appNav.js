@@ -15,7 +15,6 @@
   var MORE = [
     { href: '/farmer', label: 'Farmer portal', icon: 'fa-seedling', permission: 'production.write' },
     { href: '/dashboard', label: 'Data entry forms', icon: 'fa-pen-to-square', permission: 'production.write' },
-    { href: '/waste-collection', label: 'Record waste collection', icon: 'fa-truck', permission: 'production.write' },
     { href: '/production_batch.html', label: 'New production batch', icon: 'fa-plus', permission: 'production.write' },
     { href: '/labels', label: 'QR labels', icon: 'fa-qrcode' },
     { href: '/setup', label: 'Farm setup', icon: 'fa-sitemap', permission: 'setup.manage' },

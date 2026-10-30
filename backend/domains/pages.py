@@ -18,13 +18,6 @@ def dashboard():
     """Serve the main dashboard page"""
     return send_from_directory(app.static_folder, 'index.html')
 
-@app.route('/waste-collection')
-@login_required
-def waste_collection_page():
-    """Record a waste collection (creates a waste lot)."""
-    return send_from_directory(app.static_folder, 'waste_collection.html')
-
-
 @app.route('/analytics')
 @login_required
 def analytics():
