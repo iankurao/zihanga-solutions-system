@@ -225,6 +225,8 @@
 
     @media (max-width: 768px) {
       body { flex-direction: column; }
+      /* A wrapping column sizes to its widest content; keep wide report tables scrolling in their own box. */
+      body > .main, body > .erp-appbar { max-width: 100%; }
       .sidebar { width: 100%; min-height: unset; flex-direction: row; flex-wrap: wrap; position: static; }
       .tab-btn { font-size: .8rem; padding: 8px 12px; }
       .bsf-summary-cards { flex-direction: column; }

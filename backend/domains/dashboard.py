@@ -5,6 +5,7 @@ from decimal import Decimal
 from flask import jsonify, render_template, request
 from flask_login import login_required
 
+from backend.config import CURRENCY
 from backend.core.web import app, db, logger
 from backend.core.http import _jsonable, _parse_positive_integer
 from backend.core.scope import _farm_visibility_clause
@@ -100,6 +101,19 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
     )
     drying_now = cursor.fetchone()
 
+    # Frass lots now: curing, or cured and waiting for a QC decision.
+    q = scoped('fl')
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) FILTER (WHERE fl.status = 'CURING') AS curing,
+               COALESCE(SUM(fl.quantity_kg) FILTER (WHERE fl.status = 'CURING'), 0) AS curing_kg,
+               COUNT(*) FILTER (WHERE fl.status = 'QC_PENDING') AS qc_pending
+        FROM frass_lots AS fl {q.where}
+        """,
+        q.params,
+    )
+    frass_now = cursor.fetchone()
+
     # Stock (current): free = QC-released on hand minus outstanding reservations.
     q = scoped('il')
     cursor.execute(
@@ -122,7 +136,11 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
     stock = cursor.fetchone()
     on_hand, blocked, reserved = (Decimal(str(stock[k])) for k in ('on_hand', 'blocked', 'reserved'))
 
-    # Material flow over the period, in kg.
+    # Material flow over the period, in kg. Frass is the harvest's second
+    # product, so it has its own stages and its own released line.
+    released_sql = ('SELECT COALESCE(SUM(pl.quantity_kg), 0) FROM product_lots AS pl '
+                    'JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id {w} '
+                    'AND pl.frass_lot_id IS {frass} NULL')
     flow = []
     for label, sql, alias, column in (
         ('Waste received', 'SELECT COALESCE(SUM(wl.quantity), 0) FROM waste_lots AS wl {w}', 'wl', 'wl.collection_date'),
@@ -133,9 +151,11 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
         ('Dried', f"SELECT COALESCE(SUM({KG_SQL.format(unit='o.unit', qty='o.quantity')}), 0) "
                   "FROM drying_outputs AS o JOIN drying_batches AS db ON db.id = o.drying_batch_id {w}",
          'db', 'o.output_date'),
-        ('Released to stock', 'SELECT COALESCE(SUM(pl.quantity_kg), 0) FROM product_lots AS pl '
-                              'JOIN product_lot_origins AS batch ON batch.product_lot_id = pl.id {w}',
-         'batch', 'pl.production_date'),
+        ('Released: dried larvae', released_sql.replace('{frass}', ''), 'batch', 'pl.production_date'),
+        ('Frass separated', 'SELECT COALESCE(SUM(fl.quantity_kg), 0) FROM frass_lots AS fl {w}',
+         'fl', 'fl.curing_started_at'),
+        ('Frass cured', 'SELECT COALESCE(SUM(fl.cured_kg), 0) FROM frass_lots AS fl {w}', 'fl', 'fl.cured_at'),
+        ('Released: frass fertiliser', released_sql.replace('{frass}', 'NOT'), 'batch', 'pl.production_date'),
         ('Dispatched', "SELECT COALESCE(SUM(im.quantity_kg), 0) FROM inventory_movements AS im "
                        "JOIN inventory_locations AS il ON il.id = im.from_location_id {w} "
                        "AND im.movement_type = 'DISPATCH' AND im.status = 'posted'", 'il', 'im.occurred_at'),
@@ -212,6 +232,20 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
             """,
             q.params,
         )
+        # Revenue as everywhere else: delivered kg x the order line's price.
+        commercial['revenue'] = _dashboard_value(
+            cursor,
+            f"""
+            SELECT COALESCE(SUM(dl.quantity_kg * l.unit_price), 0) FROM customer_delivery_lines AS dl
+            JOIN customer_deliveries AS d ON d.id = dl.delivery_id
+            JOIN customer_orders AS o ON o.id = d.order_id
+            JOIN order_allocations AS a ON a.id = dl.allocation_id
+            JOIN customer_order_lines AS l ON l.id = a.order_line_id
+            {q.where} AND d.status = 'DELIVERED'
+            """,
+            q.params,
+        )
+        commercial['currency'] = CURRENCY
 
     # Alerts needing attention (visible to this user).
     visibility, params = _alert_visibility_clause()
@@ -235,8 +269,7 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
     )
     open_alerts = [dict(row) for row in cursor.fetchall()]
 
-    harvested = next(item['kg'] for item in flow if item['stage'] == 'Harvested (wet)')
-    dried = next(item['kg'] for item in flow if item['stage'] == 'Dried')
+    stage = {item['stage']: item['kg'] for item in flow}
     return _jsonable({
         'period': {'days': days, 'from': start, 'to': today},
         'kpis': {
@@ -246,11 +279,19 @@ def _operations_dashboard(cursor, days, farm_id, facility_id):
             'health_alert_batches': pipeline.get('HEALTH_ALERT', 0),
             'substrate_available_kg': substrate['kg'],
             'substrate_batches_available': substrate['batches'],
-            'harvested_kg': harvested,
-            'dried_kg': dried,
+            'harvested_kg': stage['Harvested (wet)'],
+            'dried_kg': stage['Dried'],
             'drying_in_progress': drying_now['drying'],
-            'qc_pending': drying_now['qc_pending'],
-            'released_kg': next(item['kg'] for item in flow if item['stage'] == 'Released to stock'),
+            'qc_pending': drying_now['qc_pending'] + frass_now['qc_pending'],
+            'qc_pending_drying': drying_now['qc_pending'],
+            'qc_pending_frass': frass_now['qc_pending'],
+            'frass_separated_kg': stage['Frass separated'],
+            'frass_cured_kg': stage['Frass cured'],
+            'frass_curing_lots': frass_now['curing'],
+            'frass_curing_kg': frass_now['curing_kg'],
+            'released_kg': stage['Released: dried larvae'] + stage['Released: frass fertiliser'],
+            'released_larvae_kg': stage['Released: dried larvae'],
+            'released_frass_kg': stage['Released: frass fertiliser'],
             'stock_on_hand_kg': on_hand,
             'stock_available_kg': on_hand - blocked - reserved,
             'stock_reserved_kg': reserved,

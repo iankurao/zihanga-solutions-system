@@ -180,7 +180,8 @@ def _report_harvest(cursor, f):
                pb.business_id AS production_batch, pe.quantity AS wet_kg,
                h.harvest_stage AS stage, h.operator, h.location, fa.name AS facility,
                COALESCE((SELECT SUM({KG_SQL.format(unit='di.unit', qty='di.quantity')})
-                         FROM drying_inputs AS di WHERE di.harvest_id = h.id), 0) AS sent_to_drying_kg
+                         FROM drying_inputs AS di WHERE di.harvest_id = h.id), 0) AS sent_to_drying_kg,
+               COALESCE((SELECT quantity_kg FROM frass_lots WHERE harvest_id = h.id), 0) AS frass_kg
         FROM harvests AS h
         JOIN production_events AS pe ON pe.id = h.production_event_id
         JOIN production_batches AS pb ON pb.id = pe.production_batch_id
@@ -230,29 +231,77 @@ def _report_drying(cursor, f):
     return cursor.fetchall()
 
 
-def _report_quality(cursor, f):
-    q = _ReportQuery(f, scope_alias='db')
-    q.dates('COALESCE(qc.checked_at, qc.created_at)')
+def _report_frass(cursor, f):
+    """One row per frass lot: separated at harvest, cured, checked and released."""
+    q = _ReportQuery(f, scope_alias='fl')
+    q.dates('fl.curing_started_at')
     if f['status']:
-        q.add('UPPER(qc.status) = %s', f['status'])
+        q.add('fl.status = %s', f['status'])
     cursor.execute(
         f"""
-        SELECT COALESCE(qc.checked_at, qc.created_at)::date AS date, qc.check_code AS quality_check,
-               COALESCE(db.business_id, db.batch_code) AS drying_batch,
-               UPPER(qc.status) AS result, qc.moisture_percent AS moisture_pct, qc.inspector,
-               UPPER(a.decision) AS decision, a.approver, a.decided_at::date AS decided_on,
-               fa.name AS facility
-        FROM quality_checks AS qc
-        JOIN drying_batches AS db ON db.id = qc.drying_batch_id
-        LEFT JOIN facilities AS fa ON fa.id = db.facility_id
+        SELECT fl.curing_started_at::date AS date, fl.business_id AS frass_lot, h.harvest_code AS harvest,
+               pb.business_id AS production_batch, fl.quantity_kg AS separated_kg,
+               (SELECT COUNT(*) FROM frass_curing_checks WHERE frass_lot_id = fl.id) AS curing_checks,
+               fl.cured_kg, fl.cured_at::date AS cured_on, fl.status,
+               latest.check_code AS quality_check, UPPER(latest.status) AS result,
+               UPPER(latest.decision) AS decision, pl.business_id AS product_lot, fa.name AS facility
+        FROM frass_lots AS fl
+        JOIN harvests AS h ON h.id = fl.harvest_id
+        JOIN production_batches AS pb ON pb.id = fl.production_batch_id
         LEFT JOIN LATERAL (
-            SELECT decision, approver, decided_at FROM quality_approvals
-            WHERE quality_check_id = qc.id ORDER BY id DESC LIMIT 1
-        ) AS a ON TRUE
+            SELECT check_code, status, decision FROM frass_quality_checks
+            WHERE frass_lot_id = fl.id ORDER BY id DESC LIMIT 1
+        ) AS latest ON TRUE
+        LEFT JOIN product_lots AS pl ON pl.frass_lot_id = fl.id
+        LEFT JOIN facilities AS fa ON fa.id = fl.facility_id
         {q.where}
-        ORDER BY qc.id DESC
+        ORDER BY fl.curing_started_at DESC, fl.id DESC
         """,
         q.params,
+    )
+    return cursor.fetchall()
+
+
+def _report_quality(cursor, f):
+    """Checks on dried output and on frass lots, newest first."""
+    dq = _ReportQuery(f, scope_alias='db')
+    dq.dates('COALESCE(qc.checked_at, qc.created_at)')
+    fq = _ReportQuery(f, scope_alias='fl')
+    fq.dates('fq.checked_at')
+    if f['status']:
+        dq.add('UPPER(qc.status) = %s', f['status'])
+        fq.add('UPPER(fq.status) = %s', f['status'])
+    cursor.execute(
+        f"""
+        SELECT date, quality_check, product, drying_batch, result, moisture_pct, inspector,
+               decision, approver, decided_on, facility
+        FROM (
+            SELECT COALESCE(qc.checked_at, qc.created_at)::date AS date, qc.check_code AS quality_check,
+                   'Dried larvae' AS product, COALESCE(db.business_id, db.batch_code) AS drying_batch,
+                   UPPER(qc.status) AS result, qc.moisture_percent AS moisture_pct, qc.inspector,
+                   UPPER(a.decision) AS decision, a.approver, a.decided_at::date AS decided_on,
+                   fa.name AS facility, COALESCE(qc.checked_at, qc.created_at)::timestamptz AS sort_at
+            FROM quality_checks AS qc
+            JOIN drying_batches AS db ON db.id = qc.drying_batch_id
+            LEFT JOIN facilities AS fa ON fa.id = db.facility_id
+            LEFT JOIN LATERAL (
+                SELECT decision, approver, decided_at FROM quality_approvals
+                WHERE quality_check_id = qc.id ORDER BY id DESC LIMIT 1
+            ) AS a ON TRUE
+            {dq.where}
+            UNION ALL
+            SELECT fq.checked_at::date, fq.check_code, 'Frass fertiliser', fl.business_id,
+                   UPPER(fq.status), fq.moisture_percent, fq.inspector,
+                   UPPER(fq.decision), fq.approver, fq.decided_at::date,
+                   fa.name, fq.checked_at
+            FROM frass_quality_checks AS fq
+            JOIN frass_lots AS fl ON fl.id = fq.frass_lot_id
+            LEFT JOIN facilities AS fa ON fa.id = fl.facility_id
+            {fq.where}
+        ) AS checks
+        ORDER BY sort_at DESC, quality_check DESC
+        """,
+        (*dq.params, *fq.params),
     )
     return cursor.fetchall()
 
@@ -368,38 +417,25 @@ def _report_deliveries(cursor, f):
 
 
 def _report_traceability(cursor, f):
-    q = _ReportQuery(f, scope_alias='batch')
-    q.dates('pl.production_date')
-    if f['product_type']:
-        q.add('LOWER(pl.product_type) = LOWER(%s)', f['product_type'])
+    """Each product lot back to its waste: dried larvae through their drying
+    batch, frass fertiliser through its frass lot; both reach the harvest."""
+    dq = _ReportQuery(f, scope_alias='batch')
+    fq = _ReportQuery(f, scope_alias='fl')
+    for q in (dq, fq):
+        q.dates('pl.production_date')
+        if f['product_type']:
+            q.add('LOWER(pl.product_type) = LOWER(%s)', f['product_type'])
     commercial_visible = _farm_visibility_clause('pl')
-    cursor.execute(
-        f"""
-        WITH chain AS (
-            SELECT di.drying_batch_id, h.harvest_code, pb.business_id AS production_batch,
-                   sb.business_id AS substrate_batch, wl.business_id AS waste_lot,
-                   wl.source_name
-            FROM drying_inputs AS di
-            JOIN harvests AS h ON h.id = di.harvest_id
-            JOIN production_events AS pe ON pe.id = h.production_event_id
-            JOIN production_batches AS pb ON pb.id = pe.production_batch_id
-            LEFT JOIN production_batch_inputs AS pbi ON pbi.production_batch_id = pb.id
-            LEFT JOIN substrate_batches AS sb ON sb.id = pbi.substrate_batch_id
-            LEFT JOIN substrate_batch_inputs AS sbi ON sbi.substrate_batch_id = sb.id
-            LEFT JOIN waste_lots AS wl ON wl.id = sbi.waste_lot_id
+
+    def lineage(harvests_of):
+        return ',\n'.join(
+            f"(SELECT string_agg(DISTINCT {column}, ', ') FROM chain WHERE harvest_id IN ({harvests_of})) AS {name}"
+            for column, name in (('harvest_code', 'harvests'), ('production_batch', 'production_batches'),
+                                 ('substrate_batch', 'substrate_batches'), ('waste_lot', 'waste_lots'),
+                                 ('source_name', 'waste_sources'))
         )
-        SELECT pl.business_id AS product_lot, pl.product_type AS product, pl.production_date,
-               pl.quantity_kg, COALESCE(batch.business_id, batch.batch_code) AS drying_batch,
-               (SELECT string_agg(DISTINCT harvest_code, ', ') FROM chain
-                 WHERE drying_batch_id = batch.id) AS harvests,
-               (SELECT string_agg(DISTINCT production_batch, ', ') FROM chain
-                 WHERE drying_batch_id = batch.id) AS production_batches,
-               (SELECT string_agg(DISTINCT substrate_batch, ', ') FROM chain
-                 WHERE drying_batch_id = batch.id) AS substrate_batches,
-               (SELECT string_agg(DISTINCT waste_lot, ', ') FROM chain
-                 WHERE drying_batch_id = batch.id) AS waste_lots,
-               (SELECT string_agg(DISTINCT source_name, ', ') FROM chain
-                 WHERE drying_batch_id = batch.id) AS waste_sources,
+
+    customers = f"""
                CASE WHEN {commercial_visible[0]} THEN (
                    SELECT string_agg(DISTINCT c.name, ', ')
                    FROM order_allocations AS a
@@ -407,14 +443,42 @@ def _report_traceability(cursor, f):
                    JOIN customer_orders AS o ON o.id = l.order_id
                    JOIN customers AS c ON c.id = o.customer_id
                    WHERE a.product_lot_id = pl.id
-               ) ELSE 'restricted' END AS customers
-        FROM product_lots AS pl
-        JOIN drying_outputs AS output ON output.id = pl.drying_output_id
-        JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
-        {q.where}
-        ORDER BY pl.production_date DESC, pl.id DESC
+               ) ELSE 'restricted' END AS customers"""
+    cursor.execute(
+        f"""
+        WITH chain AS (
+            SELECT h.id AS harvest_id, h.harvest_code, pb.business_id AS production_batch,
+                   sb.business_id AS substrate_batch, wl.business_id AS waste_lot,
+                   wl.source_name
+            FROM harvests AS h
+            JOIN production_events AS pe ON pe.id = h.production_event_id
+            JOIN production_batches AS pb ON pb.id = pe.production_batch_id
+            LEFT JOIN production_batch_inputs AS pbi ON pbi.production_batch_id = pb.id
+            LEFT JOIN substrate_batches AS sb ON sb.id = pbi.substrate_batch_id
+            LEFT JOIN substrate_batch_inputs AS sbi ON sbi.substrate_batch_id = sb.id
+            LEFT JOIN waste_lots AS wl ON wl.id = sbi.waste_lot_id
+        )
+        SELECT * FROM (
+            SELECT pl.business_id AS product_lot, pl.product_type AS product, pl.production_date,
+                   pl.quantity_kg, COALESCE(batch.business_id, batch.batch_code) AS drying_batch,
+                   {lineage('SELECT harvest_id FROM drying_inputs WHERE drying_batch_id = batch.id')},
+                   {customers}
+            FROM product_lots AS pl
+            JOIN drying_outputs AS output ON output.id = pl.drying_output_id
+            JOIN drying_batches AS batch ON batch.id = output.drying_batch_id
+            {dq.where}
+            UNION ALL
+            SELECT pl.business_id, pl.product_type, pl.production_date,
+                   pl.quantity_kg, fl.business_id,
+                   {lineage('fl.harvest_id')},
+                   {customers}
+            FROM product_lots AS pl
+            JOIN frass_lots AS fl ON fl.id = pl.frass_lot_id
+            {fq.where}
+        ) AS lots
+        ORDER BY production_date DESC, product_lot DESC
         """,
-        (*commercial_visible[1], *q.params),
+        (*commercial_visible[1], *dq.params, *commercial_visible[1], *fq.params),
     )
     return cursor.fetchall()
 
@@ -442,7 +506,8 @@ def _report_farm_performance(cursor, f):
         ('harvested_kg', "SELECT COALESCE(SUM(quantity), 0) FROM production_events WHERE farm_id = fm.farm_id AND event_type = 'harvest' AND status = 'recorded' AND {w}", 'occurred_at'),
         ('dried_in_kg', f"SELECT COALESCE(SUM({KG_SQL.format(unit='di.unit', qty='di.quantity')}), 0) FROM drying_inputs AS di JOIN drying_batches AS db ON db.id = di.drying_batch_id WHERE db.farm_id = fm.farm_id AND {{w}}", 'db.drying_date'),
         ('dried_out_kg', f"SELECT COALESCE(SUM({KG_SQL.format(unit='o.unit', qty='o.quantity')}), 0) FROM drying_outputs AS o JOIN drying_batches AS db ON db.id = o.drying_batch_id WHERE db.farm_id = fm.farm_id AND {{w}}", 'db.drying_date'),
-        ('released_kg', 'SELECT COALESCE(SUM(quantity_kg), 0) FROM product_lots WHERE farm_id = fm.farm_id AND drying_output_id IS NOT NULL AND {w}', 'production_date'),
+        ('frass_cured_kg', 'SELECT COALESCE(SUM(cured_kg), 0) FROM frass_lots WHERE farm_id = fm.farm_id AND {w}', 'cured_at'),
+        ('released_kg', 'SELECT COALESCE(SUM(quantity_kg), 0) FROM product_lots WHERE farm_id = fm.farm_id AND (drying_output_id IS NOT NULL OR frass_lot_id IS NOT NULL) AND {w}', 'production_date'),
         ('dispatched_kg', "SELECT COALESCE(SUM(quantity_kg), 0) FROM inventory_movements WHERE farm_id = fm.farm_id AND movement_type = 'DISPATCH' AND status = 'posted' AND {w}", 'occurred_at'),
         ('revenue', "SELECT COALESCE(SUM(dl.quantity_kg * l.unit_price), 0) FROM customer_delivery_lines AS dl JOIN customer_deliveries AS d ON d.id = dl.delivery_id JOIN customer_orders AS ro ON ro.id = d.order_id JOIN order_allocations AS a ON a.id = dl.allocation_id JOIN customer_order_lines AS l ON l.id = a.order_line_id WHERE ro.farm_id = fm.farm_id AND d.status = 'DELIVERED' AND {w}", 'd.delivered_at'),
     ):
@@ -558,9 +623,9 @@ REPORTS = {
         'filters': ['dates', 'farm', 'facility'],
         'columns': [_col('date', 'Date', 'date'), _col('harvest', 'Harvest'), _col('production_batch', 'Batch'),
                     _col('wet_kg', 'Wet kg', 'kg'), _col('sent_to_drying_kg', 'Sent to drying kg', 'kg'),
-                    _col('stage', 'Stage'), _col('operator', 'Operator'), _col('location', 'Location'),
+                    _col('frass_kg', 'Frass kg', 'kg'), _col('stage', 'Stage'), _col('operator', 'Operator'), _col('location', 'Location'),
                     _col('facility', 'Facility')],
-        'totals': ['wet_kg', 'sent_to_drying_kg'],
+        'totals': ['wet_kg', 'sent_to_drying_kg', 'frass_kg'],
     },
     'drying': {
         'title': 'Drying', 'group': 'Processing', 'builder': _report_drying,
@@ -572,11 +637,24 @@ REPORTS = {
                     _col('moisture_pct', 'Moisture %', 'percent'), _col('production_batches', 'From batches')],
         'totals': ['wet_in_kg', 'dry_out_kg'],
     },
+    'frass': {
+        'title': 'Frass & fertiliser', 'group': 'Processing', 'builder': _report_frass,
+        'filters': ['dates', 'farm', 'facility', 'status'],
+        'statuses': ['CURING', 'QC_PENDING', 'APPROVED', 'REJECTED', 'RELEASED'],
+        'columns': [_col('date', 'Separated', 'date'), _col('frass_lot', 'Frass lot'), _col('harvest', 'Harvest'),
+                    _col('production_batch', 'Batch'), _col('separated_kg', 'Separated kg', 'kg'),
+                    _col('curing_checks', 'Curing checks', 'number'), _col('cured_kg', 'Cured kg', 'kg'),
+                    _col('cured_on', 'Cured', 'date'), _col('status', 'Status'), _col('quality_check', 'Check'),
+                    _col('result', 'Result'), _col('decision', 'Decision'), _col('product_lot', 'Product lot'),
+                    _col('facility', 'Facility')],
+        'totals': ['separated_kg', 'cured_kg'],
+    },
     'quality': {
         'title': 'Quality control', 'group': 'Processing', 'builder': _report_quality,
         'filters': ['dates', 'farm', 'facility', 'status'],
         'statuses': ['PASSED', 'FAILED', 'SUBMITTED', 'DRAFT', 'SUPERSEDED'],
-        'columns': [_col('date', 'Date', 'date'), _col('quality_check', 'Check'), _col('drying_batch', 'Drying batch'),
+        'columns': [_col('date', 'Date', 'date'), _col('quality_check', 'Check'), _col('product', 'Product'),
+                    _col('drying_batch', 'Drying batch / frass lot'),
                     _col('result', 'Result'), _col('moisture_pct', 'Moisture %', 'percent'), _col('inspector', 'Inspector'),
                     _col('decision', 'Decision'), _col('approver', 'Approver'), _col('decided_on', 'Decided', 'date'),
                     _col('facility', 'Facility')],
@@ -629,7 +707,7 @@ REPORTS = {
         'filters': ['dates', 'farm', 'facility', 'product'],
         'columns': [_col('product_lot', 'Product lot'), _col('product', 'Product'),
                     _col('production_date', 'Produced', 'date'), _col('quantity_kg', 'Released kg', 'kg'),
-                    _col('drying_batch', 'Drying batch'), _col('harvests', 'Harvests'),
+                    _col('drying_batch', 'Drying batch / frass lot'), _col('harvests', 'Harvests'),
                     _col('production_batches', 'Production batches'), _col('substrate_batches', 'Substrate'),
                     _col('waste_lots', 'Waste lots'), _col('waste_sources', 'Waste sources'),
                     _col('customers', 'Customers')],
@@ -643,11 +721,12 @@ REPORTS = {
                     _col('harvested_kg', 'Harvested kg', 'kg'),
                     _col('harvest_per_substrate_pct', 'Harvest / substrate %', 'percent'),
                     _col('dried_in_kg', 'Into drying kg', 'kg'), _col('dried_out_kg', 'Dried kg', 'kg'),
-                    _col('drying_yield_pct', 'Drying yield %', 'percent'), _col('released_kg', 'Released kg', 'kg'),
+                    _col('drying_yield_pct', 'Drying yield %', 'percent'), _col('frass_cured_kg', 'Frass cured kg', 'kg'),
+                    _col('released_kg', 'Released kg', 'kg'),
                     _col('dispatched_kg', 'Dispatched kg', 'kg'),
                     _col('revenue', f'Revenue ({CURRENCY})', 'money'), _col('open_alerts', 'Open alerts', 'number')],
         'totals': ['waste_received_kg', 'substrate_kg', 'batches_started', 'harvested_kg',
-                   'dried_in_kg', 'dried_out_kg', 'released_kg', 'dispatched_kg', 'revenue', 'open_alerts'],
+                   'dried_in_kg', 'dried_out_kg', 'frass_cured_kg', 'released_kg', 'dispatched_kg', 'revenue', 'open_alerts'],
     },
 }
 

@@ -304,6 +304,34 @@ def _batch_360(cursor, batch_ref):
         'any_shared': any(row['shared_with_other_batches'] for row in drying_batches),
     }
 
+    # 5b. Frass: the harvest's second product, cured and checked before sale.
+    cursor.execute(
+        """
+        SELECT fl.id, fl.business_id, fl.status, fl.quantity_kg, fl.cured_kg,
+               fl.curing_started_at, fl.cured_at, fl.recorded_by, hs.harvest_code,
+               (SELECT COUNT(*) FROM frass_curing_checks WHERE frass_lot_id = fl.id) AS curing_checks,
+               latest.check_code, latest.status AS check_status, latest.maturity,
+               latest.moisture_percent, latest.inspector, latest.checked_at,
+               latest.decision, latest.approver, latest.decided_at, latest.rationale,
+               pl.business_id AS product_lot
+        FROM frass_lots AS fl
+        JOIN harvests AS hs ON hs.id = fl.harvest_id
+        LEFT JOIN LATERAL (
+            SELECT * FROM frass_quality_checks WHERE frass_lot_id = fl.id ORDER BY id DESC LIMIT 1
+        ) AS latest ON TRUE
+        LEFT JOIN product_lots AS pl ON pl.frass_lot_id = fl.id
+        WHERE fl.production_batch_id = %s
+        ORDER BY fl.id
+        """,
+        (batch_id,),
+    )
+    frass_lots = [dict(row) for row in cursor.fetchall()]
+    frass = {
+        'lots': frass_lots,
+        'separated_kg': sum((row['quantity_kg'] for row in frass_lots), Decimal('0')),
+        'cured_kg': sum((row['cured_kg'] for row in frass_lots if row['cured_kg'] is not None), Decimal('0')),
+    }
+
     # 6. Quality: the latest check and decision for each drying output.
     quality = []
     if output_ids:
@@ -332,23 +360,24 @@ def _batch_360(cursor, batch_ref):
         )
         quality = [dict(row) for row in cursor.fetchall()]
 
-    # 7–8. Product lots released from those outputs and their stock.
+    # 7–8. Product lots released from those outputs and frass lots, and their stock.
     product_lots = []
-    if output_ids:
+    frass_ids = [row['id'] for row in frass_lots]
+    if output_ids or frass_ids:
         cursor.execute(
             f"""
             SELECT pl.id, pl.business_id, pl.lot_code, pl.product_type,
                    pl.quantity_kg, pl.unit, pl.production_date,
-                   pl.drying_output_id, pl.storage_location,
+                   pl.drying_output_id, pl.frass_lot_id, pl.storage_location,
                    pl.created_at::timestamptz AS created_at,
                    pl.recorded_by,
                    CASE WHEN {PRODUCT_LOT_RELEASABLE_SQL}
                         THEN 'AVAILABLE' ELSE 'BLOCKED' END AS status
             FROM product_lots AS pl
-            WHERE pl.drying_output_id = ANY(%s)
+            WHERE pl.drying_output_id = ANY(%s) OR pl.frass_lot_id = ANY(%s)
             ORDER BY pl.id
             """,
-            (output_ids,),
+            (output_ids, frass_ids),
         )
         product_lots = [dict(row) for row in cursor.fetchall()]
     inventory_balances = []
@@ -444,6 +473,29 @@ def _batch_360(cursor, batch_ref):
                 'title': f"QC decision {check['approval_code']}: {check['decision']}",
                 'actor': check['approver'], 'detail': check['rationale'],
             })
+    for lot in frass_lots:
+        audit.append({
+            'at': lot['curing_started_at'], 'kind': 'frass',
+            'title': f"Frass lot {lot['business_id']} started curing",
+            'actor': lot['recorded_by'], 'detail': f"{_kg_text(lot['quantity_kg'])} separated · {lot['harvest_code']}",
+        })
+        if lot['cured_at']:
+            audit.append({
+                'at': lot['cured_at'], 'kind': 'frass', 'title': f"{lot['business_id']} cured",
+                'actor': None, 'detail': f"{_kg_text(lot['cured_kg'])} after curing",
+            })
+        if lot['check_code']:
+            audit.append({
+                'at': lot['checked_at'], 'kind': 'quality',
+                'title': f"Frass QC {lot['check_code']} {lot['check_status']}",
+                'actor': lot['inspector'], 'detail': f"{lot['business_id']} · {lot['maturity']}",
+            })
+        if lot['decision']:
+            audit.append({
+                'at': lot['decided_at'], 'kind': 'quality',
+                'title': f"Frass QC decision: {lot['decision']}",
+                'actor': lot['approver'], 'detail': lot['rationale'],
+            })
     for lot in product_lots:
         audit.append({
             'at': lot['created_at'], 'kind': 'product',
@@ -462,7 +514,8 @@ def _batch_360(cursor, batch_ref):
     # Every audit timestamp is timestamptz (naive columns are cast in SQL).
     audit.sort(key=lambda row: row['at'])
 
-    has_approval = any(q['decision'] == 'approved' for q in quality)
+    has_approval = (any(q['decision'] == 'approved' for q in quality)
+                    or any(lot['decision'] == 'approved' for lot in frass_lots))
     stages = [
         {'key': 'source', 'label': 'Source material', 'done': bool(substrates)},
         {'key': 'production', 'label': 'Production', 'done': batch['status'] not in ('PLANNED', 'CANCELLED')},
@@ -472,6 +525,10 @@ def _batch_360(cursor, batch_ref):
         {'key': 'product', 'label': 'Product lot', 'done': bool(product_lots)},
         {'key': 'inventory', 'label': 'In stock', 'done': inventory['on_hand_kg'] > 0},
     ]
+    if frass_lots:
+        # Only harvests that separated frass have this stage; it sits after drying.
+        stages.insert(4, {'key': 'frass', 'label': 'Frass cured',
+                          'done': any(lot['cured_kg'] for lot in frass_lots)})
 
     traceability = {
         'upstream': {
@@ -494,6 +551,10 @@ def _batch_360(cursor, batch_ref):
             'drying_batches': [
                 {'business_id': d['business_id'], 'status': d['status'],
                  'output_kg': d['total_output_kg']} for d in drying_batches
+            ],
+            'frass_lots': [
+                {'business_id': lot['business_id'], 'status': lot['status'],
+                 'cured_kg': lot['cured_kg'], 'separated_kg': lot['quantity_kg']} for lot in frass_lots
             ],
             'product_lots': [
                 {'business_id': lot['business_id'], 'status': lot['status'],
@@ -528,6 +589,7 @@ def _batch_360(cursor, batch_ref):
         'operations': operations,
         'harvest': harvest,
         'processing': processing,
+        'frass': frass,
         'quality': quality,
         'product_lots': product_lots,
         'inventory': inventory,

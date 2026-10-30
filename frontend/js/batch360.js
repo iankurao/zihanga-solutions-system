@@ -122,6 +122,7 @@ document.addEventListener('DOMContentLoaded', function () {
       ['Wet harvest', kg(data.harvest.total_wet_kg), count(data.harvest.count, 'harvest event')],
       ['Dry output', kg(data.processing.dry_output_kg), count(data.processing.drying_batches.length, 'drying batch', 'drying batches')],
       ['Drying yield', pct(dryingYield(data.processing)), 'dry ÷ wet into drying'],
+      ['Frass cured', kg(data.frass.cured_kg), kg(data.frass.separated_kg) + ' separated · ' + count(data.frass.lots.length, 'frass lot')],
       ['Available stock', kg(data.inventory.available_kg), count(data.product_lots.length, 'product lot')]
     ].forEach(function (kpi) {
       var tile = el('div', 'b360-kpi');
@@ -273,20 +274,42 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function renderQuality(data) {
-    var target = body('quality');
-    if (!data.quality.length) {
-      target.appendChild(empty('No quality check has been recorded on this batch\'s drying output.'));
+  function renderFrass(data) {
+    var target = body('frass');
+    var lots = data.frass.lots;
+    if (!lots.length) {
+      target.appendChild(empty('No frass has been separated from this batch\'s harvests.'));
       return;
     }
+    target.appendChild(facts([
+      ['Frass separated', kg(data.frass.separated_kg)],
+      ['Cured (for sale)', kg(data.frass.cured_kg)],
+      ['Frass lots', lots.length]
+    ]));
     target.appendChild(table(
-      ['Check', 'Result', 'Moisture', 'Inspector', 'Decision', 'Approver', 'Decided'],
-      data.quality.map(function (q) {
-        return [q.check_code, pill(q.check_status), pct(q.moisture_percent), q.inspector,
-          q.decision ? pill(q.decision) : pill('Awaiting decision'),
-          q.approver, moment(q.decided_at)];
+      ['Frass lot', 'Harvest', 'Separated', 'Cured', 'Curing checks', 'Status', 'Product lot'],
+      lots.map(function (lot) {
+        return [lot.business_id, lot.harvest_code, kg(lot.quantity_kg), lot.cured_kg == null ? 'Curing' : kg(lot.cured_kg),
+          lot.curing_checks, pill(lot.status), lot.product_lot ? lotLink(lot.product_lot) : '—'];
       })
     ));
+  }
+
+  // Drying output checks and frass checks share one table.
+  function renderQuality(data) {
+    var target = body('quality');
+    var rows = data.quality.map(function (q) {
+      return [q.check_code, 'Dried larvae', pill(q.check_status), pct(q.moisture_percent), q.inspector,
+        q.decision ? pill(q.decision) : pill('Awaiting decision'), q.approver, moment(q.decided_at)];
+    }).concat(data.frass.lots.filter(function (lot) { return lot.check_code; }).map(function (lot) {
+      return [lot.check_code, 'Frass · ' + lot.maturity, pill(lot.check_status), pct(lot.moisture_percent), lot.inspector,
+        lot.decision ? pill(lot.decision) : pill('Awaiting decision'), lot.approver, moment(lot.decided_at)];
+    }));
+    if (!rows.length) {
+      target.appendChild(empty('No quality check has been recorded on this batch\'s dried output or frass.'));
+      return;
+    }
+    target.appendChild(table(['Check', 'Product', 'Result', 'Moisture', 'Inspector', 'Decision', 'Approver', 'Decided'], rows));
   }
 
   function lotLink(businessId) {
@@ -379,6 +402,9 @@ document.addEventListener('DOMContentLoaded', function () {
       node('Production batch', [data.batch.business_id + ' · ' + label(data.batch.status)], 'is-current'),
       node('Harvest', down.harvests.map(function (h) { return h.harvest_code + ' · ' + kg(h.wet_kg); })),
       node('Drying', down.drying_batches.map(function (d) { return (d.business_id || '—') + ' · ' + kg(d.output_kg); })),
+      node('Frass', down.frass_lots.map(function (f) {
+        return f.business_id + ' · ' + (f.cured_kg == null ? kg(f.separated_kg) + ' curing' : kg(f.cured_kg));
+      })),
       node('Product lots', down.product_lots.map(function (p) { return p.business_id + ' · ' + label(p.status); })),
       node('Inventory', down.locations),
       commercialNode(down.commercial)
@@ -446,6 +472,7 @@ document.addEventListener('DOMContentLoaded', function () {
     renderOperations(data);
     renderHarvest(data);
     renderProcessing(data);
+    renderFrass(data);
     renderQuality(data);
     renderProduct(data);
     renderInventory(data);

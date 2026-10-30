@@ -432,7 +432,7 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         finally:
             db.return_connection(conn)
 
-    def _create_output_for_product_lot(self, *, output_quantity="0.600"):
+    def _create_output_for_product_lot(self, *, output_quantity="0.600", qc_pending=True):
         substrate_id = self._create_substrate(quantity="8.000")
         created = self._create_production(
             substrate_id, quantity="4.000", harvest_limit_kg="4.000"
@@ -483,6 +483,8 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(output_response.status_code, 201, output_response.get_json())
         output = output_response.get_json()["output"]
+        if not qc_pending:
+            return drying_ref, output
         pending = self.client.post(
             f"/api/drying/batches/{drying_ref}/status",
             json={"status": "QC_PENDING", "recorded_by": self.actor},
@@ -548,6 +550,81 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertTrue(lineage["production_batch_business_id"])
         self.assertTrue(lineage["substrate_batch_business_id"])
         self.assertTrue(lineage["waste_lot_business_id"])
+
+    def _decide(self, check, decision, **extra):
+        return self.client.post("/api/drying/quality-approvals", json={
+            "quality_check_id": check.get_json()["data"]["id"], "decision": decision,
+            "approver": self.actor, **extra})
+
+    def _release_output(self, output):
+        return self.client.post("/api/product-lots", json={
+            "drying_output_id": output["id"], "product_type": "dried_larvae",
+            "inventory_location_id": self.inventory_location_id})
+
+    def test_every_output_of_a_drying_batch_gets_its_own_qc_before_completion(self):
+        drying_ref, first = self._create_output_for_product_lot(qc_pending=False)
+        second = self.client.post(f"/api/drying/batches/{drying_ref}/outputs", json={
+            "quantity": "0.200", "unit": "kg", "output_date": "2026-09-25", "operator": self.actor,
+        }).get_json()["output"]
+        self.client.post(f"/api/drying/batches/{drying_ref}/status",
+                         json={"status": "QC_PENDING", "recorded_by": self.actor})
+
+        # Approving the first output must not close the batch on the second.
+        self.assertEqual(self._decide(self._create_output_quality_check(first), "approved").status_code, 201)
+        batch = self.client.get(f"/api/drying/batches/{drying_ref}").get_json()["data"]
+        self.assertEqual(batch["status"], "QC_PENDING")
+        early = self._release_output(first)
+        self.assertEqual(early.status_code, 400, early.get_json())
+        self.assertIn("every output", early.get_json()["message"])
+        manual = self.client.post(f"/api/drying/batches/{drying_ref}/status",
+                                  json={"status": "COMPLETED", "recorded_by": self.actor})
+        self.assertEqual(manual.status_code, 400, manual.get_json())
+
+        second_check = self._create_output_quality_check(second)
+        self.assertEqual(second_check.status_code, 201, second_check.get_json())
+        self.assertEqual(self._decide(second_check, "approved").status_code, 201)
+        batch = self.client.get(f"/api/drying/batches/{drying_ref}").get_json()["data"]
+        self.assertEqual(batch["status"], "COMPLETED")
+        for output in (first, second):
+            released = self._release_output(output)
+            self.assertEqual(released.status_code, 201, released.get_json())
+
+    def test_a_rejected_output_is_set_aside_and_the_rest_is_released(self):
+        drying_ref, good = self._create_output_for_product_lot(qc_pending=False)
+        burnt = self.client.post(f"/api/drying/batches/{drying_ref}/outputs", json={
+            "quantity": "0.100", "unit": "kg", "output_date": "2026-09-25", "operator": self.actor,
+        }).get_json()["output"]
+        self.client.post(f"/api/drying/batches/{drying_ref}/status",
+                         json={"status": "QC_PENDING", "recorded_by": self.actor})
+        failed = self._create_output_quality_check(burnt, status="failed")
+        unexplained = self._decide(failed, "rejected")
+        self.assertEqual(unexplained.status_code, 400, unexplained.get_json())
+        self.assertIn("reason", unexplained.get_json()["message"])
+        self.assertEqual(self._decide(failed, "rejected", rationale="Burnt").status_code, 201)
+        self.assertEqual(self._decide(self._create_output_quality_check(good), "approved").status_code, 201)
+        batch = self.client.get(f"/api/drying/batches/{drying_ref}").get_json()["data"]
+        self.assertEqual(batch["status"], "COMPLETED")
+        self.assertEqual(self._release_output(good).status_code, 201)
+        self.assertEqual(self._release_output(burnt).status_code, 400)
+
+    def test_qc_check_cannot_list_none_and_a_contaminant(self):
+        _drying_ref, output = self._create_output_for_product_lot()
+        both = self.client.post(f"/api/drying/outputs/{output['id']}/quality-checks", json={
+            "status": "failed", "inspector": self.actor,
+            "parameters": {"contaminants_found": ["none", "sand"]}})
+        self.assertEqual(both.status_code, 400, both.get_json())
+        self.assertIn("not both", both.get_json()["message"])
+
+    def test_only_the_latest_check_on_an_output_can_be_decided(self):
+        drying_ref, output = self._create_output_for_product_lot()
+        older = self._create_output_quality_check(output)
+        newer = self._create_output_quality_check(output, status="failed")
+        stale = self._decide(older, "approved")
+        self.assertEqual(stale.status_code, 400, stale.get_json())
+        self.assertIn("newer quality check", stale.get_json()["message"])
+        batch = self.client.get(f"/api/drying/batches/{drying_ref}").get_json()["data"]
+        self.assertEqual(batch["status"], "QC_PENDING")
+        self.assertEqual(self._decide(newer, "rejected", rationale="Sand left").status_code, 201)
 
     def test_failed_qc_blocks_product_lot_release(self):
         _drying_ref, output = self._create_output_for_product_lot()
@@ -1764,6 +1841,42 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         trace = self.client.get(f"/api/traceability?ref={delivery_ref}").get_json()["data"]
         kinds = {node["type"] for stage in trace["stages"] for node in stage["nodes"]}
         self.assertTrue({"waste_lot", "harvest", "frass_lot", "product_lot", "customer_order"} <= kinds, kinds)
+
+        # The operations dashboard shows frass as its own stages, and revenue once delivered.
+        confirmed = self.client.post(f"/api/deliveries/{delivery_ref}/confirm", json={"received_by": "Store keeper"})
+        self.assertIn(confirmed.status_code, (200, 201), confirmed.get_json())
+        data = self._dashboard(days=90)
+        flow = {f["stage"]: f["kg"] for f in data["flow"]}
+        self.assertAlmostEqual(flow["Frass separated"], 2.5)
+        self.assertAlmostEqual(flow["Frass cured"], 2.0)
+        self.assertAlmostEqual(flow["Released: frass fertiliser"], 2.0)
+        self.assertEqual(flow["Released: dried larvae"], 0)
+        self.assertAlmostEqual(data["kpis"]["released_kg"], 2.0)
+        self.assertEqual(data["kpis"]["frass_curing_lots"], 0)
+        self.assertAlmostEqual(data["commercial"]["revenue"], 1.5 * 400)
+        self.assertEqual(data["commercial"]["currency"], "KES")
+
+        # Reports and Batch 360 carry the frass branch too.
+        window = {"date_from": "2026-01-01", "date_to": "2026-12-31"}
+        frass_rows = self._report("frass", **window)["data"]
+        self.assertEqual([(r["frass_lot"], r["status"], r["product_lot"]) for r in frass_rows],
+                         [(ref, "RELEASED", lot_ref)])
+        self.assertAlmostEqual(self._report("harvest", **window)["totals"]["frass_kg"], 2.5)
+        checks = {r["quality_check"]: r for r in self._report("quality", **window)["data"]}
+        self.assertEqual(checks[passed["data"]["check_code"]]["product"], "Frass fertiliser")
+        lineage = {r["product_lot"]: r for r in self._report("traceability", **window)["data"]}
+        waste_ref = db.fetch_one("SELECT business_id FROM waste_lots WHERE id = %s", (self.waste_lot_id,))["business_id"]
+        self.assertEqual((lineage[lot_ref]["drying_batch"], lineage[lot_ref]["waste_lots"]), (ref, waste_ref))
+        farm = self._report("farm_performance", **window)["data"][0]
+        self.assertAlmostEqual(farm["frass_cured_kg"], 2.0)
+        self.assertAlmostEqual(farm["released_kg"], 2.0)
+        b360 = self.client.get(f"/api/production/batches/{batch['business_id']}/360").get_json()["data"]
+        self.assertEqual([lot["business_id"] for lot in b360["frass"]["lots"]], [ref])
+        self.assertAlmostEqual(b360["frass"]["cured_kg"], 2.0)
+        self.assertIn(lot_ref, [lot["business_id"] for lot in b360["product_lots"]])
+        self.assertTrue(next(s for s in b360["stages"] if s["key"] == "frass")["done"])
+        self.assertEqual(b360["traceability"]["downstream"]["frass_lots"][0]["business_id"], ref)
+        self.assertTrue(any("started curing" in entry["title"] for entry in b360["audit"]))
         dried_larvae = self._order("1", product_type="dried_larvae")
         wrong = self._allocate(dried_larvae, lot, "0.5")
         self.assertEqual(wrong.status_code, 400)
@@ -2934,8 +3047,9 @@ class ProductionBatchChainIntegrationTest(unittest.TestCase):
         self.assertEqual((bad_dates.status_code, bad_status.status_code), (400, 400))
         self.assertEqual(self.client.get("/api/reports/unknown").status_code, 404)
         catalog = self.client.get("/api/reports").get_json()["data"]
-        self.assertEqual(len(catalog), 13)
+        self.assertEqual(len(catalog), 14)
         self.assertIn("farm_operations", [r["key"] for r in catalog])
+        self.assertIn("frass", [r["key"] for r in catalog])
         self.assertEqual(self.client.get("/analytics").status_code, 200)
 
     # ---- Order prices and revenue -------------------------------------------------

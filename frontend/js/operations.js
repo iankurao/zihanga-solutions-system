@@ -31,6 +31,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function count(value) { return Number(value || 0).toLocaleString(); }
 
+  function money(value, currency) {
+    return currency + ' ' + Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
   function niceMax(value) {
     if (value <= 0) return 1;
     var power = Math.pow(10, Math.floor(Math.log10(value)));
@@ -219,7 +223,11 @@ document.addEventListener('DOMContentLoaded', function () {
         count(k.ready_for_harvest) + ' ready to harvest · ' + count(k.planned_batches) + ' planned', '/batch-360'),
       kpi('Harvested', kg(k.harvested_kg), 'wet larvae, ' + period),
       kpi('Dried', kg(k.dried_kg), count(k.drying_in_progress) + ' drying batches in progress'),
-      kpi('QC pending', count(k.qc_pending), 'drying batches awaiting a decision', '/alerts', k.qc_pending > 0),
+      kpi('Frass cured', kg(k.frass_cured_kg),
+        kg(k.frass_separated_kg) + ' separated · ' + count(k.frass_curing_lots) + ' lots curing', '/dashboard#frass'),
+      kpi('QC pending', count(k.qc_pending),
+        count(k.qc_pending_drying) + ' drying batches · ' + count(k.qc_pending_frass) + ' frass lots awaiting a decision',
+        '/alerts', k.qc_pending > 0),
       kpi('Available stock', kg(k.stock_available_kg),
         kg(k.stock_reserved_kg) + ' reserved · ' + kg(k.stock_blocked_kg) + ' blocked', '/product-lot', Number(k.stock_blocked_kg) > 0),
       c ? kpi('Open orders', count(c.open_orders),
@@ -227,6 +235,8 @@ document.addEventListener('DOMContentLoaded', function () {
         : kpi('Open orders', '—', 'Visible to farm-level users'),
       c ? kpi('Delivered', kg(c.delivered_kg), count(c.in_transit) + ' in transit · ' + period, '/orders')
         : kpi('Delivered', '—', 'Visible to farm-level users'),
+      c ? kpi('Revenue', money(c.revenue, c.currency), 'delivered value · ' + period, '/orders')
+        : kpi('Revenue', '—', 'Visible to farm-level users'),
       kpi('Open alerts', count(data.alerts.critical + data.alerts.warning + data.alerts.info),
         count(data.alerts.critical) + ' critical · ' + count(data.alerts.warning) + ' warning', '/alerts', data.alerts.critical > 0)
     );
