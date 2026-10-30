@@ -1,5 +1,67 @@
 // Global utility functions
 
+// The reference of the record a save created (WL-..., SUB-..., HRV-..., LOT-...).
+function createdReference(result) {
+  var keys = ['business_id', 'harvest_code', 'event_code', 'check_code', 'approval_code', 'lot_code'];
+  function find(value, depth) {
+    if (!value || typeof value !== 'object' || depth > 2) return null;
+    for (var i = 0; i < keys.length; i++) {
+      if (typeof value[keys[i]] === 'string' && value[keys[i]]) return value[keys[i]];
+    }
+    for (var key in value) {
+      var found = find(value[key], depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  return find(result, 0);
+}
+
+// Tell the user what happened to a save, where they can see it: a message
+// pinned to the bottom of the screen (the page may be scrolled far below the
+// top bar) and a line under the form's submit button that stays until the
+// next entry. type is 'success' or 'error'.
+function showFormResult(form, message, type) {
+  var ok = type === 'success';
+  var toast = document.getElementById('notification');
+  if (toast) {
+    toast.className = 'alert erp-toast ' + (ok ? 'alert-success' : 'alert-danger');
+    toast.setAttribute('role', ok ? 'status' : 'alert');
+    toast.textContent = '';
+    var icon = document.createElement('i');
+    icon.className = 'fas ' + (ok ? 'fa-check-circle' : 'fa-exclamation-circle');
+    icon.setAttribute('aria-hidden', 'true');
+    var text = document.createElement('span');
+    text.textContent = message;
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'erp-toast-close';
+    close.setAttribute('aria-label', 'Close message');
+    close.textContent = '\u00d7';
+    close.addEventListener('click', function() { toast.style.display = 'none'; });
+    toast.append(icon, text, close);
+    toast.style.display = 'flex';
+    clearTimeout(showFormResult.timer);
+    // Errors stay until closed; success fades after a few seconds.
+    if (ok) showFormResult.timer = setTimeout(function() { toast.style.display = 'none'; }, 6000);
+  }
+  if (form) {
+    var line = form.querySelector('.form-result');
+    if (!line) {
+      line = document.createElement('p');
+      line.className = 'form-result';
+      line.setAttribute('aria-live', 'polite');
+      var button = form.querySelector('button[type="submit"]');
+      (button ? button.parentNode : form).insertBefore(line, button ? button.nextSibling : null);
+      // The line describes the last save; it goes once the next entry starts.
+      form.addEventListener('input', function() { line.hidden = true; });
+    }
+    line.textContent = (ok ? '\u2713 ' : '\u26a0 ') + message;
+    line.classList.toggle('is-error', !ok);
+    line.hidden = false;
+  }
+}
+
 function showSection(sectionId, element) {
   document.querySelectorAll('.section').forEach(function(section) {
     section.classList.remove('active');
@@ -118,15 +180,8 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Notification function
-    function showNotification(message, type = 'success') {
-        const notification = document.getElementById('notification');
-        notification.textContent = message;
-        notification.className = 'alert'; // reset
-        notification.classList.add(type === 'success' ? 'alert-success' : 'alert-danger');
-        notification.style.display = 'block';
-        setTimeout(() => {
-            notification.style.display = 'none';
-        }, 4000);
+    function showNotification(message, type = 'success', form = null) {
+        showFormResult(form, message, type === 'success' ? 'success' : 'error');
     }
 
     let availableWasteLots = [];
@@ -620,7 +675,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(result.message || `HTTP error! status: ${response.status}`);
             }
             
-            showNotification(result.message || 'Data submitted successfully!', 'success');
+            const reference = createdReference(result);
+            const saved = result.message || 'Saved';
+            showNotification(reference && !saved.includes(reference) ? `${saved} \u00b7 ${reference}` : saved,
+                'success', form);
             form.reset();
             if (formType === 'wasteSourcing' || formType === 'substratePreparation') {
                 window.refreshSubstrateChainData();
@@ -633,7 +691,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } catch (error) {
             console.error('Error details:', error);
-            showNotification(`Error: ${error.message}`, 'error');
+            showNotification(`Not saved: ${error.message}`, 'error', form);
         } finally {
             // Reset submission flag and re-enable button
             formSubmissionStates.set(formType, false);
@@ -1149,36 +1207,6 @@ document.addEventListener('DOMContentLoaded', function() {
     } }
   ];
 
-  var dryingSuccessAlert = document.createElement('div');
-  dryingSuccessAlert.className = 'alert alert-success';
-  dryingSuccessAlert.style.display = 'none';
-  dryingSuccessAlert.innerHTML = '<i class="fas fa-check-circle"></i> <span></span>';
-  var dryingErrorAlert = document.createElement('div');
-  dryingErrorAlert.className = 'alert alert-danger';
-  dryingErrorAlert.style.display = 'none';
-  dryingErrorAlert.innerHTML = '<i class="fas fa-exclamation-circle"></i> <span></span>';
-  var dryingSection = document.getElementById('drying');
-  if (dryingSection) {
-    dryingSection.insertBefore(dryingSuccessAlert, dryingSection.children[1]);
-    dryingSection.insertBefore(dryingErrorAlert, dryingSection.children[2]);
-  }
-
-  function showDryingAlert(type, message) {
-    if (type === 'success') {
-      dryingSuccessAlert.querySelector('span').textContent = message;
-      dryingSuccessAlert.style.display = 'block';
-      dryingErrorAlert.style.display = 'none';
-    } else {
-      dryingErrorAlert.querySelector('span').textContent = message;
-      dryingErrorAlert.style.display = 'block';
-      dryingSuccessAlert.style.display = 'none';
-    }
-    setTimeout(function() {
-      dryingSuccessAlert.style.display = 'none';
-      dryingErrorAlert.style.display = 'none';
-    }, 5000);
-  }
-
   var releaseLocationSelect = document.getElementById('productLotInventoryLocation');
   if (releaseLocationSelect) {
     fetch('/api/inventory/locations', { credentials: 'include' })
@@ -1214,7 +1242,7 @@ document.addEventListener('DOMContentLoaded', function() {
       form.querySelectorAll('[required]').forEach(function(input) {
         if (!input.value.trim()) { input.classList.add('is-invalid'); valid = false; }
       });
-      if (!valid) { showDryingAlert('error', 'Please fill in all required fields.'); return; }
+      if (!valid) { showFormResult(form, 'Please fill in all required fields.', 'error'); return; }
       var formData = new FormData(form);
       var data = {};
       formData.forEach(function(value, key) {
@@ -1235,7 +1263,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         var result = await response.json();
         if (response.ok) {
-          showDryingAlert('success', result.message || 'Data saved successfully!');
+          var reference = createdReference(result);
+          var saved = result.message || 'Saved';
+          showFormResult(form, reference && saved.indexOf(reference) === -1 ? saved + ' \u00b7 ' + reference : saved,
+            'success');
           form.reset();
           loadDryingData();
           if (item.id === 'productLotReleaseForm' && result.data) {
@@ -1250,10 +1281,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
           }
         } else {
-          showDryingAlert('error', result.message || result.error || 'Failed to save data.');
+          showFormResult(form, 'Not saved: ' + (result.message || result.error || 'the server refused it.'), 'error');
         }
       } catch (err) {
-        showDryingAlert('error', 'Network or server error.');
+        showFormResult(form, 'Not saved: the server could not be reached.', 'error');
       }
     });
     form.querySelectorAll('input, select, textarea').forEach(function(input) {

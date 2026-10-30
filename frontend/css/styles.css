@@ -274,6 +274,44 @@ select.form-control {
     border: 1px solid var(--danger-color);
 }
 
+/* Save messages: pinned to the bottom of the screen above the content, clear of
+   the alerts bell, so they are seen however far the page is scrolled. */
+.alert.erp-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 1.25rem;
+    transform: translateX(-50%);
+    z-index: 1000;
+    width: min(560px, calc(100% - 7rem));
+    margin: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.alert.erp-toast.alert-success { background-color: #edf8f1; }
+.alert.erp-toast.alert-danger { background-color: #fdeeee; }
+.alert.erp-toast span { flex: 1; }
+
+.erp-toast-close {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+}
+
+/* The result of the last save, right under the form's button. */
+.form-result {
+    margin: 0.75rem 0 0;
+    font-weight: 600;
+    color: var(--success-color);
+}
+
+.form-result.is-error {
+    color: var(--danger-color);
+}
+
 /* Guidelines Panel */
 .guidelines-panel {
     background-color: white;
